@@ -44,8 +44,7 @@ export async function initBrowsers(tracker, startUrl) {
         ],
         userDataDir: "./user_data",
         customConfig: {
-            chromePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-            // MAC: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            chromePath: ENV.CHROME_PATH
         },
         connectOption: {
             defaultViewport: null
