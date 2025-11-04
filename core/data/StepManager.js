@@ -1,0 +1,132 @@
+import { promises as fsp } from 'fs';
+import path from 'path';
+
+export class StepManager {
+    constructor(sessionFolder) {
+        this.sessionFolder = sessionFolder;
+        this.stepPath = path.join(sessionFolder, 'doing_step.jsonl');
+    }
+
+    async init() {
+        try {
+            await fsp.access(this.stepPath);
+        } catch {
+            await fsp.writeFile(this.stepPath, '', 'utf8');
+        }
+    }
+
+    async createStep(panelBeforeId, actionId, panelAfterId) {
+        if (!panelBeforeId || !actionId || !panelAfterId) {
+            console.error('❌ Cannot create step with null values:', { panelBeforeId, actionId, panelAfterId });
+            return;
+        }
+        
+        const step = {
+            panel_before: {
+                item_id: panelBeforeId
+            },
+            action: {
+                item_id: actionId
+            },
+            panel_after: {
+                item_id: panelAfterId
+            }
+        };
+
+        const line = JSON.stringify(step) + '\n';
+        await fsp.appendFile(this.stepPath, line, 'utf8');
+        console.log(`✅ Created step: ${panelBeforeId} → ${actionId} → ${panelAfterId}`);
+    }
+
+    async getStepForAction(actionId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            return entries.find(entry => entry.action.item_id === actionId) || null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    async getAllSteps() {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            return content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+        } catch (err) {
+            return [];
+        }
+    }
+
+    async deleteStepsForAction(actionId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const remaining = entries.filter(entry => entry.action.item_id !== actionId);
+            
+            const newContent = remaining.map(entry => JSON.stringify(entry)).join('\n') + (remaining.length > 0 ? '\n' : '');
+            await fsp.writeFile(this.stepPath, newContent, 'utf8');
+            
+            return entries.length - remaining.length;
+        } catch (err) {
+            return 0;
+        }
+    }
+
+    async deleteStepsForItems(itemIds) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const remaining = entries.filter(entry => 
+                !itemIds.includes(entry.panel_before.item_id) &&
+                !itemIds.includes(entry.action.item_id) &&
+                !itemIds.includes(entry.panel_after.item_id)
+            );
+            
+            const newContent = remaining.map(entry => JSON.stringify(entry)).join('\n') + (remaining.length > 0 ? '\n' : '');
+            await fsp.writeFile(this.stepPath, newContent, 'utf8');
+            
+            return entries.length - remaining.length;
+        } catch (err) {
+            return 0;
+        }
+    }
+
+    async cleanupInvalidSteps() {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const validEntries = entries.filter(entry => 
+                entry.panel_before?.item_id && 
+                entry.action?.item_id && 
+                entry.panel_after?.item_id
+            );
+            
+            const invalidCount = entries.length - validEntries.length;
+            
+            if (invalidCount > 0) {
+                const newContent = validEntries.map(entry => JSON.stringify(entry)).join('\n') + (validEntries.length > 0 ? '\n' : '');
+                await fsp.writeFile(this.stepPath, newContent, 'utf8');
+                console.log(`🧹 Cleaned up ${invalidCount} invalid steps`);
+            }
+            
+            return invalidCount;
+        } catch (err) {
+            return 0;
+        }
+    }
+}
+

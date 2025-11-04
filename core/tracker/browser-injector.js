@@ -1,0 +1,426 @@
+import { sleep } from '../utils/utils.js';
+
+export async function setupNavigationListener(tracker) {
+    if (tracker._navigationListenerSetup) return;
+
+    const cleanupPollers = () => {
+        if (tracker._keyboardPoller) {
+            clearInterval(tracker._keyboardPoller);
+            tracker._keyboardPoller = null;
+        }
+        if (tracker._clickPoller) {
+            clearInterval(tracker._clickPoller);
+            tracker._clickPoller = null;
+        }
+    };
+
+    tracker.page.on("load", async () => {
+        try {
+            cleanupPollers();
+            await sleep(1000);
+            await setupTracking(tracker);
+        } catch (e) {
+            console.error("re-inject failed:", e);
+        }
+    });
+
+    tracker.page.on("framenavigated", async (frame) => {
+        if (frame === tracker.page.mainFrame()) {
+            const newUrl = frame.url();
+            if (tracker.currenPage && tracker.currenPage !== newUrl) {
+                tracker.previousPage = tracker.currenPage;
+                tracker.currenPage = newUrl;
+                try {
+                    cleanupPollers();
+                    await sleep(500);
+                await setupTracking(tracker);
+                    console.log(`🔄 Page navigated to: ${newUrl}`);
+                } catch (e) {
+                    console.error('❌ Failed to re-inject on navigation:', e);
+                }
+            } else {
+                tracker.currenPage = newUrl;
+            }
+        }
+    });
+
+    tracker._navigationListenerSetup = true;
+}
+
+export async function showReadyNotification(tracker) {
+    try {
+        await tracker.page.evaluate(() => {
+            const existingNotif = document.getElementById('__tracker_ready_notif');
+            if (existingNotif) existingNotif.remove();
+
+            const notif = document.createElement('div');
+            notif.id = '__tracker_ready_notif';
+            notif.innerHTML = '✅ Ready to track';
+            notif.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-family: system-ui, -apple-system, sans-serif;
+                font-size: 16px;
+                font-weight: 600;
+                z-index: 999999;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                animation: slideInRight 0.3s ease-out, fadeOut 0.5s ease-in 0.5s forwards;
+            `;
+
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes slideInRight {
+                    from { opacity: 0; transform: translateX(20px); }
+                    to { opacity: 1; transform: translateX(0); }
+                }
+                @keyframes fadeOut {
+                    to { opacity: 0; transform: translateX(20px); }
+                }
+            `;
+            if (document.head) {
+            document.head.appendChild(style);
+            }
+            if (document.body) {
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 1000);
+            }
+        });
+    } catch (err) {
+        if (!err.message.includes('Execution context was destroyed')) {
+            console.error('Failed to show ready notification:', err);
+        }
+    }
+}
+
+export async function setupTracking(tracker) {
+    console.log('🔧 Setting up tracking...');
+
+    const exposeIfNotExists = async (name, fn) => {
+        try {
+            await tracker.page.exposeFunction(name, fn);
+        } catch (err) {
+            if (!err.message.includes('already exists') && 
+                !err.message.includes('Target closed') &&
+                !err.message.includes('Execution context was destroyed')) {
+                console.error(`Failed to expose ${name}:`, err);
+            }
+        }
+    };
+
+    await exposeIfNotExists("triggerCaptureGemini", async () => {
+        await tracker._broadcast({ type: 'trigger_capture', mode: 'gemini' });
+    });
+    
+    const handlers = tracker._queueHandlers;
+    if (handlers) {
+        await exposeIfNotExists("triggerDrawPanelNew", handlers.triggerDrawPanelNew);
+        await exposeIfNotExists("triggerUseBeforePanel", handlers.triggerUseBeforePanel);
+    }
+
+        await tracker.page.evaluate(() => {
+        if (!window.__trackingWs || window.__trackingWs.readyState !== 1) {
+            window.__trackingWs = new WebSocket('ws://localhost:8081');
+            
+            window.__trackingWs.onopen = () => {
+                if (!document.getElementById('__ws_notif_style')) {
+            const style = document.createElement('style');
+                    style.id = '__ws_notif_style';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from { opacity: 0; transform: translateX(20px); }
+                    to { opacity: 1; transform: translateX(0); }
+                }
+                @keyframes fadeOut {
+                    to { opacity: 0; transform: translateX(20px); }
+                }
+            `;
+                document.head.appendChild(style);
+            }
+                
+                const wsNotif = document.createElement('div');
+                wsNotif.style.cssText = `
+                    position: fixed;
+                    bottom: 70px;
+                    right: 20px;
+                    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    font-family: system-ui, -apple-system, sans-serif;
+                    font-size: 14px;
+                    font-weight: 600;
+                    z-index: 999999;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    animation: slideInRight 0.3s ease-out, fadeOut 0.5s ease-in 0.5s forwards;
+                `;
+                wsNotif.textContent = '🟢 WS Connected';
+                document.body.appendChild(wsNotif);
+                setTimeout(() => wsNotif.remove(), 1000);
+            };
+            
+            window.__trackingWs.onerror = (err) => {};
+            
+            window.__trackingWs.onclose = () => {};
+            
+            window.__trackingWs.onmessage = (msg) => {
+                try {
+                    const evt = JSON.parse(msg.data);
+                    
+                    if (evt.type === 'show_toast' && evt.message) {
+                        if (window.showTrackingToast) {
+                            window.showTrackingToast(evt.message);
+                        }
+                    }
+                } catch (err) {}
+            };
+        }
+        
+        const mouseHighlightExists = document.getElementById('__mouse_highlight_cursor');
+        
+        if (window.__trackingSetup && mouseHighlightExists) {
+            return;
+        }
+        
+        const existingHighlight = document.getElementById('__mouse_highlight_cursor');
+        if (existingHighlight) {
+            existingHighlight.remove();
+        }
+
+        const mouseHighlight = document.createElement('div');
+        mouseHighlight.id = '__mouse_highlight_cursor';
+        mouseHighlight.style.cssText = `
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #FFD700;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 999998;
+            transform: translate(-50%, -50%);
+            transition: none;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            display: none;
+        `;
+        
+        if (document.body) {
+            document.body.appendChild(mouseHighlight);
+            
+            document.addEventListener('mousemove', (e) => {
+                mouseHighlight.style.display = 'block';
+                mouseHighlight.style.left = e.clientX + 'px';
+                mouseHighlight.style.top = e.clientY + 'px';
+            }, { passive: true });
+            
+            document.addEventListener('mouseleave', () => {
+                mouseHighlight.style.display = 'none';
+            }, { passive: true });
+            
+            document.addEventListener('mouseenter', () => {
+                mouseHighlight.style.display = 'block';
+            }, { passive: true });
+        }
+        
+        window.getClickedElementInfo = (element) => {
+            if (!element) return null;
+            
+            const tag = element.tagName || 'unknown';
+            const text = (element.textContent || '').trim().substring(0, 100);
+            
+            const elementName =
+                element.getAttribute('aria-label')?.trim() ||
+                element.placeholder?.trim() ||
+                element.value?.trim() ||
+                element.alt?.trim() ||
+                text ||
+                element.id?.trim() ||
+                tag.toLowerCase();
+            
+            return {
+                tag,
+                id: element.id || '',
+                classes: element.className || '',
+                text: text,
+                type: element.type || '',
+                href: element.href || '',
+                name: element.name || '',
+                ariaLabel: element.getAttribute('aria-label') || '',
+                elementName: elementName
+            };
+        };
+        
+        if (!window.showTrackingToast) {
+            window.showTrackingToast = (message) => {
+                const existingToast = document.getElementById('__tracking_toast');
+                if (existingToast) existingToast.remove();
+                
+                const toast = document.createElement('div');
+                toast.id = '__tracking_toast';
+                toast.textContent = message;
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.85);
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    z-index: 999999;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    animation: slideIn 0.3s ease;
+                `;
+                
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 3000);
+            };
+        }
+        
+        if (!window.__keyboardQueue) {
+            window.__keyboardQueue = [];
+        }
+        
+        if (!window.__keydownListenerSetup) {
+            document.addEventListener("keydown", (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+                    e.preventDefault();
+                    window.__keyboardQueue.push({ action: 'DRAW_NEW', timestamp: Date.now() });
+                }
+                
+                if ((e.ctrlKey || e.metaKey) && e.key === "2") {
+                    e.preventDefault();
+                    window.__keyboardQueue.push({ action: 'USE_BEFORE', timestamp: Date.now() });
+                }
+            });
+            
+            window.__keydownListenerSetup = true;
+        }
+        
+        window.__clickHandler = (e) => {
+            if (!e.isTrusted) {
+                return;
+            }
+            
+            const element = e.target;
+            const elementInfo = window.getClickedElementInfo(element);
+            
+            const now = Date.now();
+            const posKey = `${e.clientX}_${e.clientY}`;
+            
+            if (!window.__recentClicks) {
+                window.__recentClicks = new Map();
+            }
+            
+            if (window.__recentClicks.has(posKey)) {
+                const lastTime = window.__recentClicks.get(posKey);
+                if (now - lastTime < 1000) {
+                    return;
+                }
+            }
+            
+            window.__recentClicks.set(posKey, now);
+            setTimeout(() => window.__recentClicks.delete(posKey), 2000);
+            
+            const clickData = {
+                timestamp: now,
+                click_x: e.clientX,
+                click_y: e.clientY,
+                element_name: elementInfo?.elementName || 'Unknown',
+                element_tag: elementInfo?.tag || '',
+                url: window.location.href
+            };
+            
+            if (!window.__clickQueue) {
+                window.__clickQueue = [];
+            }
+            window.__clickQueue.push(clickData);
+        };
+        
+        document.removeEventListener('click', window.__clickHandler, { capture: true });
+        document.addEventListener('click', window.__clickHandler, { capture: true });
+
+        window.__trackingSetup = true;
+    });
+    
+    console.log('✅ Tracking setup completed! Ctrl/Cmd+1 and Ctrl/Cmd+2 ready.');
+    
+    if (!tracker._keyboardPoller) {
+        tracker._keyboardPoller = setInterval(async () => {
+            try {
+                const keyboardActions = await tracker.page.evaluate(() => {
+                    if (!window.__keyboardQueue || window.__keyboardQueue.length === 0) {
+                        return [];
+                    }
+                    const actions = [...window.__keyboardQueue];
+                    window.__keyboardQueue = [];
+                    return actions;
+                });
+                
+                for (const kb of keyboardActions) {
+                    if (kb.action === 'DRAW_NEW' && tracker._queueHandlers?.triggerDrawPanelNew) {
+                        await tracker._queueHandlers.triggerDrawPanelNew();
+                    } else if (kb.action === 'USE_BEFORE' && tracker._queueHandlers?.triggerUseBeforePanel) {
+                        await tracker._queueHandlers.triggerUseBeforePanel();
+                    }
+                }
+            } catch (err) {}
+        }, 30);
+    }
+    
+    if (!tracker._clickPoller) {
+        tracker._clickPoller = setInterval(async () => {
+            try {
+                const clicks = await tracker.page.evaluate(() => {
+                    if (!window.__clickQueue || window.__clickQueue.length === 0) {
+                        return [];
+                    }
+                    const clicks = [...window.__clickQueue];
+                    window.__clickQueue = [];
+                    return clicks;
+                });
+                
+                for (const clickData of clicks) {
+                    if (tracker.selectedPanelId && tracker.clickManager && tracker.dataItemManager) {
+                        const selectedItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+                        
+                        if (selectedItem && selectedItem.item_category === 'ACTION') {
+                            await tracker.clickManager.logClick(tracker.selectedPanelId, clickData);
+                            
+                            await tracker._broadcast({
+                                type: 'click_event',
+                                action_item_id: tracker.selectedPanelId,
+                                timestamp: clickData.timestamp,
+                                click_x: clickData.click_x,
+                                click_y: clickData.click_y,
+                                element_name: clickData.element_name,
+                                element_tag: clickData.element_tag
+                            });
+                        }
+                    }
+                }
+            } catch (err) {
+            }
+        }, 30);
+    }
+
+    await showReadyNotification(tracker);
+    await sleep(2000);
+}
