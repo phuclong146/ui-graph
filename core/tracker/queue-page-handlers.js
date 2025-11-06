@@ -1892,7 +1892,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             await tracker.page.setCookie(...puppeteerCookies);
-            await tracker.page.reload();
 
             return { success: true, message: `Imported ${puppeteerCookies.length} cookies` };
         } catch (err) {
