@@ -461,8 +461,8 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             const croppedBuffer = Buffer.from(displayImage, "base64");
             const croppedMeta = await sharp(croppedBuffer).metadata();
             
-            scaleX = croppedMeta.width / 1000;
-            scaleY = croppedMeta.height / 1000;
+            scaleX = croppedMeta.width / panelItem.crop_pos.w;
+            scaleY = croppedMeta.height / panelItem.crop_pos.h;
             
             const parentDom = await tracker.parentPanelManager.getParentDom(panelId);
             
@@ -486,10 +486,10 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             const adjustedActions = filteredActions.map(action => ({
                 ...action,
                 action_pos: {
-                    x: action.action_pos.x - panelItem.crop_pos.x,
-                    y: action.action_pos.y - panelItem.crop_pos.y,
-                    w: action.action_pos.w,
-                    h: action.action_pos.h
+                    x: Math.round(action.action_pos.x - panelItem.crop_pos.x),
+                    y: Math.round(action.action_pos.y - panelItem.crop_pos.y),
+                    w: Math.round(action.action_pos.w),
+                    h: Math.round(action.action_pos.h)
                 }
             }));
             

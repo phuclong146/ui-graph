@@ -99,13 +99,12 @@ export async function uploadVideoAndGetUrl(filePath, videoCode, apiKey) {
     return videoUrl;
 }
 
-export async function fetchWebsiteList(apiKey) {
+export async function fetchWebsiteList() {
     try {
         const myHeaders = new Headers();
         myHeaders.append("accept", "application/json, text/plain, */*");
-        myHeaders.append("authorization", apiKey);
 
-        const resp = await fetch("https://api.comaker.me/api/v1/lms/ai-tool/level1", {
+        const resp = await fetch("https://api.comaker.me/api/v1/lms/internal/ai-tool/level1", {
             method: "GET",
             headers: myHeaders,
             redirect: "follow",

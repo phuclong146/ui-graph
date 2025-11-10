@@ -354,11 +354,25 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
             
             console.log('Draw NEW panel - Starting crop workflow...');
-            
+
+            const originalViewport = tracker.page.viewport() || await tracker.page.evaluate(() => ({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                deviceScaleFactor: window.devicePixelRatio
+            }));
+
+            await tracker.page.setViewport({
+                width: 1920,
+                height: 1080,
+                deviceScaleFactor: 1
+            });
+
             const { captureScreenshot } = await import('../media/screenshot.js');
             const screenshot = await captureScreenshot(tracker.page, "base64", false);
-            
-            return { 
+
+            await tracker.page.setViewport(originalViewport);
+
+            return {
                 mode: 'DRAW_NEW', 
                 screenshot: screenshot,
                 actionItemId: tracker.selectedPanelId,
@@ -402,9 +416,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const newPanelId = await tracker.dataItemManager.createPanel(newPanelName, originalImageBase64, cropPos);
             
             await tracker.parentPanelManager.createPanelEntry(newPanelId);
+
+            const originalViewport = tracker.page.viewport() || await tracker.page.evaluate(() => ({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                deviceScaleFactor: window.devicePixelRatio
+            }));
+
+            await tracker.page.setViewport({
+                width: 1920,
+                height: 1080,
+                deviceScaleFactor: 1
+            });
             
             const { captureActionsFromDOM } = await import('../media/dom-capture.js');
             const domActions = await captureActionsFromDOM(tracker.page);
+            
+            await tracker.page.setViewport(originalViewport);
             
             if (domActions && domActions.length > 0) {
                 const sharp = (await import('sharp')).default;

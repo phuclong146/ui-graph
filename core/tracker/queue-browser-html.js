@@ -475,17 +475,16 @@ export const QUEUE_BROWSER_HTML = `
       <button class="draw-panel-option" data-mode="USE_BEFORE" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px; margin-top:2px;">🔄 Use BEFORE</button>
     </div>
     
-    <div id="detectAIMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
+    <!-- Dropdown menus hidden - direct mode call instead -->
+    <!-- <div id="detectAIMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
       <button class="detect-ai-option" data-mode="normal" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📸 Normal</button>
       <button class="detect-ai-option" data-mode="scrolling" disabled style="display:block; width:100%; padding:10px 20px; border:none; background:#e0e0e0; color:#999; text-align:left; cursor:not-allowed; font-size:14px; border-radius:3px; margin-top:2px;">📜 Scrolling (Disabled)</button>
     </div>
     
-    <!-- COMMENTED FOR FUTURE USE: Direct normal mode activation without dropdown
     <div id="detectWebMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
       <button class="detect-web-option" data-mode="normal" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📸 Normal</button>
       <button class="detect-web-option" data-mode="scrolling" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px; margin-top:2px;">📜 Scrolling</button>
-    </div>
-    -->
+    </div> -->
     
     <button id="clearAllClicksBtn" style="display:none; margin:10px; padding:8px 16px; background:#ff9800; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🗑️ Clear All Clicks</button>
 
@@ -772,21 +771,22 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
-      detectActionsGeminiBtn.addEventListener("click", (e) => {
-        const btnRect = detectActionsGeminiBtn.getBoundingClientRect();
-        detectAIMenu.style.left = btnRect.left + 'px';
-        detectAIMenu.style.top = (btnRect.bottom + 5) + 'px';
-        detectAIMenu.style.display = 'block';
+      detectActionsGeminiBtn.addEventListener("click", async (e) => {
+        if (isCapturing || isGeminiDetecting) {
+          showToast('⚠️ Đang xử lý, vui lòng đợi...');
+          return;
+        }
+        
+        isCapturing = true;
+        
+        try {
+          if (window.manualCaptureAI) {
+            await window.manualCaptureAI();
+          }
+        } finally {
+          isCapturing = false;
+        }
       });
-      
-      /* COMMENTED FOR FUTURE USE: Old dropdown-based event listener
-      captureActionsDOMBtn.addEventListener("click", (e) => {
-        const btnRect = captureActionsDOMBtn.getBoundingClientRect();
-        detectWebMenu.style.left = btnRect.left + 'px';
-        detectWebMenu.style.top = (btnRect.bottom + 5) + 'px';
-        detectWebMenu.style.display = 'block';
-      });
-      */
       
       captureActionsDOMBtn.addEventListener("click", async (e) => {
         if (isCapturing || isGeminiDetecting) {
@@ -805,6 +805,8 @@ export const QUEUE_BROWSER_HTML = `
         }
       });
       
+      // Dropdown menu listeners commented out - direct mode call instead
+      /*
       document.querySelectorAll('.detect-ai-option').forEach(option => {
         option.addEventListener('click', async () => {
           const mode = option.getAttribute('data-mode');
@@ -852,6 +854,7 @@ export const QUEUE_BROWSER_HTML = `
         }
         });
       });
+      */
       
       drawPanelBtn.addEventListener("click", (e) => {
         const btnRect = drawPanelBtn.getBoundingClientRect();
@@ -926,10 +929,10 @@ export const QUEUE_BROWSER_HTML = `
         if (!drawPanelBtn.contains(e.target) && !drawPanelMenu.contains(e.target)) {
           drawPanelMenu.style.display = 'none';
         }
-        if (!detectActionsGeminiBtn.contains(e.target) && !detectAIMenu.contains(e.target)) {
-          detectAIMenu.style.display = 'none';
-        }
-        // COMMENTED FOR FUTURE USE: detectWebMenu hide logic (no longer needed with direct normal mode)
+        // Dropdown menus commented out
+        // if (!detectActionsGeminiBtn.contains(e.target) && !detectAIMenu.contains(e.target)) {
+        //   detectAIMenu.style.display = 'none';
+        // }
         // if (!captureActionsDOMBtn.contains(e.target) && !detectWebMenu.contains(e.target)) {
         //   detectWebMenu.style.display = 'none';
         // }

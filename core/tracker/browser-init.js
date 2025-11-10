@@ -111,7 +111,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("importCookiesFromJson", handlers.importCookiesFromJson);
 
     await tracker.page.goto(startUrl);
-    const websites = await fetchWebsiteList(ENV.API_TOKEN);
+    const websites = await fetchWebsiteList();
     
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(path.dirname(path.dirname(__filename)));
