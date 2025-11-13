@@ -9,4 +9,5 @@ export const ENV = {
     GEMINI_USE_REST: process.env.GEMINI_USE_REST || "true",
     UPLOAD_URL: process.env.UPLOAD_URL,
     CHROME_PATH: process.env.CHROME_PATH,
+    RECORD_PANEL: process.env.RECORD_PANEL || "true",
 };

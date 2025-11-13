@@ -18,6 +18,7 @@ export class ParentPanelManager {
     async createPanelEntry(panelItemId) {
         const entry = {
             parent_panel: panelItemId,
+            child_pages: [],
             child_actions: [],
             child_panels: [],
             parent_dom: []
@@ -52,6 +53,66 @@ export class ParentPanelManager {
 
             if (!entries[index].child_actions.includes(actionItemId)) {
                 entries[index].child_actions.push(actionItemId);
+            }
+
+            const newContent = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n';
+            await fsp.writeFile(this.parentPath, newContent, 'utf8');
+            
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    async addChildPage(panelItemId, pageNumber, pageId) {
+        try {
+            const content = await fsp.readFile(this.parentPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const index = entries.findIndex(entry => entry.parent_panel === panelItemId);
+            if (index === -1) return false;
+
+            if (!entries[index].child_pages) {
+                entries[index].child_pages = [];
+            }
+
+            const existingPage = entries[index].child_pages.find(p => p.page_number === pageNumber);
+            if (!existingPage) {
+                entries[index].child_pages.push({
+                    page_number: pageNumber,
+                    page_id: pageId,
+                    child_actions: []
+                });
+            }
+
+            const newContent = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n';
+            await fsp.writeFile(this.parentPath, newContent, 'utf8');
+            
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    async addChildActionToPage(panelItemId, pageId, actionId) {
+        try {
+            const content = await fsp.readFile(this.parentPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const index = entries.findIndex(entry => entry.parent_panel === panelItemId);
+            if (index === -1) return false;
+
+            if (!entries[index].child_pages) {
+                entries[index].child_pages = [];
+            }
+
+            const page = entries[index].child_pages.find(p => p.page_id === pageId);
+            if (page && !page.child_actions.includes(actionId)) {
+                page.child_actions.push(actionId);
             }
 
             const newContent = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n';

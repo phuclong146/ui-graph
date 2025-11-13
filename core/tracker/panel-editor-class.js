@@ -1,16 +1,17 @@
 export function getPanelEditorClassCode() {
     return `
 window.PanelEditor = class PanelEditor {
-    constructor(imageBase64, geminiResultOrActionId, mode = 'full') {
+    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null) {
         this.imageBase64 = imageBase64;
         
-        if (mode === 'cropOnly') {
+        if (mode === 'cropOnly' || mode === 'confirmOnly') {
             this.actionItemId = geminiResultOrActionId;
             this.geminiResult = [];
             this.originalGeminiResult = [];
         } else {
             this.geminiResult = geminiResultOrActionId;
             this.originalGeminiResult = JSON.parse(JSON.stringify(geminiResultOrActionId));
+            this.eventId = panelId;
         }
         this.mode = mode;
         this.canvas = null;
@@ -26,6 +27,12 @@ window.PanelEditor = class PanelEditor {
         this.selectedPanelIndex = null;
         this.isProcessing = false;
         this.isEditingLabel = false;
+        this.isDraggingLabel = false;
+        this.dragLinkedRect = null;
+        this.dragStartPointer = null;
+        this.rectStart = null;
+        this.prevCanvasSelection = true;
+        this._globalMouseUpHandler = null;
     }
 
     async init() {
@@ -52,11 +59,15 @@ window.PanelEditor = class PanelEditor {
         
         let toolbarHTML = '<div id="editor-status"></div><div id="editor-toolbar">';
         
-        if (this.mode === 'cropOnly') {
+        if (this.mode === 'confirmOnly') {
+            toolbarHTML += '<button id="editorSaveBtn" class="editor-btn save-btn">✅ Save Panel</button>';
+            toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
+        } else if (this.mode === 'cropOnly') {
             toolbarHTML += '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>';
             toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
         } else {
             toolbarHTML += 
+                '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>' +
                 '<button id="editorAddActionBtn" class="editor-btn add-btn">➕ Add Action</button>' +
                 '<button id="editorSaveBtn" class="editor-btn save-btn">💾 Save Changes</button>' +
                 '<button id="editorResetBtn" class="editor-btn reset-btn">↺ Reset</button>' +
@@ -88,6 +99,7 @@ window.PanelEditor = class PanelEditor {
             height: img.naturalHeight,
             backgroundColor: '#000'
         });
+        this.canvas.targetFindTolerance = 8;
         
         await new Promise((resolve) => {
             fabric.Image.fromURL(img.src, (fabricImg) => {
@@ -299,19 +311,23 @@ window.PanelEditor = class PanelEditor {
             left: pos.x + 8,
             top: pos.y - 20,
             fontSize: 12,
-            fill: '#fff',
-            backgroundColor: color,
-            padding: 4,
+            fill: '#ffffff',
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            padding: 3,
             fontWeight: 'bold',
             selectable: false,
             evented: true,
+            perPixelTargetFind: false,
+            hasControls: false,
+            hasBorders: false,
             id: id + '_label',
             linkedBox: id,
-            hoverCursor: 'pointer'
+            hoverCursor: 'move'
         });
         
         this.canvas.add(rect);
         this.canvas.add(label);
+        this.canvas.bringToFront(label);
         this.fabricObjects.set(id, { rect, label });
     }
 
@@ -399,13 +415,108 @@ window.PanelEditor = class PanelEditor {
         });
         
         this.canvas.on('mouse:down', (e) => {
+            if (this.isDrawingMode || this.isCroppingMode) return;
             if (e.target && e.target.linkedBox) {
                 const boxData = this.fabricObjects.get(e.target.linkedBox);
                 if (boxData && boxData.rect) {
+                    if (e.e && e.e.preventDefault) e.e.preventDefault();
+                    if (e.e && e.e.stopPropagation) e.e.stopPropagation();
                     this.canvas.setActiveObject(boxData.rect);
+                    this.dragLinkedRect = boxData.rect;
+                    this.isDraggingLabel = false;
+                    this.dragStartPointer = this.canvas.getPointer(e.e);
+                    this.rectStart = { left: boxData.rect.left, top: boxData.rect.top };
+                    this.prevCanvasSelection = this.canvas.selection;
+                    this.canvas.selection = false;
+                    this.canvas.skipTargetFind = true;
+                    const done = () => {
+                        if (!this.dragLinkedRect) return;
+                        if (this.isDraggingLabel) {
+                            this.updateGeminiResult(this.dragLinkedRect);
+                            this.saveState();
+                            this.showStatus('✓ Box updated (not saved yet)', 'info');
+                        }
+                        this.isDraggingLabel = false;
+                        this.dragLinkedRect = null;
+                        this.dragStartPointer = null;
+                        this.rectStart = null;
+                        this.canvas.selection = this.prevCanvasSelection;
+                        this.canvas.skipTargetFind = false;
+                        this.canvas.defaultCursor = 'default';
+                        this.canvas.requestRenderAll();
+                    };
+                    this._globalMouseUpHandler = () => {
+                        done();
+                        document.removeEventListener('mouseup', this._globalMouseUpHandler);
+                        this._globalMouseUpHandler = null;
+                    };
+                    document.addEventListener('mouseup', this._globalMouseUpHandler, { once: true });
                     this.canvas.renderAll();
                 }
             }
+        });
+
+        this.canvas.on('mouse:move', (e) => {
+            if (!this.dragLinkedRect) return;
+            const pointer = this.canvas.getPointer(e.e);
+            const dx = pointer.x - this.dragStartPointer.x;
+            const dy = pointer.y - this.dragStartPointer.y;
+            if (!this.isDraggingLabel) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) < 3) return;
+                this.isDraggingLabel = true;
+                this.canvas.defaultCursor = 'grabbing';
+            }
+            let newLeft = this.rectStart.left + dx;
+            let newTop = this.rectStart.top + dy;
+            const canvasWidth = this.canvas.width;
+            const canvasHeight = this.canvas.height;
+            const rect = this.dragLinkedRect;
+            rect.setCoords();
+            const width = rect.width * rect.scaleX;
+            const height = rect.height * rect.scaleY;
+            if (newLeft < 0) newLeft = 0;
+            if (newTop < 0) newTop = 0;
+            if (newLeft + width > canvasWidth) newLeft = canvasWidth - width;
+            if (newTop + height > canvasHeight) newTop = canvasHeight - height;
+            rect.set({ left: newLeft, top: newTop });
+            rect.setCoords();
+            this.updateLabel(rect);
+            this.canvas.renderAll();
+        });
+
+        this.canvas.on('mouse:up', () => {
+            if (this._globalMouseUpHandler) return;
+            if (!this.dragLinkedRect) return;
+            if (this.isDraggingLabel && this.dragLinkedRect) {
+                this.updateGeminiResult(this.dragLinkedRect);
+                this.saveState();
+                this.showStatus('✓ Box updated (not saved yet)', 'info');
+            }
+            this.isDraggingLabel = false;
+            this.dragLinkedRect = null;
+            this.dragStartPointer = null;
+            this.rectStart = null;
+            this.canvas.selection = this.prevCanvasSelection;
+            this.canvas.skipTargetFind = false;
+            this.canvas.defaultCursor = 'default';
+            this.canvas.requestRenderAll();
+        });
+
+        this.canvas.on('mouse:out', () => {
+            if (!this.dragLinkedRect) return;
+            if (this.isDraggingLabel && this.dragLinkedRect) {
+                this.updateGeminiResult(this.dragLinkedRect);
+                this.saveState();
+                this.showStatus('✓ Box updated (not saved yet)', 'info');
+            }
+            this.isDraggingLabel = false;
+            this.dragLinkedRect = null;
+            this.dragStartPointer = null;
+            this.rectStart = null;
+            this.canvas.selection = this.prevCanvasSelection;
+            this.canvas.skipTargetFind = false;
+            this.canvas.defaultCursor = 'default';
+            this.canvas.requestRenderAll();
         });
         
         this.canvas.on('mouse:dblclick', (e) => {
@@ -414,10 +525,20 @@ window.PanelEditor = class PanelEditor {
             }
         });
         
-        if (this.mode === 'cropOnly') {
+        if (this.mode === 'confirmOnly') {
+            document.getElementById('editorSaveBtn').onclick = async () => {
+                if (this.isProcessing) {
+                    this.showStatus('⚠️ Đang save, vui lòng đợi...', 'warning');
+                    return;
+                }
+                await this.saveFullScreenshotPanel();
+            };
+            document.getElementById('editorCancelBtn').onclick = () => this.cancel();
+        } else if (this.mode === 'cropOnly') {
             document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
             document.getElementById('editorCancelBtn').onclick = () => this.cancel();
         } else {
+            document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
             document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
             
             document.getElementById('editorSaveBtn').onclick = async () => {
@@ -455,10 +576,13 @@ window.PanelEditor = class PanelEditor {
     updateLabel(rect) {
         const boxData = this.fabricObjects.get(rect.id);
         if (boxData && boxData.label) {
+            const newTop = (rect.top - 20 < 0) ? (rect.top + (rect.height * rect.scaleY) + 4) : (rect.top - 20);
             boxData.label.set({
                 left: rect.left + 8,
-                top: rect.top - 20
+                top: newTop
             });
+            boxData.label.setCoords();
+            this.canvas.bringToFront(boxData.label);
             this.canvas.renderAll();
         }
     }
@@ -625,11 +749,13 @@ window.PanelEditor = class PanelEditor {
         this.canvas.forEachObject(obj => obj.selectable = false);
         this.showStatus(\`🖱️ Drawing action for "\${this.geminiResult[panelIndex].panel_title}" - Click and drag\`, 'info');
         
+        const borderPadding = 1.5;
+        
         const mouseDownHandler = (e) => {
             if (!this.isDrawingMode) return;
             const pointer = this.canvas.getPointer(e.e);
-            this.drawingStartX = pointer.x;
-            this.drawingStartY = pointer.y;
+            this.drawingStartX = Math.max(borderPadding, Math.min(pointer.x, this.canvas.width - borderPadding));
+            this.drawingStartY = Math.max(borderPadding, Math.min(pointer.y, this.canvas.height - borderPadding));
             
             this.drawingRect = new fabric.Rect({
                 left: this.drawingStartX,
@@ -649,14 +775,25 @@ window.PanelEditor = class PanelEditor {
             if (!this.isDrawingMode || !this.drawingRect) return;
             const pointer = this.canvas.getPointer(e.e);
             
-            const width = pointer.x - this.drawingStartX;
-            const height = pointer.y - this.drawingStartY;
+            const clampedX = Math.max(borderPadding, Math.min(pointer.x, this.canvas.width - borderPadding));
+            const clampedY = Math.max(borderPadding, Math.min(pointer.y, this.canvas.height - borderPadding));
+            
+            let width = clampedX - this.drawingStartX;
+            let height = clampedY - this.drawingStartY;
+            let left = width < 0 ? clampedX : this.drawingStartX;
+            let top = height < 0 ? clampedY : this.drawingStartY;
+            
+            width = Math.abs(width);
+            height = Math.abs(height);
+            
+            width = Math.min(width, this.canvas.width - borderPadding - left);
+            height = Math.min(height, this.canvas.height - borderPadding - top);
             
             this.drawingRect.set({
-                width: Math.abs(width),
-                height: Math.abs(height),
-                left: width < 0 ? pointer.x : this.drawingStartX,
-                top: height < 0 ? pointer.y : this.drawingStartY
+                width: width,
+                height: height,
+                left: left,
+                top: top
             });
             this.canvas.renderAll();
         };
@@ -746,6 +883,158 @@ window.PanelEditor = class PanelEditor {
             addBtn.style.background = '#2196F3';
             addBtn.style.color = 'white';
             addBtn.style.fontWeight = 'bold';
+        }
+    }
+    
+    enableCropMode() {
+        this.isCroppingMode = true;
+        this.canvas.selection = false;
+        this.canvas.forEachObject(obj => {
+            obj.selectable = false;
+            obj.evented = false;
+        });
+        this.showStatus('✂️ Crop Mode - Click and drag to select crop area (ESC to cancel)', 'info');
+        
+        const borderPadding = 1.5;
+        
+        const cropRect = new fabric.Rect({
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            fill: 'transparent',
+            stroke: '#00ff00',
+            strokeWidth: 3,
+            strokeUniform: true,
+            selectable: false,
+            evented: false
+        });
+        
+        let startX = 0, startY = 0;
+        let isDrawing = false;
+        
+        const mouseDownHandler = (e) => {
+            if (!this.isCroppingMode) return;
+            const pointer = this.canvas.getPointer(e.e);
+            startX = Math.max(borderPadding, Math.min(pointer.x, this.canvas.width - borderPadding));
+            startY = Math.max(borderPadding, Math.min(pointer.y, this.canvas.height - borderPadding));
+            isDrawing = true;
+            
+            cropRect.set({
+                left: startX,
+                top: startY,
+                width: 0,
+                height: 0
+            });
+            this.canvas.add(cropRect);
+        };
+        
+        const mouseMoveHandler = (e) => {
+            if (!this.isCroppingMode || !isDrawing) return;
+            const pointer = this.canvas.getPointer(e.e);
+            
+            const clampedX = Math.max(borderPadding, Math.min(pointer.x, this.canvas.width - borderPadding));
+            const clampedY = Math.max(borderPadding, Math.min(pointer.y, this.canvas.height - borderPadding));
+            
+            let width = clampedX - startX;
+            let height = clampedY - startY;
+            let left = width < 0 ? clampedX : startX;
+            let top = height < 0 ? clampedY : startY;
+            
+            width = Math.abs(width);
+            height = Math.abs(height);
+            
+            width = Math.min(width, this.canvas.width - borderPadding - left);
+            height = Math.min(height, this.canvas.height - borderPadding - top);
+            
+            cropRect.set({
+                width: width,
+                height: height,
+                left: left,
+                top: top
+            });
+            this.canvas.renderAll();
+        };
+        
+        const mouseUpHandler = async () => {
+            if (!this.isCroppingMode || !isDrawing) return;
+            isDrawing = false;
+            
+            const cropArea = {
+                x: Math.round(cropRect.left),
+                y: Math.round(cropRect.top),
+                width: Math.round(cropRect.width),
+                height: Math.round(cropRect.height)
+            };
+            
+            this.canvas.remove(cropRect);
+            
+            if (cropArea.width < 10 || cropArea.height < 10) {
+                this.showStatus('⚠️ Crop area too small', 'error');
+                this.disableCropMode();
+                return;
+            }
+            
+            await this.cropImage(cropArea);
+            this.disableCropMode();
+        };
+        
+        const escHandler = (e) => {
+            if (e.key === 'Escape' && this.isCroppingMode) {
+                this.canvas.remove(cropRect);
+                this.disableCropMode();
+                this.showStatus('✖ Crop cancelled', 'info');
+            }
+        };
+        
+        this.canvas.on('mouse:down', mouseDownHandler);
+        this.canvas.on('mouse:move', mouseMoveHandler);
+        this.canvas.on('mouse:up', mouseUpHandler);
+        document.addEventListener('keydown', escHandler);
+        
+        this._cropHandlers = { mouseDownHandler, mouseMoveHandler, mouseUpHandler, escHandler };
+    }
+    
+    disableCropMode() {
+        this.isCroppingMode = false;
+        this.canvas.selection = true;
+        this.canvas.forEachObject(obj => {
+            obj.selectable = obj.boxType === 'rect';
+            obj.evented = true;
+        });
+        
+        if (this._cropHandlers) {
+            this.canvas.off('mouse:down', this._cropHandlers.mouseDownHandler);
+            this.canvas.off('mouse:move', this._cropHandlers.mouseMoveHandler);
+            this.canvas.off('mouse:up', this._cropHandlers.mouseUpHandler);
+            document.removeEventListener('keydown', this._cropHandlers.escHandler);
+            this._cropHandlers = null;
+        }
+        
+        const cropBtn = document.getElementById('editorCropBtn');
+        if (cropBtn) {
+            cropBtn.style.background = '';
+            cropBtn.style.color = '';
+            cropBtn.style.fontWeight = '';
+            cropBtn.textContent = '✂️ Crop (OFF)';
+        }
+    }
+    
+    toggleCropMode() {
+        const cropBtn = document.getElementById('editorCropBtn');
+        
+        if (this.isCroppingMode) {
+            this.disableCropMode();
+            this.showStatus('✅ Crop mode disabled', 'info');
+        } else {
+            if (this.isDrawingMode) {
+                this.disableActionDrawingMode();
+            }
+            this.enableCropMode();
+            cropBtn.style.background = '#4CAF50';
+            cropBtn.style.color = 'white';
+            cropBtn.style.fontWeight = 'bold';
+            cropBtn.textContent = '✂️ Crop (ON)';
         }
     }
     
@@ -925,146 +1214,10 @@ window.PanelEditor = class PanelEditor {
         this.canvas.renderAll();
     }
     
-    toggleCropMode() {
-        const cropBtn = document.getElementById('editorCropBtn');
-        if (this.isCroppingMode) {
-            this.disableCropMode();
-            this.showStatus('✖ Crop mode OFF', 'info');
-            if (cropBtn) cropBtn.textContent = '✂️ Crop (OFF)';
-        } else {
-            this.enableCropMode();
-            if (cropBtn) cropBtn.textContent = '✂️ Crop (ON)';
-        }
-    }
-    
-    enableCropMode() {
-        this.isCroppingMode = true;
-        this.canvas.selection = false;
-        this.canvas.forEachObject(obj => obj.selectable = false);
-        this.showStatus('✂️ Crop Mode ON - Drag to select crop area (ESC or click ✂️ to cancel)', 'info');
-        
-        const cropBtn = document.getElementById('editorCropBtn');
-        if (cropBtn) cropBtn.textContent = '✂️ Crop (ON)';
-        
-        const cropRect = new fabric.Rect({
-            left: 0,
-            top: 0,
-            width: 0,
-            height: 0,
-            fill: 'transparent',
-            stroke: '#00ff00',
-            strokeWidth: 3,
-            strokeUniform: true,
-            selectable: false,
-            evented: false
-        });
-        
-        let startX = 0, startY = 0;
-        let isDrawing = false;
-        
-        const mouseDownHandler = (e) => {
-            if (!this.isCroppingMode) return;
-            const pointer = this.canvas.getPointer(e.e);
-            startX = pointer.x;
-            startY = pointer.y;
-            isDrawing = true;
-            
-            cropRect.set({
-                left: startX,
-                top: startY,
-                width: 0,
-                height: 0
-            });
-            this.canvas.add(cropRect);
-        };
-        
-        const mouseMoveHandler = (e) => {
-            if (!this.isCroppingMode || !isDrawing) return;
-            const pointer = this.canvas.getPointer(e.e);
-            
-            const width = pointer.x - startX;
-            const height = pointer.y - startY;
-            
-            cropRect.set({
-                width: Math.abs(width),
-                height: Math.abs(height),
-                left: width < 0 ? pointer.x : startX,
-                top: height < 0 ? pointer.y : startY
-            });
-            this.canvas.renderAll();
-        };
-        
-        const mouseUpHandler = async () => {
-            if (!this.isCroppingMode || !isDrawing) return;
-            isDrawing = false;
-            
-            const cropArea = {
-                x: Math.round(cropRect.left),
-                y: Math.round(cropRect.top),
-                width: Math.round(cropRect.width),
-                height: Math.round(cropRect.height)
-            };
-            
-            this.canvas.remove(cropRect);
-            
-            if (cropArea.width < 10 || cropArea.height < 10) {
-                this.showStatus('⚠️ Crop area too small', 'error');
-                return;
-            }
-            
-            await this.cropImage(cropArea);
-        };
-        
-        const escHandler = (e) => {
-            if (e.key === 'Escape' && this.isCroppingMode) {
-                this.canvas.remove(cropRect);
-                this.disableCropMode();
-                this.showStatus('✖ Crop cancelled', 'info');
-            }
-        };
-        
-        this.canvas.on('mouse:down', mouseDownHandler);
-        this.canvas.on('mouse:move', mouseMoveHandler);
-        this.canvas.on('mouse:up', mouseUpHandler);
-        document.addEventListener('keydown', escHandler);
-        
-        this._cropHandlers = { mouseDownHandler, mouseMoveHandler, mouseUpHandler, escHandler };
-    }
-    
-    disableCropMode() {
-        this.isCroppingMode = false;
-        this.canvas.selection = true;
-        this.canvas.forEachObject(obj => obj.selectable = obj.boxType === 'rect');
-        
-        const cropBtn = document.getElementById('editorCropBtn');
-        if (cropBtn) cropBtn.textContent = '✂️ Crop (OFF)';
-        
-        if (this._cropHandlers) {
-            this.canvas.off('mouse:down', this._cropHandlers.mouseDownHandler);
-            this.canvas.off('mouse:move', this._cropHandlers.mouseMoveHandler);
-            this.canvas.off('mouse:up', this._cropHandlers.mouseUpHandler);
-            document.removeEventListener('keydown', this._cropHandlers.escHandler);
-            this._cropHandlers = null;
-        }
-        
-    }
-    
-    
-    async cropImage(cropArea) {
+    async saveFullScreenshotPanel() {
         try {
-            this.showStatus('✂️ Preview crop...', 'loading');
-            
-            const croppedBase64 = await this.cropBase64Image(this.imageBase64, cropArea);
-            
-            const userConfirmed = confirm('Lưu crop này không?\\n\\nOK = Có (tiếp tục)\\nCancel = Không (vẽ lại)');
-            
-            if (!userConfirmed) {
-                this.showStatus('↩️ Crop cancelled, vẽ lại crop area', 'info');
-                return;
-            }
-            
-            this.showStatus('✅ Saving panel with crop position...', 'success');
-            console.log('Saving original image + crop position');
+            this.isProcessing = true;
+            this.showStatus('💾 Saving panel with full screenshot...', 'loading');
             
             if (window.saveCroppedPanel && this.actionItemId) {
                 let parentPanelId = null;
@@ -1073,20 +1226,124 @@ window.PanelEditor = class PanelEditor {
                     parentPanelId = await window.getParentPanelOfAction(this.actionItemId);
                 }
                 
-                const isChildPanel = confirm('Panel này có phải con của panel chứa action không?\\n\\nOK = Có (tạo quan hệ cha-con)\\nCancel = Không (panel độc lập)');
-                
-                if (isChildPanel) {
-                    await window.saveCroppedPanel(this.imageBase64, cropArea, this.actionItemId, parentPanelId);
-                } else {
-                    await window.saveCroppedPanel(this.imageBase64, cropArea, this.actionItemId, null);
-                }
+                await window.saveCroppedPanel(this.imageBase64, null, this.actionItemId, parentPanelId);
                 this.destroy();
             } else {
-                this.destroy();
+                this.showStatus('❌ saveCroppedPanel not available', 'error');
+                this.isProcessing = false;
             }
         } catch (err) {
-            console.error('Failed to save crop:', err);
+            console.error('Failed to save panel:', err);
             this.showStatus('❌ Failed to save: ' + err.message, 'error');
+            this.isProcessing = false;
+        }
+    }
+    
+    async cropImage(cropArea) {
+        try {
+            this.showStatus('✂️ Analyzing crop area...', 'loading');
+            
+            const actionsToDelete = [];
+            const actionsToKeep = [];
+            
+            this.fabricObjects.forEach((boxData, id) => {
+                if (boxData.rect && typeof id === 'string' && id.includes('-')) {
+                    const rect = boxData.rect;
+                    const actionRight = rect.left + (rect.width * rect.scaleX);
+                    const actionBottom = rect.top + (rect.height * rect.scaleY);
+                    const cropRight = cropArea.x + cropArea.width;
+                    const cropBottom = cropArea.y + cropArea.height;
+                    
+                    const isFullyInside = 
+                        rect.left >= cropArea.x &&
+                        rect.top >= cropArea.y &&
+                        actionRight <= cropRight &&
+                        actionBottom <= cropBottom;
+                    
+                    if (!isFullyInside) {
+                        actionsToDelete.push(id);
+                    } else {
+                        actionsToKeep.push(id);
+                    }
+                }
+            });
+            
+            const totalActions = actionsToDelete.length + actionsToKeep.length;
+            let confirmMessage = 'Lưu crop này không?';
+            if (actionsToDelete.length > 0) {
+                console.log(\`  - Crop: Will remove \${actionsToDelete.length}/\${totalActions} actions outside crop area\`);
+                confirmMessage = \`Lưu crop này?\\n\\nSẽ xóa \${actionsToDelete.length}/\${totalActions} actions nằm ngoài vùng crop.\\n\\nOK = Lưu\\nCancel = Hủy\`;
+            }
+            
+            const userConfirmed = confirm(confirmMessage);
+            
+            if (!userConfirmed) {
+                this.showStatus('↩️ Crop cancelled', 'info');
+                return;
+            }
+            
+            this.isProcessing = true;
+            this.showStatus('💾 Saving cropped panel...', 'loading');
+            console.log('Saving panel with crop position:', cropArea);
+            
+            if (window.updatePanelImageAndCoordinates && this.eventId) {
+                const updatedGeminiResult = JSON.parse(JSON.stringify(this.geminiResult));
+                
+                actionsToDelete.sort((a, b) => {
+                    const [aPanelIdx, aActionIdx] = a.split('-').map(Number);
+                    const [bPanelIdx, bActionIdx] = b.split('-').map(Number);
+                    if (aPanelIdx !== bPanelIdx) return bPanelIdx - aPanelIdx;
+                    return bActionIdx - aActionIdx;
+                });
+                
+                const deletedActionsInfo = [];
+                actionsToDelete.forEach(id => {
+                    const [panelIdx, actionIdx] = id.split('-').map(Number);
+                    if (updatedGeminiResult[panelIdx] && updatedGeminiResult[panelIdx].actions) {
+                        const action = updatedGeminiResult[panelIdx].actions[actionIdx];
+                        if (action) {
+                            deletedActionsInfo.push({
+                                action_id: action.action_id,
+                                action_name: action.action_name,
+                                action_pos: action.action_pos
+                            });
+                        }
+                        updatedGeminiResult[panelIdx].actions.splice(actionIdx, 1);
+                    }
+                });
+                
+                updatedGeminiResult.forEach(panel => {
+                    panel.actions.forEach(action => {
+                        action.action_pos.x = Math.round(action.action_pos.x - cropArea.x);
+                        action.action_pos.y = Math.round(action.action_pos.y - cropArea.y);
+                    });
+                });
+                
+                await window.updatePanelImageAndCoordinates(
+                    this.eventId, 
+                    this.imageBase64,
+                    cropArea,
+                    updatedGeminiResult,
+                    deletedActionsInfo
+                );
+                
+                if (actionsToDelete.length > 0) {
+                    this.showStatus(\`✅ Saved! Removed \${actionsToDelete.length}/\${totalActions} actions\`, 'success');
+                } else {
+                    this.showStatus('✅ Cropped panel saved', 'success');
+                }
+                
+                setTimeout(() => {
+                    this.destroy();
+                }, 800);
+            } else {
+                this.showStatus('❌ updatePanelImageAndCoordinates not available', 'error');
+                this.isProcessing = false;
+            }
+        } catch (err) {
+            console.error('Failed to crop:', err);
+            this.showStatus('❌ Failed to crop: ' + err.message, 'error');
+            this.isProcessing = false;
         }
     }
     

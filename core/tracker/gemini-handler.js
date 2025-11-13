@@ -349,6 +349,12 @@ export async function detectScreenByGemini(tracker) {
                 if (scr.panel_id && tracker.dataItemManager && tracker.parentPanelManager) {
                     const actionsFromGemini = scaledGeminiJson[0]?.actions || [];
                     
+                    const panelItem = await tracker.dataItemManager.getItem(scr.panel_id);
+                    let pageNumber = null;
+                    if (panelItem && panelItem.item_category === 'PAGE') {
+                        pageNumber = panelItem.metadata?.p || null;
+                    }
+                    
                     const parentEntry = await tracker.parentPanelManager.getPanelEntry(scr.panel_id);
                     const existingActionIds = parentEntry?.child_actions || [];
                     
@@ -378,7 +384,8 @@ export async function detectScreenByGemini(tracker) {
                             action.action_type || 'button',
                             action.action_verb || 'click',
                             action.action_content || null,
-                            action.action_pos
+                            action.action_pos,
+                            pageNumber
                         );
                         
                         await tracker.parentPanelManager.addChildAction(scr.panel_id, actionItemId);
@@ -425,7 +432,7 @@ export async function detectScreenByGemini(tracker) {
     }
 }
 
-export async function detectScreenByDOM(tracker, panelId, fullPage = false, imageWidth = null, imageHeight = null) {
+export async function detectScreenByDOM(tracker, panelId, fullPage = false, imageWidth = null, imageHeight = null, skipDrawingBoundingBox = false) {
     if (!tracker.page || !panelId) return;
     
     tracker.geminiAsking = true;
@@ -453,6 +460,7 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
         let displayImage = panelItem.image_base64;
         let scaleX, scaleY;
         let actionsToProcess = [];
+        let parentPanelEntry = null;
         
         if (panelItem.crop_pos) {
             const { cropBase64Image } = await import('../media/screenshot.js');
@@ -494,6 +502,54 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             }));
             
             actionsToProcess = adjustedActions;
+        } else if (panelItem.item_category === 'PAGE') {
+            console.log('📄 PAGE detected: loading parent PANEL parent_dom and filtering by PAGE position');
+            
+            const { promises: fsp } = await import('fs');
+            const path = await import('path');
+            const parentPath = path.default.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            parentPanelEntry = allParents.find(p => 
+                p.child_pages && p.child_pages.some(pg => pg.page_id === panelId)
+            );
+            
+            if (!parentPanelEntry || !parentPanelEntry.parent_dom || parentPanelEntry.parent_dom.length === 0) {
+                console.error('❌ Parent PANEL has no parent_dom! Need to detect actions on PANEL first!');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Vui lòng detect actions trên PANEL trước!'
+                });
+                return [];
+            }
+            
+            const pageY = panelItem.metadata?.y || 0;
+            const pageH = panelItem.metadata?.h || 1080;
+            const pageBottom = pageY + pageH;
+            
+            const filteredActions = parentPanelEntry.parent_dom.filter(action => {
+                const pos = action.action_pos;
+                const actionCenterY = pos.y + pos.h / 2;
+                
+                return actionCenterY >= pageY && actionCenterY < pageBottom;
+            });
+            
+            console.log(`✂️ Filtered ${parentPanelEntry.parent_dom.length} → ${filteredActions.length} actions inside PAGE area`);
+            
+            const adjustedActions = filteredActions.map(action => ({
+                ...action,
+                action_pos: {
+                    x: Math.round(action.action_pos.x),
+                    y: Math.round(action.action_pos.y - pageY),
+                    w: Math.round(action.action_pos.w),
+                    h: Math.round(action.action_pos.h)
+                }
+            }));
+            
+            actionsToProcess = adjustedActions;
         } else {
             const domActions = await captureActionsFromDOM(tracker.page, null, fullPage, imageWidth, imageHeight);
             console.log(`🎯 [DOM] Detected ${domActions.length} interactive elements`);
@@ -519,6 +575,13 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
         
         const scaledDomActions = actionsToProcess;
         
+        if (scaledDomActions.length === 0 && panelItem.item_category === 'PAGE') {
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '⚠️ Không tìm thấy action nào trong PAGE này!'
+            });
+        }
+        
         if (tracker.dataItemManager && tracker.parentPanelManager) {
             const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
             const existingActionIds = parentEntry?.child_actions || [];
@@ -532,6 +595,11 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             existingNames.forEach(name => {
                 nameCountMap.set(name, (nameCountMap.get(name) || 0) + 1);
             });
+            
+            let pageNumber = null;
+            if (panelItem.item_category === 'PAGE') {
+                pageNumber = panelItem.metadata?.p || null;
+            }
             
             for (const action of scaledDomActions) {
                 let actionName = action.action_name;
@@ -549,10 +617,15 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
                     action.action_type || 'button',
                     action.action_verb || 'click',
                     action.action_content || null,
-                    action.action_pos
+                    action.action_pos,
+                    pageNumber
                 );
                 
-                await tracker.parentPanelManager.addChildAction(panelId, actionItemId);
+                if (panelItem.item_category === 'PAGE' && parentPanelEntry) {
+                    await tracker.parentPanelManager.addChildActionToPage(parentPanelEntry.parent_panel, panelId, actionItemId);
+                } else {
+                    await tracker.parentPanelManager.addChildAction(panelId, actionItemId);
+                }
             }
             
             console.log(`✅ Created ${scaledDomActions.length} actions in doing_item.jsonl`);
@@ -563,25 +636,43 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             actions: scaledDomActions
         }];
         
-        const screenshotWithBoxes = await drawPanelBoundingBoxes(
-            displayImage, 
-            geminiResult, 
-            '#00aaff', 
-            2
-        );
+        let screenshotToSend = displayImage;
+        if (!skipDrawingBoundingBox) {
+            screenshotToSend = await drawPanelBoundingBoxes(
+                displayImage, 
+                geminiResult, 
+                '#00aaff', 
+                2
+            );
+        }
         
-        const detectedPage = {
+        const baseEvent = {
             type: 'panel_selected',
             panel_id: panelId,
-            screenshot: screenshotWithBoxes,
-            gemini_result: geminiResult,
-            actions: scaledDomActions,
-            action_list: scaledDomActions.map(a => a.action_name).filter(Boolean).join(', '),
+            screenshot: screenshotToSend,
             gemini_detecting: false,
             timestamp: Date.now()
         };
         
-        await tracker._broadcast(detectedPage);
+        let broadcastEvent;
+        if (skipDrawingBoundingBox && panelItem.metadata?.w && panelItem.metadata?.h) {
+            broadcastEvent = {
+                ...baseEvent,
+                metadata: { w: panelItem.metadata.w, h: panelItem.metadata.h }
+            };
+        } else {
+            broadcastEvent = {
+                ...baseEvent,
+                gemini_result: geminiResult,
+                actions: scaledDomActions,
+                action_list: scaledDomActions.map(a => a.action_name).filter(Boolean).join(', ')
+            };
+            if (panelItem.metadata) {
+                broadcastEvent.metadata = panelItem.metadata;
+            }
+        }
+        
+        await tracker._broadcast(broadcastEvent);
         
         if (tracker.panelLogManager) {
             await tracker._broadcast({ 

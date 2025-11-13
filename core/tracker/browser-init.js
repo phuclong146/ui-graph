@@ -10,6 +10,12 @@ import { createQueuePageHandlers } from "./queue-page-handlers.js";
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// import { PuppeteerBlocker } from "@cliqz/adblocker-puppeteer";
+// import fetch from "node-fetch";
+import { join, dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export async function initBrowsers(tracker, startUrl) {
     tracker.urlTracking = startUrl;
@@ -32,15 +38,7 @@ export async function initBrowsers(tracker, startUrl) {
         tf: false,
         args: [
             `--window-size=${trackingWidth},${height}`,
-            '--window-position=0,0',
-            // '--no-first-run',
-            // '--no-default-browser-check',
-            // '--disable-blink-features=AutomationControlled',
-            // '--disable-infobars',
-            // '--disable-web-security',
-            // '--disable-features=IsolateOrigins,site-per-process',
-            // '--allow-running-insecure-content',
-            // '--disable-site-isolation-trials'
+            '--window-position=0,0'
         ],
         userDataDir: "./user_data",
         customConfig: {
@@ -56,6 +54,16 @@ export async function initBrowsers(tracker, startUrl) {
     tracker.page = initialPage;
     await tracker.page.setJavaScriptEnabled(true);
     await tracker.page.setBypassCSP(true);
+
+    // console.log("🛡️ Injecting adblock into tracking browser...");
+    // const blocker = await PuppeteerBlocker.fromPrebuiltFull(fetch, {
+    //     path: join(__dirname, '../lib/engine.bin'),
+    //     read: fsp.readFile,
+    //     write: fsp.writeFile,
+    // });
+    // await blocker.enableBlockingInPage(tracker.page);
+    // console.log("✅ Adblock injected successfully!");
+
     console.log("✅ Real Browser launched successfully!");
     tracker.queueBrowser = await puppeteer.launch({
         headless: false,
@@ -98,6 +106,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("captureActions", handlers.captureActions);
     await tracker.queuePage.exposeFunction("manualCaptureAIScrolling", handlers.manualCaptureAIScrolling);
     await tracker.queuePage.exposeFunction("captureActionsScrolling", handlers.captureActionsScrolling);
+    await tracker.queuePage.exposeFunction("detectPages", handlers.detectPages);
     await tracker.queuePage.exposeFunction("selectPanel", handlers.selectPanel);
     await tracker.queuePage.exposeFunction("getPanelTree", handlers.getPanelTree);
     await tracker.queuePage.exposeFunction("getPanelEditorClass", handlers.getPanelEditorClass);
@@ -109,13 +118,13 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("resetDrawingFlag", handlers.resetDrawingFlag);
     await tracker.queuePage.exposeFunction("checkActionHasStep", handlers.checkActionHasStep);
     await tracker.queuePage.exposeFunction("importCookiesFromJson", handlers.importCookiesFromJson);
+    await tracker.queuePage.exposeFunction("updatePanelImageAndCoordinates", handlers.updatePanelImageAndCoordinates);
 
-    await tracker.page.goto(startUrl);
+    await tracker.page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     const websites = await fetchWebsiteList();
     
     const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(path.dirname(path.dirname(__filename)));
-    const sessionsPath = path.join(__dirname, 'sessions');
+    const sessionsPath = path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
     
     let allSessions = [];
     try {

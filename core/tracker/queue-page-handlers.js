@@ -3,6 +3,115 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
+    const getActionIdsForItem = async (itemId, itemCategory) => {
+        if (itemCategory === 'PAGE') {
+            const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            const parentPanelEntry = allParents.find(p => 
+                p.child_pages && p.child_pages.some(pg => pg.page_id === itemId)
+            );
+            
+            if (parentPanelEntry) {
+                const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === itemId);
+                return childPage?.child_actions || [];
+            }
+            return [];
+        } else {
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(itemId);
+            return parentEntry?.child_actions || [];
+        }
+    };
+    
+    const rebroadcastPageIfActionUpdated = async (actionId) => {
+        if (!tracker.selectedPanelId) return;
+        
+        const selectedItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+        if (!selectedItem || selectedItem.item_category !== 'PAGE') return;
+        
+        const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+        const content = await fsp.readFile(parentPath, 'utf8');
+        const allParents = content.trim().split('\n')
+            .filter(line => line.trim())
+            .map(line => JSON.parse(line));
+        
+        const parentPanelEntry = allParents.find(p => 
+            p.child_pages && p.child_pages.some(pg => pg.page_id === tracker.selectedPanelId)
+        );
+        
+        if (parentPanelEntry) {
+            const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === tracker.selectedPanelId);
+            const actionIds = childPage?.child_actions || [];
+            
+            if (actionIds.includes(actionId)) {
+                await selectPanelHandler(tracker.selectedPanelId);
+            }
+        }
+    };
+    
+    const addActionToItem = async (itemId, itemCategory, actionId) => {
+        if (itemCategory === 'PAGE') {
+            const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            const parentPanelEntry = allParents.find(p => 
+                p.child_pages && p.child_pages.some(pg => pg.page_id === itemId)
+            );
+            
+            if (parentPanelEntry) {
+                const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === itemId);
+                if (childPage) {
+                    childPage.child_actions.push(actionId);
+                    
+                    const index = allParents.findIndex(e => e.parent_panel === parentPanelEntry.parent_panel);
+                    if (index !== -1) {
+                        allParents[index] = parentPanelEntry;
+                        await fsp.writeFile(parentPath, allParents.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+                    }
+                }
+            }
+        } else {
+            await tracker.parentPanelManager.addChildAction(itemId, actionId);
+        }
+    };
+    
+    const removeActionFromItem = async (itemId, itemCategory, actionId) => {
+        await tracker.dataItemManager.deleteItem(actionId);
+        
+        if (itemCategory === 'PAGE') {
+            const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            const parentPanelEntry = allParents.find(p => 
+                p.child_pages && p.child_pages.some(pg => pg.page_id === itemId)
+            );
+            
+            if (parentPanelEntry) {
+                const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === itemId);
+                if (childPage) {
+                    childPage.child_actions = childPage.child_actions.filter(id => id !== actionId);
+                    
+                    const index = allParents.findIndex(e => e.parent_panel === parentPanelEntry.parent_panel);
+                    if (index !== -1) {
+                        allParents[index] = parentPanelEntry;
+                        await fsp.writeFile(parentPath, allParents.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+                    }
+                }
+            }
+        } else {
+            await tracker.parentPanelManager.removeChildAction(itemId, actionId);
+        }
+    };
+    
     const quitAppHandler = async () => {
         await tracker.close();
     };
@@ -87,8 +196,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log(`Opening editor for panel: ${tracker.selectedPanelId}`);
             
             const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-            if (!panelItem || panelItem.item_category !== 'PANEL') {
-                console.error('Selected item is not a PANEL');
+            if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) {
+                console.error('Selected item is not a PANEL or PAGE');
                 return;
             }
             
@@ -97,9 +206,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
             
-            const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
-            const actionIds = parentEntry?.child_actions || [];
-            
+            const actionIds = await getActionIdsForItem(tracker.selectedPanelId, panelItem.item_category);
             const actions = [];
             for (const actionId of actionIds) {
                 const actionItem = await tracker.dataItemManager.getItem(actionId);
@@ -138,12 +245,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.queuePage.evaluate(async (data) => {
                 eval(data.panelEditorClassCode);
                 
-                const editor = new PanelEditor(data.imageBase64, data.geminiResult);
+                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId);
                 await editor.init();
             }, { 
                 geminiResult: geminiResult, 
                 imageBase64: editorImage,
-                panelEditorClassCode: getPanelEditorClassCode()
+                panelEditorClassCode: getPanelEditorClassCode(),
+                panelId: tracker.selectedPanelId
             });
             
         } catch (err) {
@@ -160,9 +268,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (tracker.dataItemManager && tracker.parentPanelManager && tracker.selectedPanelId) {
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
                 
-                if (panelItem && panelItem.item_category === 'PANEL' && Array.isArray(newActions)) {
-                    const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
-                    const currentActionIds = parentEntry?.child_actions || [];
+                if (panelItem && (panelItem.item_category === 'PANEL' || panelItem.item_category === 'PAGE') && Array.isArray(newActions)) {
+                    const currentActionIds = await getActionIdsForItem(tracker.selectedPanelId, panelItem.item_category);
                     
                     const currentActions = await Promise.all(
                         currentActionIds.map(id => tracker.dataItemManager.getItem(id))
@@ -233,10 +340,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             actionData.action_type || 'button',
                             actionData.action_verb || 'click',
                             actionData.action_content || null,
-                            actionData.action_pos
+                            actionData.action_pos,
+                            null
                         );
                         
-                        await tracker.parentPanelManager.addChildAction(tracker.selectedPanelId, actionItemId);
+                        await addActionToItem(tracker.selectedPanelId, panelItem.item_category, actionItemId);
                     }
                     
                     for (const actionItem of toDelete) {
@@ -244,8 +352,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             await tracker.cancelPanelRecording();
                         }
                         
-                        await tracker.dataItemManager.deleteItem(actionItem.item_id);
-                        await tracker.parentPanelManager.removeChildAction(tracker.selectedPanelId, actionItem.item_id);
+                        await removeActionFromItem(tracker.selectedPanelId, panelItem.item_category, actionItem.item_id);
                         await tracker.clickManager.deleteClicksForAction(actionItem.item_id);
                         await tracker.stepManager.deleteStepsForAction(actionItem.item_id);
                     }
@@ -307,30 +414,38 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let videoUrl = null;
             
             if (recordingInfo && recordingInfo.panelId) {
-                const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
-                const { ENV } = await import('../config/env.js');
-                videoUrl = await uploadVideoAndGetUrl(
-                    recordingInfo.videoPath,
-                    recordingInfo.panelId,
-                    ENV.API_TOKEN
-                );
-                
-                if (videoUrl) {
-                    console.log(`📹 Video URL: ${videoUrl}`);
-                    await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
-                        metadata: {
-                            ...actionItem.metadata,
-                            session_url: videoUrl,
-                            session_start: recordingInfo.sessionStart,
-                            session_end: recordingInfo.sessionEnd
+                try {
+                    const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
+                    const { ENV } = await import('../config/env.js');
+                    const exists = await fsp.access(recordingInfo.videoPath).then(() => true).catch(() => false);
+                    if (exists) {
+                        videoUrl = await uploadVideoAndGetUrl(
+                            recordingInfo.videoPath,
+                            recordingInfo.panelId,
+                            ENV.API_TOKEN
+                        );
+                        if (videoUrl) {
+                            console.log(`📹 Video URL: ${videoUrl}`);
+                            await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                                metadata: {
+                                    ...actionItem.metadata,
+                                    session_url: videoUrl,
+                                    session_start: recordingInfo.sessionStart,
+                                    session_end: recordingInfo.sessionEnd
+                                }
+                            });
+                            await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
                         }
-                    });
-                    await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
+                    } else {
+                        console.warn('⚠️ Recording file not found, skip upload:', recordingInfo.videoPath);
+                    }
+                } catch (uploadErr) {
+                    console.error('Failed to upload panel recording:', uploadErr);
                 }
             }
             
             if (mode === 'USE_BEFORE') {
-                console.log('Using panel before (no new panel created)');
+                console.log('Using current panel (no new panel created)');
                 
                 const parentPanelId = await getParentPanelOfActionHandler(tracker.selectedPanelId);
                 
@@ -347,37 +462,55 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await selectPanelHandler(tracker.selectedPanelId);
                     await tracker._broadcast({ type: 'show_toast', message: '✓ Marked done!' });
                     
-                    console.log(`✅ Action "${actionItem.name}" uses panel before (${parentPanelId})`);
+                    console.log(`✅ Action "${actionItem.name}" uses current panel (${parentPanelId})`);
                 }
                 
                 return { mode: 'USE_BEFORE' };
             }
             
-            console.log('Draw NEW panel - Starting crop workflow...');
+            console.log('Create new panel - Creating empty panel entry...');
 
-            const originalViewport = tracker.page.viewport() || await tracker.page.evaluate(() => ({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                deviceScaleFactor: window.devicePixelRatio
-            }));
+            const parentPanelId = await getParentPanelOfActionHandler(tracker.selectedPanelId);
 
-            await tracker.page.setViewport({
-                width: 1920,
-                height: 1080,
-                deviceScaleFactor: 1
-            });
+            if (!parentPanelId) {
+                console.error('Cannot find parent panel for action');
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Không tìm thấy panel cha!' });
+                return { mode: 'DRAW_NEW', success: false };
+            }
 
-            const { captureScreenshot } = await import('../media/screenshot.js');
-            const screenshot = await captureScreenshot(tracker.page, "base64", false);
+            const newPanelName = actionItem.name + ' Panel';
+            const newPanelId = await tracker.dataItemManager.createPanel(newPanelName, null, null);
 
-            await tracker.page.setViewport(originalViewport);
+            await tracker.parentPanelManager.createPanelEntry(newPanelId);
+            let makeChild = true;
+            try {
+                makeChild = await tracker.queuePage.evaluate(() => confirm('Panel mới là panel con của panel hiện tại?'));
+            } catch (e) {
+                makeChild = true;
+            }
+            if (makeChild) {
+                await tracker.parentPanelManager.addChildPanel(parentPanelId, newPanelId);
+            }
 
-            return {
-                mode: 'DRAW_NEW', 
-                screenshot: screenshot,
-                actionItemId: tracker.selectedPanelId,
-                actionName: actionItem.name
-            };
+            await tracker.stepManager.createStep(
+                parentPanelId,
+                tracker.selectedPanelId,
+                newPanelId
+            );
+
+            await tracker.dataItemManager.updateItem(tracker.selectedPanelId, { status: 'completed' });
+
+            await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
+
+            await selectPanelHandler(tracker.selectedPanelId);
+
+            await checkAndUpdatePanelStatusHandler(parentPanelId);
+
+            await tracker._broadcast({ type: 'show_toast', message: `✅ Đã tạo panel rỗng: "${newPanelName}"` });
+
+            console.log(`✅ Create new panel completed: "${newPanelName}" (${newPanelId})`);
+
+            return { mode: 'DRAW_NEW', panelId: newPanelId, panelName: newPanelName, success: true };
             
         } catch (err) {
             console.error('Failed to draw panel:', err);
@@ -405,15 +538,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
             
-            const cropPos = {
+            const cropPos = cropArea ? {
                 x: Math.round(cropArea.x),
                 y: Math.round(cropArea.y),
                 w: Math.round(cropArea.width),
                 h: Math.round(cropArea.height)
-            };
+            } : null;
             
             const newPanelName = actionItem.name + ' Panel';
             const newPanelId = await tracker.dataItemManager.createPanel(newPanelName, originalImageBase64, cropPos);
+            
+            const sharp = (await import('sharp')).default;
+            const fullBuffer = Buffer.from(originalImageBase64, "base64");
+            const fullMeta = await sharp(fullBuffer).metadata();
+            
+            await tracker.dataItemManager.updateItem(newPanelId, {
+                metadata: {
+                    w: fullMeta.width,
+                    h: fullMeta.height
+                }
+            });
             
             await tracker.parentPanelManager.createPanelEntry(newPanelId);
 
@@ -435,9 +579,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.page.setViewport(originalViewport);
             
             if (domActions && domActions.length > 0) {
-                const sharp = (await import('sharp')).default;
-                const fullBuffer = Buffer.from(originalImageBase64, "base64");
-                const fullMeta = await sharp(fullBuffer).metadata();
                 
                 const scaleX = fullMeta.width / 1000;
                 const scaleY = fullMeta.height / 1000;
@@ -496,12 +637,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (!targetItemId) return;
             
             const item = await tracker.dataItemManager.getItem(targetItemId);
-            if (!item || item.item_category !== 'PANEL') {
-                console.error('Item is not a PANEL');
+            if (!item || (item.item_category !== 'PANEL' && item.item_category !== 'PAGE')) {
+                console.error('Item is not a PANEL or PAGE');
                 return;
             }
             
-            if (item.name !== 'After Login Panel') {
+            if (item.item_category === 'PANEL' && item.name !== 'After Login Panel') {
                 console.log('Non-root panel → Deleting panel instead of reset');
                 await deleteEventHandler(targetItemId);
                 return;
@@ -513,51 +654,111 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await tracker.cancelPanelRecording();
             }
             
-            const descendants = await tracker.parentPanelManager.getAllDescendants(targetItemId);
-            
-            await tracker.dataItemManager.deleteItems(descendants);
-            await tracker.clickManager.deleteClicksForActions(descendants);
-            await tracker.stepManager.deleteStepsForItems(descendants);
-            
-            for (const id of descendants) {
-                await tracker.parentPanelManager.deletePanelEntry(id);
-            }
-            
-            const parentEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
-            if (parentEntry) {
-                parentEntry.child_actions = [];
-                parentEntry.child_panels = [];
-                
+            if (item.item_category === 'PAGE') {
                 const { promises: fsp } = await import('fs');
                 const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
                 const content = await fsp.readFile(parentPath, 'utf8');
-                const entries = content.trim().split('\n')
+                const allParents = content.trim().split('\n')
                     .filter(line => line.trim())
                     .map(line => JSON.parse(line));
                 
-                const index = entries.findIndex(e => e.parent_panel === targetItemId);
-                if (index !== -1) {
-                    entries[index] = parentEntry;
-                    await fsp.writeFile(parentPath, entries.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+                const parentPanelEntry = allParents.find(p => 
+                    p.child_pages && p.child_pages.some(pg => pg.page_id === targetItemId)
+                );
+                
+                if (parentPanelEntry) {
+                    const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === targetItemId);
+                    if (childPage && childPage.child_actions) {
+                        await tracker.dataItemManager.deleteItems(childPage.child_actions);
+                        await tracker.clickManager.deleteClicksForActions(childPage.child_actions);
+                        await tracker.stepManager.deleteStepsForItems(childPage.child_actions);
+                        
+                        childPage.child_actions = [];
+                        
+                        const index = allParents.findIndex(e => e.parent_panel === parentPanelEntry.parent_panel);
+                        if (index !== -1) {
+                            allParents[index] = parentPanelEntry;
+                            await fsp.writeFile(parentPath, allParents.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+                        }
+                    }
                 }
+                
+                await tracker.dataItemManager.updateItem(targetItemId, {
+                    status: 'pending',
+                    crop_pos: null
+                });
+            } else {
+                const descendants = await tracker.parentPanelManager.getAllDescendants(targetItemId);
+                
+                await tracker.dataItemManager.deleteItems(descendants);
+                await tracker.clickManager.deleteClicksForActions(descendants);
+                await tracker.stepManager.deleteStepsForItems(descendants);
+                
+                for (const id of descendants) {
+                    await tracker.parentPanelManager.deletePanelEntry(id);
+                }
+                
+                const parentEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
+                if (parentEntry) {
+                    if (parentEntry.child_pages) {
+                        for (const pageEntry of parentEntry.child_pages) {
+                            await tracker.dataItemManager.deleteItem(pageEntry.page_id);
+                        }
+                    }
+                    
+                    parentEntry.child_pages = [];
+                    parentEntry.child_actions = [];
+                    parentEntry.child_panels = [];
+                    
+                    const { promises: fsp } = await import('fs');
+                    const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+                    const content = await fsp.readFile(parentPath, 'utf8');
+                    const entries = content.trim().split('\n')
+                        .filter(line => line.trim())
+                        .map(line => JSON.parse(line));
+                    
+                    const index = entries.findIndex(e => e.parent_panel === targetItemId);
+                    if (index !== -1) {
+                        entries[index] = parentEntry;
+                        await fsp.writeFile(parentPath, entries.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+                    }
+                }
+                
+                await tracker.dataItemManager.updateItem(targetItemId, {
+                    status: 'pending',
+                    image_base64: null,
+                    image_url: null,
+                    crop_pos: null
+                });
             }
-            
-            await tracker.dataItemManager.updateItem(targetItemId, {
-                status: 'pending',
-                image_base64: null,
-                image_url: null
-            });
             
             await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
             
-            await tracker._broadcast({
+            const updatedItem = await tracker.dataItemManager.getItem(targetItemId);
+            const broadcastData = {
                 type: 'panel_selected',
                 panel_id: targetItemId,
-                item_category: 'PANEL',
+                item_category: item.item_category,
                 timestamp: Date.now()
-            });
+            };
             
-            console.log(`♻️ Reset panel ${targetItemId} to pending, deleted ${descendants.length} descendants`);
+            if (item.item_category === 'PAGE' && updatedItem.image_base64) {
+                let displayImage = updatedItem.image_base64;
+                if (updatedItem.crop_pos) {
+                    const { cropBase64Image } = await import('../media/screenshot.js');
+                    displayImage = await cropBase64Image(updatedItem.image_base64, updatedItem.crop_pos);
+                }
+                broadcastData.screenshot = displayImage;
+                broadcastData.metadata = updatedItem.metadata;
+            }
+            
+            await tracker._broadcast(broadcastData);
+            
+            if (item.item_category === 'PAGE') {
+                console.log(`♻️ Reset PAGE ${targetItemId} to pending, deleted actions`);
+            } else {
+                console.log(`♻️ Reset PANEL ${targetItemId} to pending, deleted pages and image`);
+            }
         } catch (err) {
             console.error('Failed to reset panel:', err);
         }
@@ -732,27 +933,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             if (tracker.selectedPanelId && tracker.dataItemManager && tracker.parentPanelManager) {
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-                if (panelItem && panelItem.status === 'completed') {
-                    console.warn('⚠️ Panel already completed. Reset panel first.');
+                
+                if (!panelItem || panelItem.item_category !== 'PAGE') {
+                    console.error('Selected item is not a PAGE');
                     await tracker._broadcast({
                         type: 'show_toast',
-                        message: '⚠️ Panel đã completed! Bấm Reset (↺) nếu muốn chụp lại.'
+                        message: '⚠️ Chỉ có thể detect actions trên PAGE!'
                     });
                     return;
                 }
                 
-                const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
-                if (parentEntry && parentEntry.child_actions && parentEntry.child_actions.length > 0) {
-                    console.warn('⚠️ Panel already has actions. Reset panel first.');
+                if (panelItem.status === 'completed') {
+                    console.warn('⚠️ Page already completed.');
                     await tracker._broadcast({
                         type: 'show_toast',
-                        message: '⚠️ Panel đã có actions! Bấm Reset (↺) nếu muốn detect lại.'
+                        message: '⚠️ Page đã completed!'
                     });
                     return;
                 }
             }
             
-            console.log('🤖 Gemini AI capture triggered');
+            console.log('🤖 Gemini AI capture on PAGE triggered');
             
             const recordingResult = await tracker.stopPanelRecording();
             
@@ -868,82 +1069,133 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.error('No panel selected or managers not initialized');
                 await tracker._broadcast({
                     type: 'show_toast',
-                    message: '⚠️ Vui lòng chọn panel trước!'
+                    message: '⚠️ Vui lòng chọn page trước!'
                 });
                 return;
             }
             
             const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-            if (!panelItem || panelItem.item_category !== 'PANEL') {
-                console.error('Selected item is not a PANEL');
+            if (!panelItem || panelItem.item_category !== 'PAGE') {
+                console.error('Selected item is not a PAGE');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Chỉ có thể detect actions trên PAGE!'
+                });
                 return;
             }
             
             if (panelItem.status === 'completed') {
-                console.warn('⚠️ Panel already completed. Reset panel first.');
+                console.warn('⚠️ Page already completed.');
                 await tracker._broadcast({
                     type: 'show_toast',
-                    message: '⚠️ Panel đã completed! Bấm Reset (↺) nếu muốn chụp lại.'
+                    message: '⚠️ Page đã completed!'
                 });
                 return;
             }
             
-            const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
-            if (parentEntry && parentEntry.child_actions && parentEntry.child_actions.length > 0) {
-                console.warn('⚠️ Panel already has actions. Reset panel first.');
-                await tracker._broadcast({
-                    type: 'show_toast',
-                    message: '⚠️ Panel đã có actions! Bấm Reset (↺) nếu muốn capture lại.'
-                });
-                return;
+            const { promises: fsp } = await import('fs');
+            const path = await import('path');
+            const parentPath = path.default.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            const parentPanelEntry = allParents.find(p => 
+                p.child_pages && p.child_pages.some(pg => pg.page_id === tracker.selectedPanelId)
+            );
+            
+            if (parentPanelEntry) {
+                const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === tracker.selectedPanelId);
+                if (childPage && childPage.child_actions && childPage.child_actions.length > 0) {
+                    console.warn('⚠️ Page already has actions. Reset page first.');
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '⚠️ Page đã có actions! Bấm Reset (↺) nếu muốn detect lại.'
+                    });
+                    return;
+                }
             }
             
             console.log('📸 DOM Capture triggered');
             
             const recordingResult = await tracker.stopPanelRecording();
             
-            const originalViewport = tracker.page.viewport() || await tracker.page.evaluate(() => ({
-                width: window.innerWidth,
-                height: window.innerHeight,
-                deviceScaleFactor: window.devicePixelRatio
-            }));
+            let screenshot = null;
+            let imageWidth = 0;
+            let imageHeight = 0;
+            let displayScreenshot = null;
             
-            await tracker.page.setViewport({
-                width: 1920,
-                height: 1080,
-                deviceScaleFactor: 1
-            });
-            
-            await tracker.page.evaluate(() => {
-                document.documentElement.style.overflow = 'hidden';
-                document.body.style.overflow = 'hidden';
-            });
-            
-            const { captureScreenshot } = await import('../media/screenshot.js');
-            const screenshot = await captureScreenshot(tracker.page, "base64", false);
-            
-            await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
-                image_base64: screenshot
-            });
-            
-            const sharp = (await import('sharp')).default;
-            const buffer = Buffer.from(screenshot, 'base64');
-            const metadata = await sharp(buffer).metadata();
-            const imageWidth = metadata.width;
-            const imageHeight = metadata.height;
-            console.log(`📐 Image captured: ${imageWidth}x${imageHeight}`);
-            
-            let displayScreenshot = screenshot;
-            
-            if (panelItem.crop_pos) {
-                const { cropBase64Image } = await import('../media/screenshot.js');
-                displayScreenshot = await cropBase64Image(screenshot, panelItem.crop_pos);
+            if (panelItem.item_category === 'PAGE') {
+                if (!panelItem.image_base64) {
+                    console.error('PAGE has no image_base64');
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '⚠️ PAGE không có screenshot!'
+                    });
+                    return;
+                }
+                
+                screenshot = panelItem.image_base64;
+                displayScreenshot = screenshot;
+                console.log('✅ Using PAGE image_base64 (no capture)');
+                
+                const sharp = (await import('sharp')).default;
+                const buffer = Buffer.from(screenshot, 'base64');
+                const metadata = await sharp(buffer).metadata();
+                imageWidth = metadata.width;
+                imageHeight = metadata.height;
+                console.log(`📐 Page image: ${imageWidth}x${imageHeight}`);
+            } else {
+                const originalViewport = tracker.page.viewport() || await tracker.page.evaluate(() => ({
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    deviceScaleFactor: window.devicePixelRatio
+                }));
+                
+                await tracker.page.setViewport({
+                    width: 1920,
+                    height: 1080,
+                    deviceScaleFactor: 1
+                });
+                
+                await tracker.page.evaluate(() => {
+                    document.documentElement.style.overflow = 'hidden';
+                    document.body.style.overflow = 'hidden';
+                });
+                
+                const { captureScreenshot } = await import('../media/screenshot.js');
+                screenshot = await captureScreenshot(tracker.page, "base64", false);
+                
+                await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                    image_base64: screenshot
+                });
+                
+                const sharp = (await import('sharp')).default;
+                const buffer = Buffer.from(screenshot, 'base64');
+                const metadata = await sharp(buffer).metadata();
+                imageWidth = metadata.width;
+                imageHeight = metadata.height;
+                console.log(`📐 Image captured: ${imageWidth}x${imageHeight}`);
+                
+                displayScreenshot = screenshot;
+                
+                if (panelItem.crop_pos) {
+                    const { cropBase64Image } = await import('../media/screenshot.js');
+                    displayScreenshot = await cropBase64Image(screenshot, panelItem.crop_pos);
+                }
+                
+                await tracker.page.evaluate(() => {
+                    document.documentElement.style.overflow = '';
+                    document.body.style.overflow = '';
+                });
+                await tracker.page.setViewport(originalViewport);
             }
             
             await tracker._broadcast({
                 type: 'panel_selected',
                 panel_id: tracker.selectedPanelId,
-                item_category: 'PANEL',
+                item_category: panelItem.item_category,
                 screenshot: displayScreenshot,
                 actions: [],
                 action_list: '⏳ Capturing...',
@@ -951,16 +1203,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 timestamp: Date.now()
             });
             
-            try {
-                const { detectScreenByDOM } = await import('./gemini-handler.js');
-                await detectScreenByDOM(tracker, tracker.selectedPanelId, false, imageWidth, imageHeight);
-            } finally {
-                await tracker.page.evaluate(() => {
-                    document.documentElement.style.overflow = '';
-                    document.body.style.overflow = '';
-                });
-                await tracker.page.setViewport(originalViewport);
-            }
+            const { detectScreenByDOM } = await import('./gemini-handler.js');
+            const isFullPage = panelItem.item_category === 'PAGE';
+            await detectScreenByDOM(tracker, tracker.selectedPanelId, isFullPage, imageWidth, imageHeight);
             
             if (recordingResult && tracker.dataItemManager) {
                 const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
@@ -1132,6 +1377,146 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const detectPagesHandler = async () => {
+        try {
+            if (!tracker.selectedPanelId || !tracker.dataItemManager) {
+                console.error('No panel selected or managers not initialized');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Vui lòng chọn panel trước!'
+                });
+                return;
+            }
+            
+            const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+            if (!panelItem || panelItem.item_category !== 'PANEL') {
+                console.error('Selected item is not a PANEL');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Item không phải PANEL!'
+                });
+                return;
+            }
+            
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
+            if (parentEntry && parentEntry.child_pages && parentEntry.child_pages.length > 0) {
+                console.warn('⚠️ Panel already has pages. Reset panel first.');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Panel đã có pages! Bấm Reset (↺) nếu muốn detect lại.'
+                });
+                return;
+            }
+            
+            console.log('📸 Detect Pages: Capturing long scroll screenshot...');
+            await tracker._broadcast({
+                type: 'detect_pages_status',
+                in_progress: true,
+                source: 'queue',
+                timestamp: Date.now()
+            });
+            
+            await tracker.page.evaluate(() => {
+                document.documentElement.style.overflow = 'hidden';
+                document.body.style.overflow = 'hidden';
+            });
+            
+            const { captureScreenshot } = await import('../media/screenshot.js');
+            const result = await captureScreenshot(tracker.page, "base64", true, true);
+            const { screenshot, imageWidth, imageHeight, restoreViewport } = result;
+            console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
+            
+            await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                image_base64: screenshot,
+                metadata: {
+                    w: imageWidth,
+                    h: imageHeight
+                }
+            });
+            
+            console.log('📐 Auto-splitting into pages...');
+            const sharp = (await import('sharp')).default;
+            const imageBuffer = Buffer.from(screenshot, 'base64');
+            
+            const pageHeight = 1080;
+            const pageWidth = 1920;
+            const numPages = Math.ceil(imageHeight / pageHeight);
+            
+            const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+            
+            for (let i = 0; i < numPages; i++) {
+                const y = i * pageHeight;
+                const h = Math.min(pageHeight, imageHeight - y);
+                
+                console.log(`  📄 Creating Page ${i + 1}/${numPages} at y=${y}, h=${h}`);
+                
+                const pageBuffer = await sharp(imageBuffer)
+                    .extract({ left: 0, top: y, width: pageWidth, height: h })
+                    .toBuffer();
+                
+                const pageBase64 = pageBuffer.toString('base64');
+                const pageNumber = i + 1;
+                
+                const pageId = await tracker.dataItemManager.createPage(
+                    pageNumber,
+                    pageBase64,
+                    { x: 0, y, w: pageWidth, h }
+                );
+                
+                await tracker.parentPanelManager.addChildPage(tracker.selectedPanelId, pageNumber, pageId);
+                
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: `📄 Created Page ${pageNumber}/${numPages}`
+                });
+            }
+            
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+            
+            try {
+                console.log('🌐 Auto-detecting actions on PANEL (full page)...');
+                const { detectScreenByDOM } = await import('./gemini-handler.js');
+                await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
+            } finally {
+                await tracker.page.evaluate(() => {
+                    document.documentElement.style.overflow = '';
+                    document.body.style.overflow = '';
+                });
+                if (restoreViewport) {
+                    await restoreViewport();
+                }
+            }
+            
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `✅ Created ${numPages} pages + detected actions`
+            });
+            
+            console.log(`✅ Detect Pages completed: ${numPages} pages created`);
+            await tracker._broadcast({
+                type: 'detect_pages_status',
+                in_progress: false,
+                source: 'queue',
+                timestamp: Date.now()
+            });
+        } catch (err) {
+            console.error('Failed to detect pages:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '❌ Capture failed!'
+            });
+            await tracker._broadcast({
+                type: 'detect_pages_status',
+                in_progress: false,
+                source: 'queue',
+                timestamp: Date.now()
+            });
+        }
+    };
+
     const captureActionsScrollingHandler = async () => {
         try {
             if (tracker.geminiAsking) {
@@ -1214,7 +1599,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             try {
                 const { detectScreenByDOM } = await import('./gemini-handler.js');
-                await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight);
+                await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
                 await tracker.page.evaluate(() => {
                     document.documentElement.style.overflow = '';
@@ -1269,6 +1654,25 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const selectPanelHandler = async (itemId) => {
         try {
+            if (tracker.isLoadingSelection) {
+                const loadingItem = await tracker.dataItemManager.getItem(tracker.loadingSelectionId);
+                const loadingName = loadingItem?.name || 'item';
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: `⏳ Vui lòng chờ yêu cầu cho "${loadingName}" xử lý xong`
+                });
+                return;
+            }
+            
+            tracker.isLoadingSelection = true;
+            tracker.loadingSelectionId = itemId;
+            
+            await tracker._broadcast({
+                type: 'tree_loading_state',
+                loading: true,
+                itemId: itemId
+            });
+            
             if (tracker.isRecordingPanel && tracker.recordingPanelId !== itemId) {
                 await tracker.cancelPanelRecording();
             }
@@ -1287,11 +1691,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
             
             if (item.item_category === 'ACTION' && item.status === 'pending' && !item.metadata?.session_url) {
-                await tracker.startPanelRecording(itemId);
-                await tracker._broadcast({
-                    type: 'show_toast',
-                    message: '🎬 Recording...'
-                });
+                const { ENV } = await import('../config/env.js');
+                const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
+                if (enable) {
+                    await tracker.startPanelRecording(itemId);
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '🎬 Recording...'
+                    });
+                }
             }
             
             let screenshot = null;
@@ -1322,7 +1730,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
                 
-                actionList = actions.map(a => a.action_name).filter(Boolean).join(', ');
+                if (!(item.metadata?.w && item.metadata?.h)) {
+                    actionList = actions.map(a => a.action_name).filter(Boolean).join(', ');
+                }
                 
                 let displayImage = item.image_base64;
                 
@@ -1332,12 +1742,57 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`✂️ Cropped panel image with crop_pos:`, item.crop_pos);
                 }
                 
-                if (displayImage && actions.length > 0) {
-                    const { drawPanelBoundingBoxes } = await import('../media/screenshot.js');
-                    const geminiResult = [{ panel_title: item.name, actions: actions }];
-                    screenshot = await drawPanelBoundingBoxes(displayImage, geminiResult, '#00aaff', 2);
-                } else if (displayImage) {
-                    screenshot = displayImage;
+                screenshot = displayImage;
+            } else if (item.item_category === 'PAGE') {
+                let displayImage = item.image_base64;
+                if (item.crop_pos) {
+                    const { cropBase64Image } = await import('../media/screenshot.js');
+                    displayImage = await cropBase64Image(item.image_base64, item.crop_pos);
+                }
+                screenshot = displayImage;
+                
+                const { promises: fsp } = await import('fs');
+                const path = await import('path');
+                const parentPath = path.default.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+                const content = await fsp.readFile(parentPath, 'utf8');
+                const allParents = content.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                
+                const parentPanelEntry = allParents.find(p => 
+                    p.child_pages && p.child_pages.some(pg => pg.page_id === itemId)
+                );
+                
+                if (parentPanelEntry) {
+                    const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === itemId);
+                    const actionIds = childPage?.child_actions || [];
+                    
+                    for (const actionId of actionIds) {
+                        const actionItem = await tracker.dataItemManager.getItem(actionId);
+                        if (actionItem) {
+                            actions.push({
+                                action_id: actionItem.item_id,
+                                action_name: actionItem.name,
+                                action_type: actionItem.type,
+                                action_verb: actionItem.verb,
+                                action_content: actionItem.content,
+                                action_pos: {
+                                    x: actionItem.metadata?.x || 0,
+                                    y: actionItem.metadata?.y || 0,
+                                    w: actionItem.metadata?.w || 0,
+                                    h: actionItem.metadata?.h || 0
+                                }
+                            });
+                        }
+                    }
+                    
+                    actionList = actions.map(a => a.action_name).filter(Boolean).join(', ');
+                    
+                    if (screenshot && actions.length > 0) {
+                        const { drawPanelBoundingBoxes } = await import('../media/screenshot.js');
+                        const geminiResult = [{ panel_title: item.name, actions: actions }];
+                        screenshot = await drawPanelBoundingBoxes(screenshot, geminiResult, '#00aaff', 2);
+                    }
                 }
             } else if (item.item_category === 'ACTION') {
                 actionInfo = {
@@ -1369,20 +1824,51 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
             
-            const updatedEvent = {
+            const baseEvent = {
                 type: 'panel_selected',
                 panel_id: itemId,
                 item_category: item.item_category,
                 screenshot: screenshot,
-                actions: actions,
-                action_list: actionList,
-                action_info: actionInfo,
                 timestamp: Date.now()
             };
+            
+            let updatedEvent;
+            if (item.item_category === 'PANEL' && item.metadata?.w && item.metadata?.h) {
+                updatedEvent = {
+                    ...baseEvent,
+                    metadata: { w: item.metadata.w, h: item.metadata.h }
+                };
+            } else if (item.item_category === 'ACTION') {
+                updatedEvent = {
+                    ...baseEvent,
+                    action_info: actionInfo
+                };
+            } else if (item.item_category === 'PAGE' && item.metadata) {
+                updatedEvent = {
+                    ...baseEvent,
+                    actions: actions,
+                    action_list: actionList,
+                    metadata: item.metadata
+                };
+            } else {
+                updatedEvent = {
+                    ...baseEvent,
+                    actions: actions,
+                    action_list: actionList
+                };
+            }
             
             await tracker._broadcast(updatedEvent);
         } catch (err) {
             console.error('Failed to select panel:', err);
+        } finally {
+            tracker.isLoadingSelection = false;
+            tracker.loadingSelectionId = null;
+            
+            await tracker._broadcast({
+                type: 'tree_loading_state',
+                loading: false
+            });
         }
     };
 
@@ -1508,11 +1994,95 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
             
-            await tracker.dataItemManager.updateItem(itemId, { name: newName });
+            let finalName = newName;
+            
+            if (item.item_category === 'ACTION') {
+                const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+                const content = await fsp.readFile(parentPath, 'utf8');
+                const allParents = content.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                
+                let siblingActionIds = [];
+                
+                for (const entry of allParents) {
+                    if (entry.child_actions && entry.child_actions.includes(itemId)) {
+                        siblingActionIds = entry.child_actions.filter(id => id !== itemId);
+                        break;
+                    }
+                    
+                    if (entry.child_pages) {
+                        for (const page of entry.child_pages) {
+                            if (page.child_actions && page.child_actions.includes(itemId)) {
+                                siblingActionIds = page.child_actions.filter(id => id !== itemId);
+                                break;
+                            }
+                        }
+                        if (siblingActionIds.length > 0) break;
+                    }
+                }
+                
+                if (siblingActionIds.length > 0) {
+                    const existingNames = new Set();
+                    
+                    for (const actionId of siblingActionIds) {
+                        const actionItem = await tracker.dataItemManager.getItem(actionId);
+                        if (actionItem) {
+                            existingNames.add(actionItem.name);
+                        }
+                    }
+                    
+                    if (existingNames.has(finalName)) {
+                        let suffix = 1;
+                        while (existingNames.has(`${finalName} (${suffix})`)) {
+                            suffix++;
+                        }
+                        finalName = `${finalName} (${suffix})`;
+                        console.log(`⚠️ Duplicate action name detected, renamed to: "${finalName}"`);
+                    }
+                }
+            } else if (item.item_category === 'PAGE') {
+                const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+                const content = await fsp.readFile(parentPath, 'utf8');
+                const allParents = content.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                
+                const parentPanelEntry = allParents.find(p => 
+                    p.child_pages && p.child_pages.some(pg => pg.page_id === itemId)
+                );
+                
+                if (parentPanelEntry && parentPanelEntry.child_pages) {
+                    const siblingPages = parentPanelEntry.child_pages.filter(pg => pg.page_id !== itemId);
+                    const existingNames = new Set();
+                    
+                    for (const page of siblingPages) {
+                        const pageItem = await tracker.dataItemManager.getItem(page.page_id);
+                        if (pageItem) {
+                            existingNames.add(pageItem.name);
+                        }
+                    }
+                    
+                    if (existingNames.has(finalName)) {
+                        let suffix = 1;
+                        while (existingNames.has(`${finalName} (${suffix})`)) {
+                            suffix++;
+                        }
+                        finalName = `${finalName} (${suffix})`;
+                        console.log(`⚠️ Duplicate name detected, renamed to: "${finalName}"`);
+                    }
+                }
+            }
+            
+            await tracker.dataItemManager.updateItem(itemId, { name: finalName });
             
             await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
             
-            console.log(`✏️ Renamed "${item.name}" → "${newName}"`);
+            if (item.item_category === 'ACTION') {
+                await rebroadcastPageIfActionUpdated(itemId);
+            }
+            
+            console.log(`✏️ Renamed "${item.name}" → "${finalName}"`);
         } catch (err) {
             console.error('Failed to rename:', err);
         }
@@ -1537,8 +2107,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 .filter(line => line.trim())
                 .map(line => JSON.parse(line));
             
-            const parentEntry = allParents.find(p => p.child_actions.includes(actionItemId));
-            const parentPanelId = parentEntry ? parentEntry.parent_panel : null;
+            let parentPanelId = null;
+            let parentPageId = null;
+            
+            for (const entry of allParents) {
+                if (entry.child_actions && entry.child_actions.includes(actionItemId)) {
+                    parentPanelId = entry.parent_panel;
+                    break;
+                }
+                
+                if (entry.child_pages) {
+                    for (const page of entry.child_pages) {
+                        if (page.child_actions && page.child_actions.includes(actionItemId)) {
+                            parentPanelId = entry.parent_panel;
+                            parentPageId = page.page_id;
+                            break;
+                        }
+                    }
+                    if (parentPageId) break;
+                }
+            }
             
             if (!parentPanelId) {
                 console.error('Parent panel not found for action:', actionItemId);
@@ -1546,14 +2134,30 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
             
-            const parentPanel = await tracker.dataItemManager.getItem(parentPanelId);
-            if (!parentPanel || !parentPanel.image_base64) {
-                console.error('Parent panel has no image');
-                await tracker._broadcast({ type: 'show_toast', message: '❌ Panel cha không có ảnh!' });
-                return;
+            let sourceImage = null;
+            let sourceItemName = '';
+            
+            if (parentPageId) {
+                const pageItem = await tracker.dataItemManager.getItem(parentPageId);
+                if (!pageItem || !pageItem.image_base64) {
+                    console.error('Parent page has no image');
+                    await tracker._broadcast({ type: 'show_toast', message: '❌ Page không có ảnh!' });
+                    return;
+                }
+                sourceImage = pageItem.image_base64;
+                sourceItemName = pageItem.name;
+            } else {
+                const parentPanel = await tracker.dataItemManager.getItem(parentPanelId);
+                if (!parentPanel || !parentPanel.image_base64) {
+                    console.error('Parent panel has no image');
+                    await tracker._broadcast({ type: 'show_toast', message: '❌ Panel cha không có ảnh!' });
+                    return;
+                }
+                sourceImage = parentPanel.image_base64;
+                sourceItemName = parentPanel.name;
             }
             
-            console.log(`🤖 Starting AI rename for action: "${actionItem.name}"`);
+            console.log(`🤖 Starting AI rename for action: "${actionItem.name}" in ${parentPageId ? 'PAGE' : 'PANEL'}: "${sourceItemName}"`);
             
             const { cropBase64Image } = await import('../media/screenshot.js');
             const { askGeminiForActionRename } = await import('./gemini-handler.js');
@@ -1565,7 +2169,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 h: actionItem.metadata?.h || 50
             };
             
-            const croppedImage = await cropBase64Image(parentPanel.image_base64, cropPos);
+            const croppedImage = await cropBase64Image(sourceImage, cropPos);
             
             const actionMetadata = {
                 action_name: actionItem.name,
@@ -1599,59 +2203,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 data: await tracker.panelLogManager.buildTreeStructure() 
             });
             
-            if (tracker.selectedPanelId === parentPanelId) {
-                const parentPanelEntry = await tracker.parentPanelManager.getPanelEntry(parentPanelId);
-                const actionIds = parentPanelEntry?.child_actions || [];
-                
-                const actions = [];
-                for (const actId of actionIds) {
-                    const actItem = await tracker.dataItemManager.getItem(actId);
-                    if (actItem) {
-                        actions.push({
-                            action_id: actItem.item_id,
-                            action_name: actItem.name,
-                            action_type: actItem.type,
-                            action_verb: actItem.verb,
-                            action_content: actItem.content,
-                            action_pos: {
-                                x: actItem.metadata?.x || 0,
-                                y: actItem.metadata?.y || 0,
-                                w: actItem.metadata?.w || 0,
-                                h: actItem.metadata?.h || 0
-                            }
-                        });
-                    }
-                }
-                
-                const geminiResult = [{
-                    panel_title: parentPanel.name,
-                    actions: actions
-                }];
-                
-                const { drawPanelBoundingBoxes } = await import('../media/screenshot.js');
-                
-                let displayImage = parentPanel.image_base64;
-                if (parentPanel.crop_pos) {
-                    displayImage = await cropBase64Image(parentPanel.image_base64, parentPanel.crop_pos);
-                }
-                
-                const screenshotWithBoxes = await drawPanelBoundingBoxes(
-                    displayImage,
-                    geminiResult,
-                    '#00aaff',
-                    2
-                );
-                
-                await tracker._broadcast({
-                    type: 'panel_selected',
-                    panel_id: parentPanelId,
-                    screenshot: screenshotWithBoxes,
-                    gemini_result: geminiResult,
-                    actions: actions,
-                    action_list: actions.map(a => a.action_name).filter(Boolean).join(', '),
-                    gemini_detecting: false,
-                    timestamp: Date.now()
-                });
+            if (parentPageId) {
+                await rebroadcastPageIfActionUpdated(actionItemId);
+            } else if (tracker.selectedPanelId === parentPanelId) {
+                await selectPanelHandler(parentPanelId);
             }
             
             await tracker._broadcast({ type: 'show_toast', message: `✅ Đã rename: "${aiResult.action_name}"` });
@@ -1696,8 +2251,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 .filter(line => line.trim())
                 .map(line => JSON.parse(line));
             
-            const parentEntry = allParents.find(p => p.child_actions.includes(actionItemId));
-            return parentEntry ? parentEntry.parent_panel : null;
+            for (const entry of allParents) {
+                if (entry.child_actions && entry.child_actions.includes(actionItemId)) {
+                    return entry.parent_panel;
+                }
+                
+                if (entry.child_pages) {
+                    for (const page of entry.child_pages) {
+                        if (page.child_actions && page.child_actions.includes(actionItemId)) {
+                            return entry.parent_panel;
+                        }
+                    }
+                }
+            }
+            
+            return null;
         } catch (err) {
             console.error('Failed to get parent panel:', err);
             return null;
@@ -1761,9 +2329,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             await selectPanelHandler(actionItemId);
             
-            console.log(`✅ Use BEFORE: ${actionItemId} marked done with panel ${parentPanelId}`);
+            console.log(`✅ Use CURRENT PANEL: ${actionItemId} marked done with panel ${parentPanelId}`);
         } catch (err) {
-            console.error('Use BEFORE failed:', err);
+            console.error('Use CURRENT PANEL failed:', err);
         }
     };
 
@@ -1885,6 +2453,96 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const updatePanelImageAndCoordinatesHandler = async (panelId, imageBase64, cropArea, updatedGeminiResult, deletedActionsInfo) => {
+        try {
+            if (!tracker.dataItemManager || !tracker.parentPanelManager) {
+                console.error('Managers not initialized');
+                return;
+            }
+            
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) {
+                console.error('Item not found or not PANEL/PAGE');
+                return;
+            }
+            
+            console.log('📐 Updating "' + panelItem.name + '" with crop:', cropArea);
+            
+            const cropPos = cropArea ? {
+                x: Math.round(cropArea.x),
+                y: Math.round(cropArea.y),
+                w: Math.round(cropArea.width),
+                h: Math.round(cropArea.height)
+            } : null;
+            
+            await tracker.dataItemManager.updateItem(panelId, {
+                crop_pos: cropPos
+            });
+            
+            if (deletedActionsInfo && deletedActionsInfo.length > 0) {
+                console.log('🗑️ Deleting ' + deletedActionsInfo.length + ' actions outside crop area');
+                for (const actionInfo of deletedActionsInfo) {
+                    if (actionInfo.action_id) {
+                        await removeActionFromItem(panelId, panelItem.item_category, actionInfo.action_id);
+                    }
+                }
+            }
+            
+            if (updatedGeminiResult && updatedGeminiResult[0] && updatedGeminiResult[0].actions) {
+                const actions = updatedGeminiResult[0].actions;
+                const existingActionIds = await getActionIdsForItem(panelId, panelItem.item_category);
+                
+                for (let i = 0; i < actions.length; i++) {
+                    const action = actions[i];
+                    const actionId = existingActionIds[i];
+                    
+                    if (actionId) {
+                        await tracker.dataItemManager.updateItem(actionId, {
+                            name: action.action_name,
+                            metadata: {
+                                x: action.action_pos.x,
+                                y: action.action_pos.y,
+                                w: action.action_pos.w,
+                                h: action.action_pos.h
+                            }
+                        });
+                    }
+                }
+            }
+            
+            await tracker._broadcast({ 
+                type: 'tree_update', 
+                data: await tracker.panelLogManager.buildTreeStructure() 
+            });
+            
+            const updatedPanelItem = await tracker.dataItemManager.getItem(panelId);
+            let displayImage = updatedPanelItem.image_base64;
+            if (cropPos) {
+                const { cropBase64Image } = await import('../media/screenshot.js');
+                displayImage = await cropBase64Image(updatedPanelItem.image_base64, cropPos);
+            }
+            
+            const { drawPanelBoundingBoxes } = await import('../media/screenshot.js');
+            const updatedActions = updatedGeminiResult && updatedGeminiResult[0] ? updatedGeminiResult[0].actions : [];
+            const screenshotWithBoxes = await drawPanelBoundingBoxes(displayImage, updatedGeminiResult || [{ actions: updatedActions }], '#00aaff', 2);
+            
+            await tracker._broadcast({
+                type: 'panel_selected',
+                panel_id: panelId,
+                screenshot: screenshotWithBoxes,
+                actions: updatedActions,
+                action_list: updatedActions.map(a => a.action_name).filter(Boolean).join(', '),
+                gemini_result: updatedGeminiResult || [{ actions: updatedActions }],
+                timestamp: Date.now()
+            });
+            
+            console.log('✅ Panel "' + panelItem.name + '" updated with crop position');
+        } catch (err) {
+            console.error('Failed to update panel image and coordinates:', err);
+            throw err;
+        }
+    };
+
     const importCookiesFromJsonHandler = async (jsonString) => {
         try {
             const data = JSON.parse(jsonString);
@@ -1943,6 +2601,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         captureActions: captureActionsHandler,
         manualCaptureAIScrolling: manualCaptureAIScrollingHandler,
         captureActionsScrolling: captureActionsScrollingHandler,
+        detectPages: detectPagesHandler,
         selectPanel: selectPanelHandler,
         getPanelTree: getPanelTreeHandler,
         deleteClickEvent: deleteClickEventHandler,
@@ -1962,6 +2621,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         showTrackingBrowser: showTrackingBrowserHandler,
         resetDrawingFlag: resetDrawingFlagHandler,
         checkActionHasStep: checkActionHasStepHandler,
-        importCookiesFromJson: importCookiesFromJsonHandler
+        importCookiesFromJson: importCookiesFromJsonHandler,
+        updatePanelImageAndCoordinates: updatePanelImageAndCoordinatesHandler
     };
 }

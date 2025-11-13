@@ -39,7 +39,7 @@ export class PanelLogManager {
             items.forEach(item => {
                 itemMap.set(item.item_id, {
                     panel_id: item.item_id,
-                    panel_name: item.name,
+                    name: item.name,
                     item_category: item.item_category,
                     status: item.status,
                     children: []
@@ -52,10 +52,25 @@ export class PanelLogManager {
                 const parentNode = itemMap.get(parentPanelId);
                 if (!parentNode) continue;
                 
-                for (const actionId of parentEntry.child_actions) {
-                    const actionNode = itemMap.get(actionId);
-                    if (actionNode) {
-                        parentNode.children.push(actionNode);
+                if (parentEntry.child_pages && parentEntry.child_pages.length > 0) {
+                    for (const pageEntry of parentEntry.child_pages) {
+                        const pageNode = itemMap.get(pageEntry.page_id);
+                        if (pageNode) {
+                            for (const actionId of pageEntry.child_actions) {
+                                const actionNode = itemMap.get(actionId);
+                                if (actionNode) {
+                                    pageNode.children.push(actionNode);
+                                }
+                            }
+                            parentNode.children.push(pageNode);
+                        }
+                    }
+                } else if (parentEntry.child_actions && parentEntry.child_actions.length > 0) {
+                    for (const actionId of parentEntry.child_actions) {
+                        const actionNode = itemMap.get(actionId);
+                        if (actionNode) {
+                            parentNode.children.push(actionNode);
+                        }
                     }
                 }
             }

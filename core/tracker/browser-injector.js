@@ -123,8 +123,42 @@ export async function setupTracking(tracker) {
     }
 
         await tracker.page.evaluate(() => {
-        if (!window.__trackingWs || window.__trackingWs.readyState !== 1) {
-            window.__trackingWs = new WebSocket('ws://localhost:8081');
+        if (!window.showTrackingToast) {
+            window.showTrackingToast = (message) => {
+                const existingToast = document.getElementById('__tracking_toast');
+                if (existingToast) existingToast.remove();
+                const toast = document.createElement('div');
+                toast.id = '__tracking_toast';
+                toast.textContent = message;
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.85);
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    z-index: 999999;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                    animation: slideIn 0.3s ease;
+                    pointer-events: none;
+                `;
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                `;
+                if (document.head) document.head.appendChild(style);
+                const parentNode = document.body || document.documentElement;
+                if (parentNode) parentNode.appendChild(toast);
+                setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
+            };
+        }
+            if (!window.__trackingWs || window.__trackingWs.readyState !== 1) {
+                window.__trackingWs = new WebSocket('ws://localhost:8081');
             
             window.__trackingWs.onopen = () => {
                 if (!document.getElementById('__ws_notif_style')) {
@@ -174,6 +208,16 @@ export async function setupTracking(tracker) {
                     if (evt.type === 'show_toast' && evt.message) {
                         if (window.showTrackingToast) {
                             window.showTrackingToast(evt.message);
+                        }
+                    } else if (evt.type === 'panel_selected') {
+                        if ('panel_id' in evt) {
+                            window.__selectedItemId = evt.panel_id;
+                            if (evt.panel_id == null) {
+                                window.__selectedItemCategory = null;
+                            }
+                        }
+                        if ('item_category' in evt) {
+                            window.__selectedItemCategory = evt.item_category;
                         }
                     }
                 } catch (err) {}
@@ -282,9 +326,14 @@ export async function setupTracking(tracker) {
                         to { transform: translateX(0); opacity: 1; }
                     }
                 `;
-                document.head.appendChild(style);
+                if (document.head) {
+                    document.head.appendChild(style);
+                }
                 
-                document.body.appendChild(toast);
+                const parentNode = document.body || document.documentElement;
+                if (parentNode) {
+                    parentNode.appendChild(toast);
+                }
                 
                 setTimeout(() => {
                     if (toast.parentNode) {
@@ -297,20 +346,38 @@ export async function setupTracking(tracker) {
         if (!window.__keyboardQueue) {
             window.__keyboardQueue = [];
         }
-        
+
+        if (typeof window.__detectPagesInProgress === 'undefined') {
+            window.__detectPagesInProgress = false;
+        }
+
+        if (typeof window.__detectPagesPending === 'undefined') {
+            window.__detectPagesPending = false;
+        }
+
         if (!window.__keydownListenerSetup) {
-            document.addEventListener("keydown", (e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === '1') {
                     e.preventDefault();
-                    window.__keyboardQueue.push({ action: 'DRAW_NEW', timestamp: Date.now() });
+                    if (window.__detectPagesInProgress || window.__detectPagesPending) {
+                        if (window.showTrackingToast) window.showTrackingToast('⚠️ Đang xử lý, vui lòng đợi...');
+                        return;
+                    }
+                    const selId = window.__selectedItemId || null;
+                    const selCat = window.__selectedItemCategory || null;
+                    if (!selId) {
+                        if (window.showTrackingToast) window.showTrackingToast('⚠️ Vui lòng chọn panel trước!');
+                        return;
+                    }
+                    if (selCat !== 'PANEL') {
+                        if (window.showTrackingToast) window.showTrackingToast('⚠️ Chỉ PANEL mới có thể Detect Pages!');
+                        return;
+                    }
+                    window.__detectPagesPending = true;
+                    window.__keyboardQueue.push({ action: 'DETECT_PAGES', timestamp: Date.now() });
                 }
-                
-                if ((e.ctrlKey || e.metaKey) && e.key === "2") {
-                    e.preventDefault();
-                    window.__keyboardQueue.push({ action: 'USE_BEFORE', timestamp: Date.now() });
-                }
-            });
-            
+            }, { capture: true });
+
             window.__keydownListenerSetup = true;
         }
         
@@ -360,7 +427,7 @@ export async function setupTracking(tracker) {
         window.__trackingSetup = true;
     });
     
-    console.log('✅ Tracking setup completed! Ctrl/Cmd+1 and Ctrl/Cmd+2 ready.');
+    console.log('✅ Tracking setup completed! Ctrl/Cmd+1: Detect Pages ready.');
     
     if (!tracker._keyboardPoller) {
         tracker._keyboardPoller = setInterval(async () => {
@@ -373,12 +440,65 @@ export async function setupTracking(tracker) {
                     window.__keyboardQueue = [];
                     return actions;
                 });
-                
+
+                let inProgress = await tracker.page.evaluate(() => !!window.__detectPagesInProgress);
+                let __detectHandled = false;
                 for (const kb of keyboardActions) {
-                    if (kb.action === 'DRAW_NEW' && tracker._queueHandlers?.triggerDrawPanelNew) {
-                        await tracker._queueHandlers.triggerDrawPanelNew();
-                    } else if (kb.action === 'USE_BEFORE' && tracker._queueHandlers?.triggerUseBeforePanel) {
-                        await tracker._queueHandlers.triggerUseBeforePanel();
+                    if (kb.action === 'DETECT_PAGES') {
+                        if (inProgress || __detectHandled) {
+                            try {
+                                await tracker.page.evaluate(() => { if (window.showTrackingToast) window.showTrackingToast('⚠️ Đang xử lý, vui lòng đợi...'); });
+                            } catch {}
+                            continue;
+                        }
+                        __detectHandled = true;
+                        if (!tracker.selectedPanelId) {
+                            try {
+                                await tracker.page.evaluate(() => { window.__detectPagesPending = false; if (window.showTrackingToast) window.showTrackingToast('⚠️ Vui lòng chọn panel trước!'); });
+                            } catch {}
+                            await tracker._broadcast({ type: 'show_toast', message: '⚠️ Vui lòng chọn panel trước!' });
+                            continue;
+                        }
+                        let selectedItem = null;
+                        try {
+                            selectedItem = await tracker.dataItemManager?.getItem?.(tracker.selectedPanelId);
+                        } catch {}
+                        if (!selectedItem || selectedItem.item_category !== 'PANEL') {
+                            try {
+                                await tracker.page.evaluate(() => { window.__detectPagesPending = false; if (window.showTrackingToast) window.showTrackingToast('⚠️ Chỉ PANEL mới có thể Detect Pages!'); });
+                            } catch {}
+                            await tracker._broadcast({ type: 'show_toast', message: '⚠️ Chỉ PANEL mới có thể Detect Pages!' });
+                            continue;
+                        }
+                        let parentEntry = null;
+                        try {
+                            parentEntry = await tracker.parentPanelManager?.getPanelEntry?.(tracker.selectedPanelId);
+                        } catch {}
+                        if (parentEntry && parentEntry.child_pages && parentEntry.child_pages.length > 0) {
+                            try {
+                                await tracker.page.evaluate(() => { window.__detectPagesPending = false; if (window.showTrackingToast) window.showTrackingToast('⚠️ Panel đã có pages! Bấm Reset (↺) nếu muốn detect lại.'); });
+                            } catch {}
+                            await tracker._broadcast({ type: 'show_toast', message: '⚠️ Panel đã có pages! Bấm Reset (↺) nếu muốn detect lại.' });
+                            continue;
+                        }
+                        if (tracker._queueHandlers?.detectPages) {
+                            try {
+                                await tracker.page.evaluate(() => { window.__detectPagesInProgress = true; window.__detectPagesPending = false; });
+                                inProgress = true;
+                            } catch {}
+                            try {
+                                await tracker._queueHandlers.detectPages();
+                            } finally {
+                                try {
+                                    await tracker.page.evaluate(() => { window.__detectPagesInProgress = false; window.__detectPagesPending = false; });
+                                    inProgress = false;
+                                } catch {}
+                            }
+                        } else {
+                            try {
+                                await tracker.page.evaluate(() => { window.__detectPagesPending = false; });
+                            } catch {}
+                        }
                     }
                 }
             } catch (err) {}

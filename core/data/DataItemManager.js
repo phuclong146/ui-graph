@@ -41,7 +41,7 @@ export class DataItemManager {
         return item.item_id;
     }
 
-    async createAction(name, type, verb, content, position) {
+    async createAction(name, type, verb, content, position, pageNumber = null) {
         const item = {
             item_id: this.generateItemId(),
             created_at: Date.now(),
@@ -50,15 +50,44 @@ export class DataItemManager {
             name: name,
             verb: verb,
             content: content,
-            image_base64: null,
             image_url: null,
             metadata: {
+                p: pageNumber,
                 x: position.x,
                 y: position.y,
                 w: position.w,
                 h: position.h
             },
-            status: 'pending'
+            status: 'pending',
+            image_base64: null
+        };
+
+        const line = JSON.stringify(item) + '\n';
+        await fsp.appendFile(this.itemPath, line, 'utf8');
+        
+        return item.item_id;
+    }
+
+    async createPage(pageNumber, imageBase64, pagePos) {
+        const item = {
+            item_id: this.generateItemId(),
+            created_at: Date.now(),
+            item_category: 'PAGE',
+            type: 'screen_viewport',
+            name: `Page ${pageNumber}`,
+            verb: 'navigate',
+            content: null,
+            image_url: null,
+            crop_pos: null,
+            metadata: {
+                p: pageNumber,
+                x: pagePos.x,
+                y: pagePos.y,
+                w: pagePos.w,
+                h: pagePos.h
+            },
+            status: 'pending',
+            image_base64: imageBase64
         };
 
         const line = JSON.stringify(item) + '\n';

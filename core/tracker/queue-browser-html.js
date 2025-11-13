@@ -59,18 +59,18 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       .tree-expand {
-        width: 16px;
-        height: 16px;
+        width: 12px;
+        height: 12px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        margin-right: 4px;
+        margin-right: 0px;
         font-size: 10px;
         cursor: pointer;
       }
       
       .tree-node-dot {
-        margin-right: 6px;
+        margin-right: 4px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -121,11 +121,11 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       .tree-children.level-1 {
-        padding-left: 16px;
+        padding-left: 4px;
       }
       
       .tree-children.level-2 {
-        padding-left: 0px;
+        padding-left: 4px;
       }
       
       #content-container {
@@ -448,7 +448,7 @@ export const QUEUE_BROWSER_HTML = `
 
       #editor-canvas {
         box-shadow: 0 0 30px rgba(0,0,0,0.7);
-        border-radius: 8px;
+        border-radius: 2px;
       }
     </style>
   </head>
@@ -462,6 +462,7 @@ export const QUEUE_BROWSER_HTML = `
       <div id="content-container">
     <div id="controls">
       <button id="captureActionsDOMBtn" style="display:none; background:#007bff;">📸 Detect Action</button>
+      <button id="detectPagesBtn" style="display:none; background:#007bff;">📄 Detect Pages</button>
       <button id="drawPanelBtn" style="display:none;">🖼️ Draw Panel</button>
       <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
       <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
@@ -471,20 +472,9 @@ export const QUEUE_BROWSER_HTML = `
     </div>
     
     <div id="drawPanelMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
-      <button class="draw-panel-option" data-mode="DRAW_NEW" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📝 Draw NEW</button>
-      <button class="draw-panel-option" data-mode="USE_BEFORE" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px; margin-top:2px;">🔄 Use BEFORE</button>
+      <button class="draw-panel-option" data-mode="DRAW_NEW" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📝 CREATE NEW PANEL</button>
+      <button class="draw-panel-option" data-mode="USE_BEFORE" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px; margin-top:2px;">🔄 USE CURRENT PANEL</button>
     </div>
-    
-    <!-- Dropdown menus hidden - direct mode call instead -->
-    <!-- <div id="detectAIMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
-      <button class="detect-ai-option" data-mode="normal" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📸 Normal</button>
-      <button class="detect-ai-option" data-mode="scrolling" disabled style="display:block; width:100%; padding:10px 20px; border:none; background:#e0e0e0; color:#999; text-align:left; cursor:not-allowed; font-size:14px; border-radius:3px; margin-top:2px;">📜 Scrolling (Disabled)</button>
-    </div>
-    
-    <div id="detectWebMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
-      <button class="detect-web-option" data-mode="normal" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px;">📸 Normal</button>
-      <button class="detect-web-option" data-mode="scrolling" style="display:block; width:100%; padding:10px 20px; border:none; background:white; text-align:left; cursor:pointer; font-size:14px; border-radius:3px; margin-top:2px;">📜 Scrolling</button>
-    </div> -->
     
     <button id="clearAllClicksBtn" style="display:none; margin:10px; padding:8px 16px; background:#ff9800; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🗑️ Clear All Clicks</button>
 
@@ -523,7 +513,13 @@ export const QUEUE_BROWSER_HTML = `
           handlePanelSelected(evt);
           return;
         }
-        
+
+        if (evt.type === 'detect_pages_status') {
+          isCapturing = !!evt.in_progress;
+          window.__detectPagesInProgressQueue = isCapturing;
+          return;
+        }
+
         if (evt.type === 'trigger_capture') {
           handleTriggerCapture(evt.mode);
           return;
@@ -581,27 +577,7 @@ export const QUEUE_BROWSER_HTML = `
           try {
             if (window.drawPanel) {
               const result = await window.drawPanel('DRAW_NEW');
-              
-              if (result?.mode === 'DRAW_NEW' && result.screenshot) {
-                showToast('🖼️ Đang mở editor crop...');
-                if (window.broadcastToast) await window.broadcastToast('🖼️ Đang mở editor crop...');
-                
-                if (window.getPanelEditorClass) {
-                  const panelEditorCode = await window.getPanelEditorClass();
-                  eval(panelEditorCode);
-                  
-                  const editor = new PanelEditor(result.screenshot, result.actionItemId, 'cropOnly');
-                  await editor.init();
-                  
-                  if (window.bringQueueBrowserToFront) {
-                    await window.bringQueueBrowserToFront();
-                  }
-                }
-              } else {
-                showToast('❌ Không thể mở editor crop');
-                if (window.broadcastToast) await window.broadcastToast('❌ Không thể mở editor crop');
-                isDrawingPanel = false;
-              }
+              isDrawingPanel = false;
             }
           } catch (err) {
             console.error('Draw panel error:', err);
@@ -642,8 +618,8 @@ export const QUEUE_BROWSER_HTML = `
           }
           
           if (selectedNode.item_category !== 'ACTION') {
-            showToast('⚠️ Chỉ ACTION mới có thể Use BEFORE. Chọn lại ở Queue Browser');
-            if (window.broadcastToast) await window.broadcastToast('⚠️ Chỉ ACTION mới có thể Use BEFORE. Chọn lại ở Queue Browser');
+            showToast('⚠️ Chỉ ACTION mới có thể Use CURRENT PANEL. Chọn lại ở Queue Browser');
+            if (window.broadcastToast) await window.broadcastToast('⚠️ Chỉ ACTION mới có thể Use CURRENT PANEL. Chọn lại ở Queue Browser');
             return;
           }
           
@@ -660,12 +636,12 @@ export const QUEUE_BROWSER_HTML = `
           try {
             if (window.useBeforePanel) {
               await window.useBeforePanel(selectedPanelId);
-              showToast('✅ Marked as done với panel BEFORE');
-              if (window.broadcastToast) await window.broadcastToast('✅ Marked as done với panel BEFORE');
+              showToast('✅ Marked as done với current panel');
+              if (window.broadcastToast) await window.broadcastToast('✅ Marked as done với current panel');
               isDrawingPanel = false;
             }
           } catch (err) {
-            console.error('Use before error:', err);
+            console.error('Use current panel error:', err);
             isDrawingPanel = false;
           }
           return;
@@ -673,6 +649,44 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'show_toast') {
           showToast(evt.message);
+          return;
+        }
+        
+        if (evt.type === 'tree_loading_state') {
+          const treeContainer = document.getElementById('panel-tree');
+          if (treeContainer) {
+            if (evt.loading) {
+              treeContainer.style.pointerEvents = 'none';
+              treeContainer.style.opacity = '0.5';
+              
+              if (evt.itemId) {
+                const selector = '[data-panel-id="' + evt.itemId + '"]';
+                const treeItem = treeContainer.querySelector(selector);
+                if (treeItem) {
+                  const nodeDot = treeItem.querySelector('.tree-node-dot');
+                  if (nodeDot && !nodeDot.classList.contains('loading')) {
+                    const dotColor = nodeDot.getAttribute('data-dot-color') || '#ff5252';
+                    nodeDot.classList.add('loading');
+                    nodeDot.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="animation: spin 1s linear infinite;"><style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>' +
+                      '<circle cx="12" cy="12" r="10" fill="none" stroke="' + dotColor + '" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-dashoffset="0"><animate attributeName="stroke-dashoffset" values="0;-62.8" dur="1s" repeatCount="indefinite"/></circle>' +
+                      '</svg>';
+                  }
+                }
+              }
+            } else {
+              treeContainer.style.pointerEvents = 'auto';
+              treeContainer.style.opacity = '1';
+              
+              const loadingDot = treeContainer.querySelector('.tree-node-dot.loading');
+              if (loadingDot) {
+                const originalDot = loadingDot.getAttribute('data-original-dot');
+                if (originalDot) {
+                  loadingDot.innerHTML = originalDot;
+                  loadingDot.classList.remove('loading');
+                }
+              }
+            }
+          }
           return;
         }
         
@@ -726,10 +740,9 @@ export const QUEUE_BROWSER_HTML = `
       let isCapturing = false;
       const detectActionsGeminiBtn = document.getElementById("detectActionsGeminiBtn");
       const captureActionsDOMBtn = document.getElementById("captureActionsDOMBtn");
+      const detectPagesBtn = document.getElementById("detectPagesBtn");
       const drawPanelBtn = document.getElementById("drawPanelBtn");
       const drawPanelMenu = document.getElementById("drawPanelMenu");
-      const detectAIMenu = document.getElementById("detectAIMenu");
-      const detectWebMenu = document.getElementById("detectWebMenu");
       
       function updateDetectCaptureButtonsState() {
         const panelResetButtons = document.querySelectorAll('.reset-panel-btn[data-panel-id]');
@@ -778,6 +791,7 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         isCapturing = true;
+        updateDetectCaptureButtonsState();
         
         try {
           if (window.manualCaptureAI) {
@@ -785,6 +799,7 @@ export const QUEUE_BROWSER_HTML = `
           }
         } finally {
           isCapturing = false;
+          updateDetectCaptureButtonsState();
         }
       });
       
@@ -795,6 +810,7 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         isCapturing = true;
+        updateDetectCaptureButtonsState();
         
         try {
           if (window.captureActions) {
@@ -802,16 +818,11 @@ export const QUEUE_BROWSER_HTML = `
           }
         } finally {
           isCapturing = false;
+          updateDetectCaptureButtonsState();
         }
       });
       
-      // Dropdown menu listeners commented out - direct mode call instead
-      /*
-      document.querySelectorAll('.detect-ai-option').forEach(option => {
-        option.addEventListener('click', async () => {
-          const mode = option.getAttribute('data-mode');
-          detectAIMenu.style.display = 'none';
-          
+      detectPagesBtn.addEventListener("click", async () => {
         if (isCapturing || isGeminiDetecting) {
           showToast('⚠️ Đang xử lý, vui lòng đợi...');
           return;
@@ -820,41 +831,13 @@ export const QUEUE_BROWSER_HTML = `
         isCapturing = true;
         
         try {
-            if (mode === 'normal' && window.manualCaptureAI) {
-            await window.manualCaptureAI();
-            } else if (mode === 'scrolling' && window.manualCaptureAIScrolling) {
-              await window.manualCaptureAIScrolling();
+          if (window.detectPages) {
+            await window.detectPages();
           }
         } finally {
           isCapturing = false;
         }
       });
-      });
-      
-      document.querySelectorAll('.detect-web-option').forEach(option => {
-        option.addEventListener('click', async () => {
-          const mode = option.getAttribute('data-mode');
-          detectWebMenu.style.display = 'none';
-          
-        if (isCapturing || isGeminiDetecting) {
-          showToast('⚠️ Đang xử lý, vui lòng đợi...');
-          return;
-        }
-        
-        isCapturing = true;
-        
-        try {
-            if (mode === 'normal' && window.captureActions) {
-            await window.captureActions();
-            } else if (mode === 'scrolling' && window.captureActionsScrolling) {
-              await window.captureActionsScrolling();
-          }
-        } finally {
-          isCapturing = false;
-        }
-        });
-      });
-      */
       
       drawPanelBtn.addEventListener("click", (e) => {
         const btnRect = drawPanelBtn.getBoundingClientRect();
@@ -893,28 +876,12 @@ export const QUEUE_BROWSER_HTML = `
               if (window.drawPanel) {
                 const result = await window.drawPanel(mode);
                 
-                if (result?.mode === 'DRAW_NEW' && result.screenshot) {
-                  showToast('Đang mở editor crop...');
-                  
-                  if (window.getPanelEditorClass) {
-                    const panelEditorCode = await window.getPanelEditorClass();
-                    eval(panelEditorCode);
-                    
-                    const editor = new PanelEditor(result.screenshot, result.actionItemId, 'cropOnly');
-                    await editor.init();
-                    
-                    if (window.bringQueueBrowserToFront) {
-                      await window.bringQueueBrowserToFront();
-                    }
-                  }
-                } else {
-                  isDrawingPanel = false;
-                }
+                isDrawingPanel = false;
               }
             } else if (mode === 'USE_BEFORE') {
               if (window.useBeforePanel) {
                 await window.useBeforePanel(selectedPanelId);
-                showToast('✅ Marked as done với panel BEFORE');
+                showToast('✅ Marked as done với current panel');
                 isDrawingPanel = false;
               }
             }
@@ -929,13 +896,6 @@ export const QUEUE_BROWSER_HTML = `
         if (!drawPanelBtn.contains(e.target) && !drawPanelMenu.contains(e.target)) {
           drawPanelMenu.style.display = 'none';
         }
-        // Dropdown menus commented out
-        // if (!detectActionsGeminiBtn.contains(e.target) && !detectAIMenu.contains(e.target)) {
-        //   detectAIMenu.style.display = 'none';
-        // }
-        // if (!captureActionsDOMBtn.contains(e.target) && !detectWebMenu.contains(e.target)) {
-        //   detectWebMenu.style.display = 'none';
-        // }
       });
       
       const clearAllClicksBtn = document.getElementById('clearAllClicksBtn');
@@ -1069,21 +1029,18 @@ export const QUEUE_BROWSER_HTML = `
           quitBtn.textContent = originalText;
         }
       });
-      
-       document.addEventListener("keydown", async (e) => {
-         if ((e.ctrlKey || e.metaKey) && e.key === "1") {
+
+      document.addEventListener("keydown", async (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "1") {
           e.preventDefault();
-          
-          if (isDrawingPanel) {
+          if (isCapturing || isGeminiDetecting) {
             showToast('⚠️ Đang xử lý, vui lòng đợi...');
             return;
           }
-          
           if (!selectedPanelId) {
-            showToast('⚠️ Vui lòng chọn action trước!');
+            showToast('⚠️ Vui lòng chọn panel trước!');
             return;
           }
-          
           const findNodeInTree = (nodes, id) => {
             for (const node of nodes) {
               if (node.panel_id === id) return node;
@@ -1094,124 +1051,37 @@ export const QUEUE_BROWSER_HTML = `
             }
             return null;
           };
-          
           const selectedNode = findNodeInTree(panelTreeData, selectedPanelId);
-          
-          if (selectedNode?.item_category !== 'ACTION') {
-            showToast('⚠️ Chỉ ACTION mới có thể Draw Panel!');
+          if (selectedNode?.item_category !== 'PANEL') {
+            showToast('⚠️ Chỉ PANEL mới có thể Detect Pages!');
             return;
           }
-          
-          if (window.checkActionHasStep) {
-            const hasStep = await window.checkActionHasStep(selectedPanelId);
-            if (hasStep) {
-              showToast('⚠️ Action đã có step! Bấm Reset để draw lại.');
-              return;
-            }
-          }
-          
-          isDrawingPanel = true;
-          
+          isCapturing = true;
           try {
-            if (window.drawPanel) {
-              showToast('🖼️ Đang mở editor crop...');
-              
-              const result = await window.drawPanel('DRAW_NEW');
-              
-              if (result?.mode === 'DRAW_NEW' && result.screenshot) {
-                if (window.getPanelEditorClass) {
-                  const panelEditorCode = await window.getPanelEditorClass();
-                  eval(panelEditorCode);
-                  
-                  const editor = new PanelEditor(result.screenshot, result.actionItemId, 'cropOnly');
-                  await editor.init();
-                  
-                  if (window.bringQueueBrowserToFront) {
-                    await window.bringQueueBrowserToFront();
-                  }
-                }
-        } else {
-                showToast('❌ Không thể mở editor crop');
-                isDrawingPanel = false;
-              }
+            if (window.detectPages) {
+              await window.detectPages();
             }
-          } catch (err) {
-            console.error('Draw panel error:', err);
-            isDrawingPanel = false;
+          } finally {
+            isCapturing = false;
           }
-         }
-         
-         if ((e.ctrlKey || e.metaKey) && e.key === "2") {
+        }
+
+        if (e.key === "Delete" && selectedPanelId) {
+          const activeElement = document.activeElement;
+          const isEditing = activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' || 
+            activeElement.isContentEditable
+          );
+          if (isEditing) return;
           e.preventDefault();
-          
-          if (isDrawingPanel) {
-            showToast('⚠️ Đang xử lý, vui lòng đợi...');
-            return;
-          }
-          
-          if (!selectedPanelId) {
-            showToast('⚠️ Vui lòng chọn action trước!');
-            return;
-          }
-          
-          const findNodeInTree = (nodes, id) => {
-            for (const node of nodes) {
-              if (node.panel_id === id) return node;
-              if (node.children) {
-                const found = findNodeInTree(node.children, id);
-                if (found) return found;
-              }
-            }
-            return null;
-          };
-          
-          const selectedNode = findNodeInTree(panelTreeData, selectedPanelId);
-          
-          if (selectedNode?.item_category !== 'ACTION') {
-            showToast('⚠️ Chỉ ACTION mới có thể Use BEFORE!');
-            return;
-          }
-          
-          if (window.checkActionHasStep) {
-            const hasStep = await window.checkActionHasStep(selectedPanelId);
-            if (hasStep) {
-              showToast('⚠️ Action đã có step! Bấm Reset để draw lại.');
-              return;
+          if (confirm('Xóa panel này khỏi tree? Tất cả panel con cũng sẽ bị xóa.')) {
+            if (window.deleteEvent) {
+              window.deleteEvent(selectedPanelId);
             }
           }
-          
-          isDrawingPanel = true;
-          
-          try {
-            if (window.useBeforePanel) {
-              await window.useBeforePanel(selectedPanelId);
-              showToast('✅ Marked as done với panel BEFORE');
-              isDrawingPanel = false;
-            }
-          } catch (err) {
-            console.error('Use before error:', err);
-            isDrawingPanel = false;
-          }
-         }
-         
-         if (e.key === "Delete" && selectedPanelId) {
-           const activeElement = document.activeElement;
-           const isEditing = activeElement && (
-             activeElement.tagName === 'INPUT' || 
-             activeElement.tagName === 'TEXTAREA' || 
-             activeElement.isContentEditable
-           );
-           
-           if (isEditing) return;
-           
-           e.preventDefault();
-           if (confirm('Xóa panel này khỏi tree? Tất cả panel con cũng sẽ bị xóa.')) {
-             if (window.deleteEvent) {
-               window.deleteEvent(selectedPanelId);
-             }
-           }
-         }
-       });
+        }
+      });
       
       function renderPanelTree() {
         const treeContainer = document.getElementById('panel-tree');
@@ -1227,13 +1097,14 @@ export const QUEUE_BROWSER_HTML = `
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'tree-node-content';
+        contentDiv.setAttribute('data-panel-id', node.panel_id);
         if (selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
         }
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'tree-expand';
-        if (node.item_category === 'PANEL') {
+        if (node.item_category === 'PANEL' || node.item_category === 'PAGE') {
           if (node.children && node.children.length > 0) {
             expandIcon.textContent = '▶';
           } else {
@@ -1241,33 +1112,47 @@ export const QUEUE_BROWSER_HTML = `
             expandIcon.style.visibility = 'hidden';
           }
         } else {
-          expandIcon.style.display = 'none';
+          expandIcon.textContent = '';
+          expandIcon.style.visibility = 'hidden';
         }
         contentDiv.appendChild(expandIcon);
         
         const nodeDot = document.createElement('span');
         nodeDot.className = 'tree-node-dot';
-        if (node.item_category === 'ACTION') {
-          nodeDot.style.marginLeft = '12px';
+        if (node.item_category === 'PAGE') {
+          nodeDot.style.marginLeft = '4px';
+        } else if (node.item_category === 'ACTION') {
+          nodeDot.style.marginLeft = '8px';
         }
         
-        const dotColor = node.item_category === 'PANEL' ? '#00C853' : '#F44336';
+        let dotColor;
+        if (node.item_category === 'PANEL') {
+          dotColor = '#ff5252';
+        } else if (node.item_category === 'PAGE') {
+          dotColor = '#ff9800';
+        } else {
+          dotColor = '#4caf50';
+        }
         
+        let originalDotHTML;
         if (node.status === 'completed') {
-          nodeDot.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
             '</svg>';
         } else {
-          nodeDot.innerHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '</svg>';
         }
+        nodeDot.innerHTML = originalDotHTML;
+        nodeDot.setAttribute('data-original-dot', originalDotHTML);
+        nodeDot.setAttribute('data-dot-color', dotColor);
         contentDiv.appendChild(nodeDot);
         
         const label = document.createElement('span');
         label.className = 'tree-label';
-        label.textContent = node.panel_name || 'Panel';
+        label.textContent = node.name || 'Item';
         contentDiv.appendChild(label);
         
         nodeDiv.appendChild(contentDiv);
@@ -1341,8 +1226,15 @@ export const QUEUE_BROWSER_HTML = `
           min-width: 150px;
         \`;
         
+        let itemLabel = 'Panel';
+        if (itemCategory === 'PAGE') {
+          itemLabel = 'Page';
+        } else if (itemCategory === 'ACTION') {
+          itemLabel = 'Action';
+        }
+        
         const renameOption = document.createElement('div');
-        renameOption.textContent = '✏️ Rename Panel';
+        renameOption.textContent = '✏️ Rename ' + itemLabel;
         renameOption.style.cssText = \`
           padding: 8px 12px;
           cursor: pointer;
@@ -1356,7 +1248,7 @@ export const QUEUE_BROWSER_HTML = `
         });
         renameOption.addEventListener('click', async () => {
           menu.remove();
-          const newName = prompt('Nhập tên mới cho panel:');
+          const newName = prompt('Nhập tên mới cho ' + itemLabel.toLowerCase() + ':');
           if (newName && newName.trim()) {
             if (window.renamePanel) {
               await window.renamePanel(panelId, newName.trim());
@@ -1392,7 +1284,7 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         const deleteOption = document.createElement('div');
-        deleteOption.textContent = '🗑️ Delete Panel';
+        deleteOption.textContent = '🗑️ Delete ' + itemLabel;
         deleteOption.style.cssText = \`
           padding: 8px 12px;
           cursor: pointer;
@@ -1407,14 +1299,15 @@ export const QUEUE_BROWSER_HTML = `
         });
         deleteOption.addEventListener('click', () => {
           menu.remove();
-          if (confirm('Xóa panel này khỏi tree? Tất cả panel con cũng sẽ bị xóa.')) {
+          const confirmMsg = itemCategory === 'PAGE' ? 'Xóa page này? Tất cả actions cũng sẽ bị xóa.' : 
+                            itemCategory === 'ACTION' ? 'Xóa action này?' :
+                            'Xóa panel này khỏi tree? Tất cả các page của panel và các panel con cũng sẽ bị xóa.';
+          if (confirm(confirmMsg)) {
             if (window.deleteEvent) {
               window.deleteEvent(panelId);
             }
           }
         });
-        
-        menu.appendChild(renameOption);
         
         if (status !== 'completed') {
           const markDoneOption = document.createElement('div');
@@ -1590,16 +1483,27 @@ export const QUEUE_BROWSER_HTML = `
         
         const importCookiesBtn = document.getElementById('importCookiesBtn');
         
+        const detectPagesBtn = document.getElementById('detectPagesBtn');
+        
         if (selectedNode) {
           if (selectedNode.item_category === 'PANEL') {
+            detectActionsGeminiBtn.style.display = 'none';
+            captureActionsDOMBtn.style.display = 'none';
+            detectPagesBtn.style.display = 'inline-block';
+            drawPanelBtn.style.display = 'none';
+            clearAllClicksBtn.style.display = 'none';
+            importCookiesBtn.style.display = 'none';
+          } else if (selectedNode.item_category === 'PAGE') {
             detectActionsGeminiBtn.style.display = 'inline-block';
             captureActionsDOMBtn.style.display = 'inline-block';
+            detectPagesBtn.style.display = 'none';
             drawPanelBtn.style.display = 'none';
             clearAllClicksBtn.style.display = 'none';
             importCookiesBtn.style.display = 'none';
           } else if (selectedNode.item_category === 'ACTION') {
             detectActionsGeminiBtn.style.display = 'none';
             captureActionsDOMBtn.style.display = 'none';
+            detectPagesBtn.style.display = 'none';
             drawPanelBtn.style.display = 'inline-block';
             clearAllClicksBtn.style.display = 'inline-block';
             importCookiesBtn.style.display = 'none';
@@ -1607,6 +1511,7 @@ export const QUEUE_BROWSER_HTML = `
         } else {
           detectActionsGeminiBtn.style.display = 'none';
           captureActionsDOMBtn.style.display = 'none';
+          detectPagesBtn.style.display = 'none';
           drawPanelBtn.style.display = 'none';
           clearAllClicksBtn.style.display = 'none';
           importCookiesBtn.style.display = 'inline-block';
@@ -1799,8 +1704,16 @@ export const QUEUE_BROWSER_HTML = `
           if (evt.action_list) {
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'screen';
-            actionsDiv.innerHTML = '<strong>Actions:</strong> ' + evt.action_list;
+            const hasLabel = evt.action_list.includes(':');
+            actionsDiv.innerHTML = hasLabel ? evt.action_list : '<strong>Actions:</strong> ' + evt.action_list;
             panelDiv.appendChild(actionsDiv);
+          }
+          
+          if (evt.metadata && evt.metadata.w && evt.metadata.h) {
+            const sizeDiv = document.createElement('div');
+            sizeDiv.className = 'screen';
+            sizeDiv.innerHTML = '<strong>Size:</strong> ' + evt.metadata.w + 'x' + evt.metadata.h;
+            panelDiv.appendChild(sizeDiv);
           }
           
           insertEventSorted(panelDiv);
@@ -1834,7 +1747,7 @@ export const QUEUE_BROWSER_HTML = `
             resetStepBtn.textContent = '↺';
             resetStepBtn.title = 'Reset để draw lại';
             resetStepBtn.addEventListener('click', async () => {
-              if (confirm('Reset action này để draw/use before lại?')) {
+              if (confirm('Reset action này để CREATE NEW PANEL / USE CURRENT PANEL lại?')) {
                 if (window.resetActionStep) {
                   await window.resetActionStep(evt.panel_id);
                   if (window.selectPanel) {
@@ -1851,9 +1764,9 @@ export const QUEUE_BROWSER_HTML = `
             stepInfo.style.paddingLeft = '10px';
             
             if (evt.action_info.step_info.mode === 'DRAW_NEW') {
-              stepInfo.innerHTML = '<strong>Drawed new panel:</strong> "' + evt.action_info.step_info.panel_after_name + '"';
+              stepInfo.innerHTML = '<strong>Created new panel:</strong> "' + evt.action_info.step_info.panel_after_name + '"';
         } else {
-              stepInfo.innerHTML = '<strong>Used before panel:</strong> "' + evt.action_info.step_info.panel_after_name + '"';
+              stepInfo.innerHTML = '<strong>Used current panel:</strong> "' + evt.action_info.step_info.panel_after_name + '"';
             }
             
             stepDiv.appendChild(stepInfo);

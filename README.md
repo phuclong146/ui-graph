@@ -1,9 +1,28 @@
 #--- START
 
-node install  --legacy-peer-deps
+npm install  --legacy-peer-deps
 node main.js
 
-User Flow:
+Tóm tắt user flow:
+1. PANEL → Detect Pages 
+   → Auto-split long scroll thành PAGE 1, PAGE 2, ... (viewport 1920x1080)
+   → Mỗi page có screenshot crop từ long scroll
+
+2. PAGE → Detect Actions
+   → Detect actions trong page viewport
+   → Actions nested trong page với tọa độ tuyệt đối
+
+3. PAGE → Edit Actions (nếu cần)
+   → Thêm/sửa/xóa actions
+   → CROP page (manual crop thêm 1 lần nữa để focus vùng nhỏ hơn)
+     - Filter actions: inside giữ, outside xóa
+     - Adjust coordinates: trừ offset
+
+4. ACTION → Draw New
+   → Tạo PANEL mới (long scroll)
+   → Lặp lại từ bước 1
+
+Chi tiết User Flow:
 ### Với mỗi Panel:
 
 1. Capture Pages Của Panel

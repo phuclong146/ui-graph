@@ -146,7 +146,7 @@ export class PanelScreenTracker {
                 this._navigationListenerSetup = true;
             }
 
-            await this.page.goto(info.website, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await this.page.goto(info.website, { waitUntil: 'networkidle2', timeout: 60000 });
             this.currenPage = this.page.url();
             await setupTracking(this);
 
@@ -203,7 +203,7 @@ export class PanelScreenTracker {
                 this._navigationListenerSetup = true;
             }
 
-            await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
             this.currenPage = this.page.url();
             await setupTracking(this);
 
@@ -225,6 +225,10 @@ export class PanelScreenTracker {
 
     async startPanelRecording(panelId) {
         try {
+            const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
+            if (!enable) {
+                return;
+            }
             if (this.isRecordingPanel && this.recordingPanelId !== panelId) {
                 await this.cancelPanelRecording();
             }
