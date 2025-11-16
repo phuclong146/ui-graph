@@ -1,6 +1,67 @@
 import { promises as fs } from "node:fs";
 import sharp from "sharp";
 
+const waitForStableDOM = async (page, timeout = 5000, stableTime = 500) => {
+  await page.evaluate((stableTime) => {
+    if (window.__domStableObserver) {
+      window.__domStableObserver.disconnect();
+      clearTimeout(window.__domStableTimeoutId);
+    }
+
+    window.__domStable = false;
+    let timeoutId;
+
+    const observer = new MutationObserver(() => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        window.__domStable = true;
+      }, stableTime);
+    });
+
+    window.__domStableObserver = observer;
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeOldValue: false,
+      characterData: true,
+      characterDataOldValue: false
+    });
+
+    timeoutId = setTimeout(() => {
+      window.__domStable = true;
+    }, stableTime);
+
+    window.__domStableTimeoutId = timeoutId;
+  }, stableTime);
+
+  try {
+    await page.waitForFunction(
+      () => window.__domStable === true,
+      { timeout, polling: 100 }
+    );
+  } catch (err) {
+    if (err.message && err.message.includes('exceeded')) {
+      console.log(`  ⚠️ DOM stable timeout after ${timeout}ms, continuing capture...`);
+    } else {
+      throw err;
+    }
+  } finally {
+    await page.evaluate(() => {
+      if (window.__domStableObserver) {
+        window.__domStableObserver.disconnect();
+        delete window.__domStableObserver;
+      }
+      if (window.__domStableTimeoutId) {
+        clearTimeout(window.__domStableTimeoutId);
+        delete window.__domStableTimeoutId;
+      }
+      delete window.__domStable;
+    });
+  }
+};
+
 const scrollToBottom = function({ frequency = 100, timing = 8, remoteWindow = window } = {}) {
   let resolve;
   let scrolls = 1;
@@ -171,11 +232,127 @@ export const restoreOriginalScroll = async (page) => {
   });
 };
 
+const initStickyElements = async (page) => {
+  await page.evaluate(() => {
+    if (!window.__stickyElementsData) {
+      window.__stickyElementsData = [];
+      
+      const allElements = document.querySelectorAll('*');
+      
+      allElements.forEach((el) => {
+        if (el === document.documentElement || el === document.body) return;
+        
+        const style = window.getComputedStyle(el);
+        const position = style.position;
+        
+        if (position === 'sticky' || position === 'fixed') {
+          window.__stickyElementsData.push({
+            element: el,
+            originalPosition: el.style.position || '',
+            originalDisplay: el.style.display || '',
+            capturedPageIndex: null
+          });
+        }
+      });
+    }
+  });
+};
+
+const disableStickyElementsForSection = async (page, sectionIndex, viewportTop, viewportBottom) => {
+  await page.evaluate((sectionIndex, viewportTop, viewportBottom) => {
+    if (window.__stickyElementsData && window.__stickyElementsData.length > 0) {
+      window.__stickyElementsData.forEach((item) => {
+        const computedStyle = window.getComputedStyle(item.element);
+        const position = computedStyle.position;
+        const rect = item.element.getBoundingClientRect();
+        const scrollY = window.pageYOffset || window.scrollY || 0;
+        const viewportHeight = window.innerHeight;
+        
+        let isVisibleInViewport = false;
+        
+        if (position === 'fixed') {
+          isVisibleInViewport = (
+            rect.top >= 0 && rect.top < viewportHeight &&
+            rect.left >= 0 && rect.left < window.innerWidth &&
+            rect.width > 0 && rect.height > 0
+          );
+        } else {
+          const elementTop = rect.top + scrollY;
+          const elementBottom = rect.bottom + scrollY;
+          
+          isVisibleInViewport = (
+            (elementTop >= viewportTop && elementTop < viewportBottom) ||
+            (elementBottom > viewportTop && elementBottom <= viewportBottom) ||
+            (elementTop < viewportTop && elementBottom > viewportBottom)
+          ) && rect.width > 0 && rect.height > 0;
+        }
+        
+        if (isVisibleInViewport && item.capturedPageIndex === null) {
+          item.capturedPageIndex = sectionIndex;
+        }
+        
+        if (item.capturedPageIndex !== null && item.capturedPageIndex < sectionIndex) {
+          item.element.style.setProperty('display', 'none', 'important');
+        } else {
+          item.element.style.removeProperty('display');
+          if (item.originalDisplay) {
+            item.element.style.display = item.originalDisplay;
+          }
+        }
+      });
+    }
+  }, sectionIndex, viewportTop, viewportBottom);
+};
+
+const restoreStickyElements = async (page) => {
+  await page.evaluate(() => {
+    if (window.__stickyElementsData && window.__stickyElementsData.length > 0) {
+      window.__stickyElementsData.forEach((item) => {
+        item.element.style.setProperty('position', '', 'important');
+        item.element.style.setProperty('display', '', 'important');
+        item.element.style.removeProperty('position');
+        item.element.style.removeProperty('display');
+        
+        if (item.originalPosition) {
+          item.element.style.position = item.originalPosition;
+        }
+        if (item.originalDisplay) {
+          item.element.style.display = item.originalDisplay;
+        }
+      });
+      
+      delete window.__stickyElementsData;
+    }
+  });
+};
+
+const hideScrollbar = async (page) => {
+  await page.addStyleTag({
+    content: `
+      * {
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
+      }
+      *::-webkit-scrollbar {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+    `
+  });
+};
+
 const captureByStitching = async (page, options) => {
+  await hideScrollbar(page);
   await forceDocumentScroll(page);
   
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await new Promise(resolve => setTimeout(resolve, 300));
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.setAttribute('style', 'height: auto; scroll-behavior: auto;');
+    document.body.setAttribute('style', 'height: auto; scroll-behavior: auto;');
+  });
+  
+  await waitForStableDOM(page, 5000, 1000);
   
   let dimensions = await page.evaluate(() => {
     const scrollHeight = Math.max(
@@ -208,6 +385,8 @@ const captureByStitching = async (page, options) => {
   
   console.log(`📸 Capturing ${numSections} sections with stitching...`);
   
+  await initStickyElements(page);
+  
   const fullSectionsHeight = (numSections - 1) * dimensions.viewportHeight;
   const lastSectionHeight = Math.max(0, dimensions.scrollHeight - fullSectionsHeight);
   const physicalViewportHeight = Math.round(dimensions.viewportHeight * dimensions.devicePixelRatio);
@@ -217,43 +396,52 @@ const captureByStitching = async (page, options) => {
   const sections = [];
   
   for (let i = 0; i < numSections; i++) {
-    const isLast = i === numSections - 1;
-    let scrollY;
-    
-    if (isLast && lastSectionHeight > 0 && lastSectionHeight < dimensions.viewportHeight) {
-      scrollY = dimensions.scrollHeight - dimensions.viewportHeight;
-    } else {
-      scrollY = i * dimensions.viewportHeight;
+    try {
+      const isLast = i === numSections - 1;
+      let scrollY;
+      
+      if (isLast && lastSectionHeight > 0 && lastSectionHeight < dimensions.viewportHeight) {
+        scrollY = dimensions.scrollHeight - dimensions.viewportHeight;
+      } else {
+        scrollY = i * dimensions.viewportHeight;
+      }
+      
+      await page.evaluate((y) => {
+        window.scrollTo(0, y);
+        document.documentElement.scrollTop = y;
+        document.body.scrollTop = y;
+      }, scrollY);
+      
+      await waitForStableDOM(page, 5000, 1000);
+      
+      const actualScrollY = await page.evaluate(() => {
+        return Math.max(
+          window.pageYOffset || window.scrollY || 0,
+          document.documentElement.scrollTop || 0,
+          document.body.scrollTop || 0
+        );
+      });
+      
+      if (Math.abs(actualScrollY - scrollY) > 10) {
+        console.log(`  ⚠️ Scroll mismatch: expected ${scrollY}, got ${actualScrollY}`);
+      }
+      
+      await waitForStableDOM(page, 5000, 1000);
+      
+      const viewportTop = scrollY;
+      const viewportBottom = scrollY + dimensions.viewportHeight;
+      await disableStickyElementsForSection(page, i, viewportTop, viewportBottom);
+      
+      const screenshot = await page.screenshot({
+        omitBackground: !options.defaultBackground
+      });
+      
+      sections.push(screenshot);
+      console.log(`  ✅ Section ${i + 1}/${numSections} captured at y=${scrollY} (actual: ${actualScrollY})`);
+    } catch (err) {
+      console.error(`  ❌ Failed to capture section ${i + 1}/${numSections}:`, err.message);
+      throw err;
     }
-    
-    await page.evaluate((y) => {
-      window.scrollTo(0, y);
-      document.documentElement.scrollTop = y;
-      document.body.scrollTop = y;
-    }, scrollY);
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const actualScrollY = await page.evaluate(() => {
-      return Math.max(
-        window.pageYOffset || window.scrollY || 0,
-        document.documentElement.scrollTop || 0,
-        document.body.scrollTop || 0
-      );
-    });
-    
-    if (Math.abs(actualScrollY - scrollY) > 10) {
-      console.log(`  ⚠️ Scroll mismatch: expected ${scrollY}, got ${actualScrollY}`);
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const screenshot = await page.screenshot({
-      omitBackground: !options.defaultBackground
-    });
-    
-    sections.push(screenshot);
-    console.log(`  ✅ Section ${i + 1}/${numSections} captured at y=${scrollY} (actual: ${actualScrollY})`);
   }
   
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -333,6 +521,33 @@ const captureByStitching = async (page, options) => {
   
   console.log(`✅ Stitching completed`);
   
+  await restoreStickyElements(page);
+  
+  await restoreOriginalScroll(page);
+  
+  await page.evaluate(() => {
+    const removeImportantFromElement = (el) => {
+      el.style.setProperty('overflow-y', '', 'important');
+      el.style.setProperty('overflow-x', '', 'important');
+      el.style.setProperty('overflow', '', 'important');
+      el.style.removeProperty('overflow-y');
+      el.style.removeProperty('overflow-x');
+      el.style.removeProperty('overflow');
+    };
+    
+    removeImportantFromElement(document.body);
+    removeImportantFromElement(document.documentElement);
+    
+    document.documentElement.removeAttribute('style');
+    document.body.removeAttribute('style');
+    
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  });
+  
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
   return mergedBuffer;
 };
 
@@ -355,6 +570,7 @@ const internalCaptureWebsiteCore = async (options, page) => {
   };
 
   await page.setViewport(viewportOptions);
+  await hideScrollbar(page);
 
   if (options.fullPage) {
     // await forceDocumentScroll(page);

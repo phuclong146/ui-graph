@@ -1441,7 +1441,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const imageBuffer = Buffer.from(screenshot, 'base64');
             
             const pageHeight = 1080;
-            const pageWidth = 1920;
+            const pageWidth = Math.min(1920, imageWidth);
             const numPages = Math.ceil(imageHeight / pageHeight);
             
             const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
@@ -1449,11 +1449,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             for (let i = 0; i < numPages; i++) {
                 const y = i * pageHeight;
                 const h = Math.min(pageHeight, imageHeight - y);
+                const w = Math.min(pageWidth, imageWidth);
                 
-                console.log(`  📄 Creating Page ${i + 1}/${numPages} at y=${y}, h=${h}`);
+                console.log(`  📄 Creating Page ${i + 1}/${numPages} at y=${y}, h=${h}, w=${w}`);
                 
                 const pageBuffer = await sharp(imageBuffer)
-                    .extract({ left: 0, top: y, width: pageWidth, height: h })
+                    .extract({ left: 0, top: y, width: w, height: h })
                     .toBuffer();
                 
                 const pageBase64 = pageBuffer.toString('base64');
@@ -1462,7 +1463,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const pageId = await tracker.dataItemManager.createPage(
                     pageNumber,
                     pageBase64,
-                    { x: 0, y, w: pageWidth, h }
+                    { x: 0, y, w, h }
                 );
                 
                 await tracker.parentPanelManager.addChildPage(tracker.selectedPanelId, pageNumber, pageId);
@@ -1480,12 +1481,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             try {
                 console.log('🌐 Auto-detecting actions on PANEL (full page)...');
-                const { restoreOriginalScroll } = await import('../lib/website-capture.js');
-                await restoreOriginalScroll(tracker.page);
                 
                 await tracker.page.evaluate(() => {
                     document.documentElement.style.removeProperty('overflow');
+                    document.documentElement.style.removeProperty('overflow-y');
+                    document.documentElement.style.removeProperty('overflow-x');
                     document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('overflow-y');
+                    document.body.style.removeProperty('overflow-x');
                 });
                 
                 await new Promise(resolve => setTimeout(resolve, 500));
