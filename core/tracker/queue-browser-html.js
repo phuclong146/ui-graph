@@ -450,9 +450,44 @@ export const QUEUE_BROWSER_HTML = `
         box-shadow: 0 0 30px rgba(0,0,0,0.7);
         border-radius: 2px;
       }
+      
+      #loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 99999;
+      }
+      
+      #loading-overlay.show {
+        display: flex;
+      }
+      
+      #loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
     </style>
   </head>
   <body>
+    <div id="loading-overlay">
+      <div id="loading-spinner"></div>
+    </div>
+    
     <div id="main-container">
       <div id="panel-tree-container">
         <h3>Panel Log</h3>
@@ -511,6 +546,17 @@ export const QUEUE_BROWSER_HTML = `
             updateDetectCaptureButtonsState();
           }
           handlePanelSelected(evt);
+          
+          if (window.__loadingTimeout) {
+            clearTimeout(window.__loadingTimeout);
+            window.__loadingTimeout = null;
+          }
+          
+          const loadingOverlay = document.getElementById('loading-overlay');
+          if (loadingOverlay) {
+            loadingOverlay.classList.remove('show');
+          }
+          
           return;
         }
 
@@ -1191,6 +1237,21 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         contentDiv.addEventListener('click', () => {
+          const loadingOverlay = document.getElementById('loading-overlay');
+          if (loadingOverlay) {
+            loadingOverlay.classList.add('show');
+            
+            if (window.__loadingTimeout) {
+              clearTimeout(window.__loadingTimeout);
+            }
+            
+            window.__loadingTimeout = setTimeout(() => {
+              console.log('⚠️ Loading timeout (30s), hiding overlay');
+              loadingOverlay.classList.remove('show');
+              window.__loadingTimeout = null;
+            }, 30000);
+          }
+          
           if (window.selectPanel) {
             window.selectPanel(node.panel_id);
           }

@@ -418,6 +418,13 @@ export async function detectScreenByGemini(tracker) {
                     }
                     
                     console.log(`✅ Created ${actionsFromGemini.length} actions in doing_item.jsonl`);
+                    
+                    if (actionsFromGemini.length === 0 && panelItem.item_category === 'PAGE') {
+                        await tracker._broadcast({
+                            type: 'show_toast',
+                            message: '⚠️ Gemini không tìm thấy action nào! Hãy Mark as Done nếu page này đã hoàn tất.'
+                        });
+                    }
                 }
                 
                 const screenshotWithBoxes = await drawPanelBoundingBoxes(scr.screenshot, scaledGeminiJson, '#00aaff', 2);
@@ -529,8 +536,6 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
             
             actionsToProcess = adjustedActions;
         } else if (panelItem.item_category === 'PAGE') {
-            console.log('📄 PAGE detected: loading parent PANEL parent_dom and filtering by PAGE position');
-            
             const { promises: fsp } = await import('fs');
             const path = await import('path');
             const parentPath = path.default.join(tracker.sessionFolder, 'myparent_panel.jsonl');
@@ -543,39 +548,8 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
                 p.child_pages && p.child_pages.some(pg => pg.page_id === panelId)
             );
             
-            if (!parentPanelEntry || !parentPanelEntry.parent_dom || parentPanelEntry.parent_dom.length === 0) {
-                console.error('❌ Parent PANEL has no parent_dom! Need to detect actions on PANEL first!');
-                await tracker._broadcast({
-                    type: 'show_toast',
-                    message: '⚠️ Vui lòng detect actions trên PANEL trước!'
-                });
-                return [];
-            }
-            
-            const pageY = panelItem.metadata?.y || 0;
-            const pageH = panelItem.metadata?.h || 1080;
-            const pageBottom = pageY + pageH;
-            
-            const filteredActions = parentPanelEntry.parent_dom.filter(action => {
-                const pos = action.action_pos;
-                const actionCenterY = pos.y + pos.h / 2;
-                
-                return actionCenterY >= pageY && actionCenterY < pageBottom;
-            });
-            
-            console.log(`✂️ Filtered ${parentPanelEntry.parent_dom.length} → ${filteredActions.length} actions inside PAGE area`);
-            
-            const adjustedActions = filteredActions.map(action => ({
-                ...action,
-                action_pos: {
-                    x: Math.round(action.action_pos.x),
-                    y: Math.round(action.action_pos.y - pageY),
-                    w: Math.round(action.action_pos.w),
-                    h: Math.round(action.action_pos.h)
-                }
-            }));
-            
-            actionsToProcess = adjustedActions;
+            console.log('📄 PAGE: Auto DOM detection disabled. User must detect via Gemini.');
+            actionsToProcess = [];
         } else {
             const domActions = await captureActionsFromDOM(tracker.page, null, fullPage, imageWidth, imageHeight);
             console.log(`🎯 [DOM] Detected ${domActions.length} interactive elements`);
@@ -604,7 +578,7 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
         if (scaledDomActions.length === 0 && panelItem.item_category === 'PAGE') {
             await tracker._broadcast({
                 type: 'show_toast',
-                message: '⚠️ Không tìm thấy action nào trong PAGE này!'
+                message: '⚠️ DOM không tìm thấy action nào! Hãy thử nút 🤖 Detect Action Backup.'
             });
         }
         

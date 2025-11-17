@@ -991,18 +991,52 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (tracker.selectedPanelId && tracker.dataItemManager) {
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
                 
-                if (panelItem && panelItem.image_base64) {
+                const hasFullImageInfo = panelItem && panelItem.image_base64 && 
+                    panelItem.metadata?.y !== undefined && 
+                    panelItem.metadata?.h !== undefined;
+                
+                if (hasFullImageInfo) {
                     screenshot = panelItem.image_base64;
-                    console.log('✅ Using existing image_base64');
+                    console.log('✅ Using existing image_base64 with full metadata');
                 } else {
+                    console.log('📸 PAGE has no screenshot, capturing current viewport...');
+                    
+                    const scrollPosition = await tracker.page.evaluate(() => ({
+                        x: window.scrollX || window.pageXOffset,
+                        y: window.scrollY || window.pageYOffset
+                    }));
+                    
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = 'hidden';
+                        document.body.style.overflow = 'hidden';
+                    });
+                    
                     const { captureScreenshot } = await import('../media/screenshot.js');
                     screenshot = await captureScreenshot(tracker.page, "base64", false);
-                    console.log('📸 Captured new screenshot');
+                    
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = '';
+                        document.body.style.overflow = '';
+                    });
+                    
+                    const sharp = (await import('sharp')).default;
+                    const buffer = Buffer.from(screenshot, 'base64');
+                    const metadata = await sharp(buffer).metadata();
+                    
+                    const currentMetadata = panelItem.metadata || {};
+                    await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                        image_base64: screenshot,
+                        metadata: {
+                            ...currentMetadata,
+                            x: scrollPosition.x,
+                            y: scrollPosition.y,
+                            w: metadata.width,
+                            h: metadata.height
+                        }
+                    });
+                    
+                    console.log(`✅ Captured current viewport ${metadata.width}x${metadata.height} at scroll (${scrollPosition.x}, ${scrollPosition.y})`);
                 }
-                
-                await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
-                    image_base64: screenshot
-                });
                 
                 screenshotForGemini = screenshot;
                 
@@ -1154,18 +1188,54 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let displayScreenshot = null;
             
             if (panelItem.item_category === 'PAGE') {
-                if (!panelItem.image_base64) {
-                    console.error('PAGE has no image_base64');
-                    await tracker._broadcast({
-                        type: 'show_toast',
-                        message: '⚠️ PAGE không có screenshot!'
-                    });
-                    return;
-                }
+                const hasFullImageInfo = panelItem.image_base64 && 
+                    panelItem.metadata?.y !== undefined && 
+                    panelItem.metadata?.h !== undefined;
                 
-                screenshot = panelItem.image_base64;
-                displayScreenshot = screenshot;
-                console.log('✅ Using PAGE image_base64 (no capture)');
+                if (hasFullImageInfo) {
+                    screenshot = panelItem.image_base64;
+                    displayScreenshot = screenshot;
+                    console.log('✅ Using PAGE image_base64 with full metadata (no capture)');
+                } else {
+                    console.log('📸 PAGE has no screenshot, capturing current viewport...');
+                    
+                    const scrollPosition = await tracker.page.evaluate(() => ({
+                        x: window.scrollX || window.pageXOffset,
+                        y: window.scrollY || window.pageYOffset
+                    }));
+                    
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = 'hidden';
+                        document.body.style.overflow = 'hidden';
+                    });
+                    
+                    const { captureScreenshot } = await import('../media/screenshot.js');
+                    screenshot = await captureScreenshot(tracker.page, "base64", false);
+                    displayScreenshot = screenshot;
+                    
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = '';
+                        document.body.style.overflow = '';
+                    });
+                    
+                    const sharp = (await import('sharp')).default;
+                    const buffer = Buffer.from(screenshot, 'base64');
+                    const metadata = await sharp(buffer).metadata();
+                    
+                    const currentMetadata = panelItem.metadata || {};
+                    await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                        image_base64: screenshot,
+                        metadata: {
+                            ...currentMetadata,
+                            x: scrollPosition.x,
+                            y: scrollPosition.y,
+                            w: metadata.width,
+                            h: metadata.height
+                        }
+                    });
+                    
+                    console.log(`✅ Captured current viewport ${metadata.width}x${metadata.height} at scroll (${scrollPosition.x}, ${scrollPosition.y})`);
+                }
                 
                 const sharp = (await import('sharp')).default;
                 const buffer = Buffer.from(screenshot, 'base64');
@@ -1448,81 +1518,78 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const { screenshot, imageWidth, imageHeight, restoreViewport } = result;
             console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
             
-            await tracker.page.evaluate(() => {
-                document.documentElement.style.overflow = 'hidden';
-                document.body.style.overflow = 'hidden';
-            });
-            
-            await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
-                image_base64: screenshot,
-                metadata: {
-                    w: imageWidth,
-                    h: imageHeight
-                }
-            });
-            
-            console.log('📐 Auto-splitting into pages...');
-            const sharp = (await import('sharp')).default;
-            const imageBuffer = Buffer.from(screenshot, 'base64');
-            
-            const pageHeight = 1080;
-            const pageWidth = Math.min(1920, imageWidth);
-            const numPages = Math.ceil(imageHeight / pageHeight);
-            
-            const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-            
-            for (let i = 0; i < numPages; i++) {
-                const y = i * pageHeight;
-                const h = Math.min(pageHeight, imageHeight - y);
-                const w = Math.min(pageWidth, imageWidth);
-                
-                console.log(`  📄 Creating Page ${i + 1}/${numPages} at y=${y}, h=${h}, w=${w}`);
-                
-                const pageBuffer = await sharp(imageBuffer)
-                    .extract({ left: 0, top: y, width: w, height: h })
-                    .toBuffer();
-                
-                const pageBase64 = pageBuffer.toString('base64');
-                const pageNumber = i + 1;
-                
-                const pageId = await tracker.dataItemManager.createPage(
-                    pageNumber,
-                    pageBase64,
-                    { x: 0, y, w, h }
-                );
-                
-                await tracker.parentPanelManager.addChildPage(tracker.selectedPanelId, pageNumber, pageId);
-                
-                await tracker._broadcast({
-                    type: 'show_toast',
-                    message: `📄 Created Page ${pageNumber}/${numPages}`
-                });
-            }
-            
-            await tracker._broadcast({
-                type: 'tree_update',
-                data: await tracker.panelLogManager.buildTreeStructure()
-            });
+            let numPages = 0;
             
             try {
-                console.log('🌐 Auto-detecting actions on PANEL (full page)...');
-                
                 await tracker.page.evaluate(() => {
-                    document.documentElement.style.removeProperty('overflow');
-                    document.documentElement.style.removeProperty('overflow-y');
-                    document.documentElement.style.removeProperty('overflow-x');
-                    document.body.style.removeProperty('overflow');
-                    document.body.style.removeProperty('overflow-y');
-                    document.body.style.removeProperty('overflow-x');
+                    document.documentElement.style.overflow = 'hidden';
+                    document.body.style.overflow = 'hidden';
                 });
                 
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
+                    image_base64: screenshot,
+                    metadata: {
+                        w: imageWidth,
+                        h: imageHeight
+                    }
+                });
+                
+                console.log('📐 Auto-splitting into pages...');
+                const sharp = (await import('sharp')).default;
+                const imageBuffer = Buffer.from(screenshot, 'base64');
+                
+                const pageHeight = 1080;
+                const pageWidth = Math.min(1920, imageWidth);
+                numPages = Math.ceil(imageHeight / pageHeight);
+                
+                const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+                
+                for (let i = 0; i < numPages; i++) {
+                    const y = i * pageHeight;
+                    const h = Math.min(pageHeight, imageHeight - y);
+                    const w = Math.min(pageWidth, imageWidth);
+                    
+                    console.log(`  📄 Creating Page ${i + 1}/${numPages} at y=${y}, h=${h}, w=${w}`);
+                    
+                    const pageBuffer = await sharp(imageBuffer)
+                        .extract({ left: 0, top: y, width: w, height: h })
+                        .toBuffer();
+                    
+                    const pageBase64 = pageBuffer.toString('base64');
+                    const pageNumber = i + 1;
+                    
+                    const pageId = await tracker.dataItemManager.createPage(
+                        pageNumber,
+                        pageBase64,
+                        { x: 0, y, w, h }
+                    );
+                    
+                    await tracker.parentPanelManager.addChildPage(tracker.selectedPanelId, pageNumber, pageId);
+                    
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: `📄 Created Page ${pageNumber}/${numPages}`
+                    });
+                }
+                
+                await tracker._broadcast({
+                    type: 'tree_update',
+                    data: await tracker.panelLogManager.buildTreeStructure()
+                });
                 
                 const { detectScreenByDOM } = await import('./gemini-handler.js');
                 await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
                 if (restoreViewport) {
                     await restoreViewport();
+                }
+                
+                console.log('🔄 Reloading page to restore scroll (website-shot changed DOM structure)...');
+                try {
+                    await tracker.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+                    console.log('✅ Page reloaded, scroll restored');
+                } catch (reloadErr) {
+                    console.error('⚠️ Page reload failed:', reloadErr.message);
                 }
             }
             
@@ -1540,6 +1607,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
         } catch (err) {
             console.error('Failed to detect pages:', err);
+            
+            await tracker.page.evaluate(() => {
+                document.documentElement.style.removeProperty('overflow');
+                document.documentElement.style.removeProperty('overflow-y');
+                document.documentElement.style.removeProperty('overflow-x');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('overflow-y');
+                document.body.style.removeProperty('overflow-x');
+            }).catch(() => {});
+            
             await tracker._broadcast({
                 type: 'show_toast',
                 message: '❌ Capture failed!'
