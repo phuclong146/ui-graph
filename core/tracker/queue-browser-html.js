@@ -1871,7 +1871,7 @@ export const QUEUE_BROWSER_HTML = `
           const hasActions = evt.actions && evt.actions.length > 0;
           const isDetecting = evt.gemini_detecting === true;
           
-          if (evt.screenshot && window.openPanelEditor && (hasActions || isDetecting)) {
+          if (evt.screenshot && window.openPanelEditor) {
             const editBtn = document.createElement('button');
             editBtn.className = 'edit-action-btn';
             
