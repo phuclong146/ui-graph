@@ -60,12 +60,13 @@ export class PanelLogManager {
                             parentNode.children.push(actionNode);
                         }
                     }
-                    // Sắp xếp children theo (y, x)
                     parentNode.children.sort((a, b) => {
-                        if (a.action_pos.y === b.action_pos.y) {
-                            return a.action_pos.x - b.action_pos.x;
-                        }
-                        return a.action_pos.y - b.action_pos.y;
+                        const aY = a.action_pos?.y ?? 0;
+                        const bY = b.action_pos?.y ?? 0;
+                        const aX = a.action_pos?.x ?? 0;
+                        const bX = b.action_pos?.x ?? 0;
+                        if (aY === bY) return aX - bX;
+                        return aY - bY;
                     });
                 }
             }
