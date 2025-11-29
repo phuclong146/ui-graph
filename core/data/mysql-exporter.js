@@ -350,11 +350,6 @@ export class MySQLExporter {
                         ? this.extractSessionId(actionItem.metadata.session_url)
                         : null;
                     
-                    if (!sessionId) {
-                        console.log(`⚠️ Skip step for action ${actionItem.name} - missing session_url`);
-                        continue;
-                    }
-                    
                     const recordId = sessionId;
                     const stepId = 1;
                     const stepType = 'A-BROWSER';
@@ -362,8 +357,6 @@ export class MySQLExporter {
                     const clicks = allClicks.filter(c => c.action_item_id === actionItemId)
                         .sort((a, b) => a.timestamp - b.timestamp);
                     const stepTimestamp = clicks.length > 0 ? clicks[0].timestamp : null;
-                    
-                    if (!stepTimestamp) continue;
                     
                     const myStep = `DOS-${recordId}-${stepId}-${stepType}`;
                     const code = `${this.myAiTool}_${myStep}`;
