@@ -390,7 +390,14 @@ const captureByStitching = async (page, options, progressCallback = null) => {
       };
     });
 
-    const numSections = Math.ceil(dimensions.scrollHeight / dimensions.viewportHeight);
+    const MAX_SECTIONS = 20;
+    let numSections = Math.ceil(dimensions.scrollHeight / dimensions.viewportHeight);
+    
+    if (numSections > MAX_SECTIONS) {
+      console.log(`⚠️ Limiting capture from ${numSections} to ${MAX_SECTIONS} sections`);
+      numSections = MAX_SECTIONS;
+      dimensions.scrollHeight = numSections * dimensions.viewportHeight;
+    }
 
     if (numSections === 1) {
       const buffer = await page.screenshot({
