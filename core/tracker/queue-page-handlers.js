@@ -2816,14 +2816,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker.dataItemManager.updateItem(actionItemId, { status: 'completed' });
 
-            await tracker._broadcast({
-                type: 'tree_update',
-                data: await tracker.panelLogManager.buildTreeStructure()
-            });
+            // Verify the update was successful before building tree
+            const updatedAction = await tracker.dataItemManager.getItem(actionItemId);
+            if (updatedAction && updatedAction.status === 'completed') {
+                await tracker._broadcast({
+                    type: 'tree_update',
+                    data: await tracker.panelLogManager.buildTreeStructure()
+                });
 
-            await checkAndUpdatePanelStatusHandler(parentPanelId);
+                await checkAndUpdatePanelStatusHandler(parentPanelId);
 
-            await selectPanelHandler(actionItemId);
+                await selectPanelHandler(actionItemId);
+            } else {
+                console.error('❌ Failed to verify action status update');
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to mark as done' });
+            }
 
             console.log(`✅ Use CURRENT PANEL: ${actionItemId} marked done with panel ${parentPanelId}`);
         } catch (err) {
