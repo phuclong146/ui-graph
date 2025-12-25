@@ -17,6 +17,45 @@ import { join, dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Helper function to ensure Chrome is installed for Puppeteer
+async function ensureChromeInstalled() {
+    try {
+        // Try to get the executable path - this will throw if Chrome is not installed
+        const executablePath = puppeteer.executablePath();
+        console.log(`✅ Chrome found at: ${executablePath}`);
+        return executablePath;
+    } catch (error) {
+        console.log("⚠️ Chrome not found in Puppeteer cache, installing...");
+        console.log("💡 Please wait while Chrome is being downloaded...");
+        try {
+            // Use child_process to run npx command
+            const { execSync } = await import('child_process');
+            console.log("📥 Installing Chrome via @puppeteer/browsers...");
+            execSync('npx @puppeteer/browsers install chrome@latest', {
+                stdio: 'inherit',
+                cwd: process.cwd()
+            });
+            console.log("✅ Chrome installed successfully!");
+            return puppeteer.executablePath();
+        } catch (installError) {
+            console.error("❌ Failed to install Chrome automatically");
+            console.error("💡 Please run manually: npx @puppeteer/browsers install chrome@latest");
+            throw new Error("Could not install Chrome. Please run: npx @puppeteer/browsers install chrome@latest");
+        }
+    }
+}
+
+// Helper function to check if Chrome path exists
+async function checkChromePath(chromePath) {
+    if (!chromePath) return null;
+    try {
+        await fsp.access(chromePath);
+        return chromePath;
+    } catch {
+        return null;
+    }
+}
+
 export async function initBrowsers(tracker, startUrl) {
     tracker.urlTracking = startUrl;
 
@@ -31,6 +70,16 @@ export async function initBrowsers(tracker, startUrl) {
     console.log(`📐 Queue browser: ${queueWidth}x${height} at (${trackingWidth}, 0)`);
 
     console.log("🚀 Launching Real Browser (bypass bot detection)...");
+
+    // Check and use CHROME_PATH if provided and valid, otherwise use Puppeteer's Chrome
+    let chromePathToUse = await checkChromePath(ENV.CHROME_PATH);
+    if (!chromePathToUse) {
+        console.log("📦 Using Puppeteer's bundled Chrome...");
+        chromePathToUse = await ensureChromeInstalled();
+    } else {
+        console.log(`✅ Using Chrome from CHROME_PATH: ${chromePathToUse}`);
+    }
+
     const { browser: trackingBrowser, page: initialPage } = await connect({
         headless: false,
         turnstile: false,
@@ -38,11 +87,16 @@ export async function initBrowsers(tracker, startUrl) {
         tf: false,
         args: [
             `--window-size=${trackingWidth},${height}`,
-            '--window-position=0,0'
+            '--window-position=0,0',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer'
         ],
         userDataDir: "./user_data",
         customConfig: {
-            chromePath: ENV.CHROME_PATH
+            chromePath: chromePathToUse
         },
         connectOption: {
             defaultViewport: null
@@ -65,18 +119,48 @@ export async function initBrowsers(tracker, startUrl) {
     // console.log("✅ Adblock injected successfully!");
 
     console.log("✅ Real Browser launched successfully!");
-    tracker.queueBrowser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: null,
-        args: [
-            `--window-size=${queueWidth},${height}`,
-            `--window-position=${trackingWidth},0`,
-            '--disable-font-subpixel-positioning',
-            '--disable-features=FontAccess',
-            '--font-render-hinting=none',
-            '--disable-dev-shm-usage'
-        ]
-    });
+
+    // Ensure Chrome is installed for queue browser too
+    const queueChromePath = await ensureChromeInstalled();
+
+    try {
+        tracker.queueBrowser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: null,
+            executablePath: queueChromePath,
+            args: [
+                `--window-size=${queueWidth},${height}`,
+                `--window-position=${trackingWidth},0`,
+                '--disable-font-subpixel-positioning',
+                '--disable-features=FontAccess',
+                '--font-render-hinting=none',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-software-rasterizer'
+            ]
+        });
+    } catch (queueError) {
+        // If launch fails, try without explicit executablePath
+        console.log("⚠️ Retrying queue browser launch without explicit path...");
+        tracker.queueBrowser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: null,
+            args: [
+                `--window-size=${queueWidth},${height}`,
+                `--window-position=${trackingWidth},0`,
+                '--disable-font-subpixel-positioning',
+                '--disable-features=FontAccess',
+                '--font-render-hinting=none',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-software-rasterizer'
+            ]
+        });
+    }
     const queuePages = await tracker.queueBrowser.pages();
     tracker.queuePage = queuePages[0];
     await tracker.queuePage.setJavaScriptEnabled(true);
