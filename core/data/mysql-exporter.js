@@ -424,7 +424,7 @@ export class MySQLExporter {
                     }
                     
                     const panelCode = `${this.myAiTool}_${panelMyItem}`;
-                    
+                    const pageCode = `${this.myAiTool}_${panelMyItem}_${page.page_no}`;
                     // Ensure screenshot_url is explicitly set (null if not present)
                     const screenshotUrl = page.screenshot_url !== undefined ? page.screenshot_url : null;
                     
@@ -433,11 +433,10 @@ export class MySQLExporter {
                     } else {
                         console.log(`📸 Page ${page.page_no} screenshot_url: ${screenshotUrl}`);
                     }
-                    
                     await this.connection.execute(
                         `INSERT INTO pages 
-                         (name, coordinate, width, height, screenshot_url, my_item, page_no)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         (code, name, coordinate, width, height, screenshot_url, my_item, page_no)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
                             name = VALUES(name),
                             coordinate = VALUES(coordinate),
@@ -446,6 +445,7 @@ export class MySQLExporter {
                             screenshot_url = VALUES(screenshot_url),
                             updated_at = CURRENT_TIMESTAMP`,
                         [
+                            pageCode,
                             page.name,
                             JSON.stringify(page.coordinate),
                             page.width,
