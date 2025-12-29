@@ -144,11 +144,15 @@ export class MySQLExporter {
                         const jsonData = JSON.parse(resp);
                         if (jsonData?.status === 200) {
                             screenshotUrl = jsonData.message;
-                            console.log(`  ✅ Uploaded page ${pageNo}/${numPages}`);
+                            console.log(`  ✅ Uploaded page ${pageNo}/${numPages}: ${screenshotUrl}`);
+                        } else {
+                            console.error(`  ❌ Upload failed for page ${pageNo}: status ${jsonData?.status}, response: ${resp}`);
                         }
                     } catch (uploadErr) {
                         console.error(`  ❌ Failed to upload page ${pageNo}:`, uploadErr);
                     }
+                } else {
+                    console.error(`  ❌ Failed to save temp file for page ${pageNo}`);
                 }
                 
                 const pageData = {
@@ -161,7 +165,7 @@ export class MySQLExporter {
                     },
                     width: globalPos.w,
                     height: actualHeight,
-                    screenshot_url: screenshotUrl,
+                    screenshot_url: screenshotUrl || null,
                     my_item: panel.item_id,
                     page_no: pageNo
                 };
@@ -421,6 +425,15 @@ export class MySQLExporter {
                     
                     const panelCode = `${this.myAiTool}_${panelMyItem}`;
                     
+                    // Ensure screenshot_url is explicitly set (null if not present)
+                    const screenshotUrl = page.screenshot_url !== undefined ? page.screenshot_url : null;
+                    
+                    if (!screenshotUrl) {
+                        console.log(`⚠️ Page ${page.page_no} (${page.name}) has no screenshot_url`);
+                    } else {
+                        console.log(`📸 Page ${page.page_no} screenshot_url: ${screenshotUrl}`);
+                    }
+                    
                     await this.connection.execute(
                         `INSERT INTO pages 
                          (name, coordinate, width, height, screenshot_url, my_item, page_no)
@@ -437,7 +450,7 @@ export class MySQLExporter {
                             JSON.stringify(page.coordinate),
                             page.width,
                             page.height,
-                            page.screenshot_url,
+                            screenshotUrl,
                             panelCode,
                             page.page_no
                         ]
