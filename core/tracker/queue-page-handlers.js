@@ -139,7 +139,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.warn(`⚠️ Cannot save: ${incompletePanels.length} panels not completed:`, panelNames);
                 const validationError = new Error(`Validation failed: ${incompletePanels.length} panels not completed`);
                 validationError.isValidationError = true;
-                //throw validationError;
+                throw validationError;
             }
         }
 
@@ -1495,6 +1495,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
+            const stepContent = await tracker.stepManager.getAllSteps();
+            const relatedStep = stepContent.find(step => step.panel_after.item_id === tracker.selectedPanelId);
+            
+            if (relatedStep) {
+                const panelBeforeId = relatedStep.panel_before.item_id;
+                const panelAfterId = relatedStep.panel_after.item_id;
+                
+                if (panelBeforeId !== panelAfterId) {
+                    console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
+                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
+                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                } else {
+                    console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
+                }
+            } else {
+                console.log(`⚠️ No step found with panel_after="${tracker.selectedPanelId}"`);
+            }
+            
             delete tracker.__drawPanelContext;
             console.log('✅ Draw Panel & Detect Actions completed!');
 
@@ -2816,14 +2834,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker.dataItemManager.updateItem(actionItemId, { status: 'completed' });
 
-            await tracker._broadcast({
-                type: 'tree_update',
-                data: await tracker.panelLogManager.buildTreeStructure()
-            });
+            // Verify the update was successful before building tree
+            const updatedAction = await tracker.dataItemManager.getItem(actionItemId);
+            if (updatedAction && updatedAction.status === 'completed') {
+                await tracker._broadcast({
+                    type: 'tree_update',
+                    data: await tracker.panelLogManager.buildTreeStructure()
+                });
 
-            await checkAndUpdatePanelStatusHandler(parentPanelId);
+                await checkAndUpdatePanelStatusHandler(parentPanelId);
 
-            await selectPanelHandler(actionItemId);
+                await selectPanelHandler(actionItemId);
+            } else {
+                console.error('❌ Failed to verify action status update');
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to mark as done' });
+            }
 
             console.log(`✅ Use CURRENT PANEL: ${actionItemId} marked done with panel ${parentPanelId}`);
         } catch (err) {
