@@ -393,10 +393,10 @@ export class ParentPanelManager {
             return;
         }
         const myParent = await this.findMyParent(panelParentId);
-        if (!myParent || myParent.child_panels.length === 0) {
-            console.log('makeChild: Khong tim thay myParent của id=', panelParentId);
-            return;
-        }
+        // if (!myParent || myParent.child_panels.length === 0) {
+        //     console.log('makeChild: Khong tim thay myParent của id=', panelParentId);
+        //     return;
+        // }
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
         const parentBox = panelParentInfo.metadata?.global_pos;
@@ -404,7 +404,7 @@ export class ParentPanelManager {
         const overlap = calcOverlapBox(parentBox, childBox);
         if (overlap === 0) {
             // Case A: Khong can loc Action, chi can set parent - child
-            if (!myParent.child_panels.includes(panelChildId)) {
+            if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
                 await this.updatePanelEntry(myParent.parent_panel, myParent);
@@ -412,7 +412,7 @@ export class ParentPanelManager {
             return;
         } else if (overlap === 1) {
             // Case D: trung len nhau thi 2 thang deu la con cua MyParent
-            if (!myParent.child_panels.includes(panelChildId)) {
+            if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
                 await this.updatePanelEntry(myParent.parent_panel, myParent);
@@ -422,7 +422,7 @@ export class ParentPanelManager {
             // Case BCE: co giao nhau
             if (isBoxInside(parentBox, childBox) === "A_in_B") {
                 // Case C: doi cho Parent va Child
-                if (!myParent.child_panels.includes(panelChildId)) {
+                if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
                     await this.updatePanelEntry(myParent.parent_panel, myParent);
