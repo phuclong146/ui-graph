@@ -83,6 +83,35 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Tạo quan hệ parent-child giữa các panel dựa trên step
+     * Tìm step có panel_after trùng với panelId, sau đó tạo quan hệ parent (panel_before) -> child (panel_after)
+     * @param {string} panelId - ID của panel cần tìm step và tạo quan hệ
+     */
+    const createPanelRelationFromStep = async (panelId) => {
+        try {
+            const stepContent = await tracker.stepManager.getAllSteps();
+            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
+            
+            if (relatedStep) {
+                const panelBeforeId = relatedStep.panel_before.item_id;
+                const panelAfterId = relatedStep.panel_after.item_id;
+                
+                if (panelBeforeId !== panelAfterId) {
+                    console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
+                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
+                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                } else {
+                    console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
+                }
+            } else {
+                console.log(`⚠️ No step found with panel_after="${panelId}"`);
+            }
+        } catch (err) {
+            console.error('Failed to create panel relation from step:', err);
+        }
+    };
+
     const removeActionFromItem = async (itemId, itemCategory, actionId) => {
         await tracker.dataItemManager.deleteItem(actionId);
 
@@ -418,23 +447,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         await tracker.parentPanelManager.updatePanelEntry(tracker.selectedPanelId, panelEntry);
                     }
 
-                    const stepContent = await tracker.stepManager.getAllSteps();
-                    const relatedStep = stepContent.find(step => step.panel_after.item_id === tracker.selectedPanelId);
-                    
-                    if (relatedStep) {
-                        const panelBeforeId = relatedStep.panel_before.item_id;
-                        const panelAfterId = relatedStep.panel_after.item_id;
-                        
-                        if (panelBeforeId !== panelAfterId) {
-                            console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                            await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                            console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
-                        } else {
-                            console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
-                        }
-                    } else {
-                        console.log(`⚠️ No step found with panel_after="${tracker.selectedPanelId}"`);
-                    }
+                    // Tạo quan hệ parent-child từ step
+                    await createPanelRelationFromStep(tracker.selectedPanelId);
 
                     const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
 
@@ -1495,23 +1509,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
-            const stepContent = await tracker.stepManager.getAllSteps();
-            const relatedStep = stepContent.find(step => step.panel_after.item_id === tracker.selectedPanelId);
-            
-            if (relatedStep) {
-                const panelBeforeId = relatedStep.panel_before.item_id;
-                const panelAfterId = relatedStep.panel_after.item_id;
-                
-                if (panelBeforeId !== panelAfterId) {
-                    console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
-                } else {
-                    console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
-                }
-            } else {
-                console.log(`⚠️ No step found with panel_after="${tracker.selectedPanelId}"`);
-            }
+            // Tạo quan hệ parent-child từ step
+            await createPanelRelationFromStep(tracker.selectedPanelId);
             
             delete tracker.__drawPanelContext;
             console.log('✅ Draw Panel & Detect Actions completed!');
@@ -3026,19 +3025,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
-            const stepContent = await tracker.stepManager.getAllSteps();
-            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
-            
-            if (relatedStep) {
-                const panelBeforeId = relatedStep.panel_before.item_id;
-                const panelAfterId = relatedStep.panel_after.item_id;
-                
-                console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
-            } else {
-                console.log(`⚠️ No step found with panel_after="${panelId}"`);
-            }
+            // Tạo quan hệ parent-child từ step
+            await createPanelRelationFromStep(panelId);
 
             await tracker._broadcast({
                 type: 'tree_update',
