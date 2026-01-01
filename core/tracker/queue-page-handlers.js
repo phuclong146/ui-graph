@@ -625,7 +625,32 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const fullBuffer = Buffer.from(originalImageBase64, "base64");
             const fullMeta = await sharp(fullBuffer).metadata();
 
+            // Detect panel type using Gemini
+            let detectedPanelType = 'screen'; // Default
+            if (cropPos) {
+                try {
+                    // Crop the image for panel type detection
+                    const croppedBuffer = await sharp(fullBuffer)
+                        .extract({
+                            left: cropPos.x,
+                            top: cropPos.y,
+                            width: cropPos.w,
+                            height: cropPos.h
+                        })
+                        .toBuffer();
+                    const croppedBase64 = croppedBuffer.toString('base64');
+                    
+                    console.log('🤖 Detecting panel type with Gemini...');
+                    const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
+                    console.log(`✅ Detected panel type: ${detectedPanelType}`);
+                } catch (err) {
+                    console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                }
+            }
+
             await tracker.dataItemManager.updateItem(newPanelId, {
+                type: detectedPanelType,
                 metadata: cropPos ? {
                     global_pos: {
                         x: cropPos.x,
@@ -1335,8 +1360,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const croppedBase64 = croppedBuffer.toString('base64');
 
+            // Detect panel type using Gemini
+            console.log('🤖 Detecting panel type with Gemini...');
+            const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
+            let detectedPanelType = 'screen'; // Default
+            try {
+                detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
+                console.log(`✅ Detected panel type: ${detectedPanelType}`);
+            } catch (err) {
+                console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+            }
+
             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
                 image_base64: croppedBase64,
+                type: detectedPanelType,
                 metadata: {
                     global_pos: {
                         x: cropArea.x,
