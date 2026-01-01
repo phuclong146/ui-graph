@@ -177,6 +177,47 @@ export class MySQLExporter {
 
     async exportToMySQL() {
         try {
+            // Load initial timestamp from info.json (timestamp when session tracking was initialized)
+            let initialTimestamp = null;
+            try {
+                const infoPath = path.join(this.sessionFolder, 'info.json');
+                const infoContent = await fsp.readFile(infoPath, 'utf8');
+                const info = JSON.parse(infoContent);
+                if (info.timestamps && info.timestamps.length > 0) {
+                    initialTimestamp = info.timestamps[0]; // First timestamp is the initialization timestamp
+                }
+            } catch (err) {
+                console.warn('⚠️ Could not read info.json, falling back to sessionId for record_id');
+            }
+
+            // Use initial timestamp as record_id for all tables
+            const recordId = initialTimestamp || null;
+
+            // Mark published=false for records with different record_id in all tables
+            if (recordId) {
+                try {
+                    await this.connection.execute(
+                        `UPDATE doing_item SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_ai_tool = ?`,
+                        [recordId, this.myAiTool]
+                    );
+                    await this.connection.execute(
+                        `UPDATE pages SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_item LIKE ?`,
+                        [recordId, `${this.myAiTool}_%`]
+                    );
+                    await this.connection.execute(
+                        `UPDATE myparent_panel SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_item_code LIKE ?`,
+                        [recordId, `${this.myAiTool}_%`]
+                    );
+                    await this.connection.execute(
+                        `UPDATE doing_step SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_ai_tool = ?`,
+                        [recordId, this.myAiTool]
+                    );
+                    console.log(`✅ Marked published=false for records with different record_id`);
+                } catch (err) {
+                    console.warn('⚠️ Could not update published status for old records:', err.message);
+                }
+            }
+
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
             const myparentPanelPath = path.join(this.sessionFolder, 'myparent_panel.jsonl');
             const clickPath = path.join(this.sessionFolder, 'click.jsonl');
@@ -263,8 +304,8 @@ export class MySQLExporter {
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, 
-                      item_category, verb, content, published, session_id, page_index, coordinate, metadata)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, page_index, coordinate, metadata, record_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         name = VALUES(name),
                         image_url = VALUES(image_url),
@@ -274,6 +315,8 @@ export class MySQLExporter {
                         page_index = VALUES(page_index),
                         coordinate = VALUES(coordinate),
                         metadata = VALUES(metadata),
+                        record_id = VALUES(record_id),
+                        published = VALUES(published),
                         updated_at = CURRENT_TIMESTAMP`,
                     [
                         code ?? null,
@@ -289,7 +332,8 @@ export class MySQLExporter {
                         sessionId,
                         pageIndex,
                         globalPos ? JSON.stringify(globalPos) : null,
-                        Object.keys(metadataToSave).length > 0 ? JSON.stringify(metadataToSave) : null
+                        Object.keys(metadataToSave).length > 0 ? JSON.stringify(metadataToSave) : null,
+                        recordId
                     ]
                 );
             }
@@ -315,12 +359,14 @@ export class MySQLExporter {
                         
                         await this.connection.execute(
                             `INSERT INTO myparent_panel 
-                             (my_item_code, my_parent_item, published)
-                             VALUES (?, ?, ?)
+                             (my_item_code, my_parent_item, published, record_id)
+                             VALUES (?, ?, ?, ?)
                              ON DUPLICATE KEY UPDATE 
                                 my_parent_item = VALUES(my_parent_item),
+                                record_id = VALUES(record_id),
+                                published = VALUES(published),
                                 updated_at = CURRENT_TIMESTAMP`,
-                            [`${this.myAiTool}_${childMyItem}`, `${this.myAiTool}_${parentMyItem}`, 1]
+                            [`${this.myAiTool}_${childMyItem}`, `${this.myAiTool}_${parentMyItem}`, 1, recordId]
                         );
                         relationCount++;
                     }
@@ -350,7 +396,7 @@ export class MySQLExporter {
                         ? this.extractSessionId(actionItem.metadata.session_url)
                         : null;
                     
-                    const recordId = sessionId;
+                    // Use the record_id already calculated (from initialTimestamp)
                     const stepId = 1;
                     const stepType = 'A-BROWSER';
                     
@@ -370,13 +416,15 @@ export class MySQLExporter {
                     await this.connection.execute(
                         `INSERT INTO doing_step 
                          (code, my_ai_tool, my_step, record_id, step_id, step_timestamp, step_type,
-                          my_panel_before, my_action, my_panel_after, step_input, step_output, step_asset)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          my_panel_before, my_action, my_panel_after, step_input, step_output, step_asset, published)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
                             step_timestamp = VALUES(step_timestamp),
                             my_panel_before = VALUES(my_panel_before),
                             my_action = VALUES(my_action),
                             my_panel_after = VALUES(my_panel_after),
+                            record_id = VALUES(record_id),
+                            published = VALUES(published),
                             updated_at = CURRENT_TIMESTAMP`,
                         [
                             code,
@@ -391,7 +439,8 @@ export class MySQLExporter {
                             `${this.myAiTool}_${myPanelAfter}`,
                             null,
                             null,
-                            null
+                            null,
+                            1
                         ]
                     );
                     stepCount++;
@@ -423,14 +472,16 @@ export class MySQLExporter {
                     
                     await this.connection.execute(
                         `INSERT INTO pages 
-                         (name, coordinate, width, height, screenshot_url, my_item, page_no)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         (name, coordinate, width, height, screenshot_url, my_item, page_no, record_id, published)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
                             name = VALUES(name),
                             coordinate = VALUES(coordinate),
                             width = VALUES(width),
                             height = VALUES(height),
                             screenshot_url = VALUES(screenshot_url),
+                            record_id = VALUES(record_id),
+                            published = VALUES(published),
                             updated_at = CURRENT_TIMESTAMP`,
                         [
                             page.name,
@@ -439,7 +490,9 @@ export class MySQLExporter {
                             page.height,
                             page.screenshot_url,
                             panelCode,
-                            page.page_no
+                            page.page_no,
+                            recordId,
+                            1
                         ]
                     );
                     pageCount++;
