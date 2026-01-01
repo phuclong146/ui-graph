@@ -575,13 +575,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
 
-            await selectPanelHandler(tracker.selectedPanelId);
-
             await checkAndUpdatePanelStatusHandler(parentPanelId);
 
-            await tracker._broadcast({ type: 'show_toast', message: `✅ Đã tạo panel rỗng: "${newPanelName}"` });
+            // Select the newly created panel
+            await selectPanelHandler(newPanelId);
 
             console.log(`✅ Create new panel completed: "${newPanelName}" (${newPanelId})`);
+
+            // Automatically trigger draw panel & detect actions
+            await tracker._broadcast({ type: 'show_toast', message: `✅ Đã tạo panel, đang tự động draw panel & detect actions...` });
+            
+            // Call drawPanelAndDetectActionsHandler automatically
+            await drawPanelAndDetectActionsHandler();
 
             return { mode: 'DRAW_NEW', panelId: newPanelId, panelName: newPanelName, success: true };
 
