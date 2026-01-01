@@ -21,7 +21,28 @@ export class StepManager {
             return;
         }
         
+        // Đọc tất cả steps hiện có để tìm step_id lớn nhất
+        let maxStepId = 0;
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const existingSteps = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            for (const existingStep of existingSteps) {
+                if (existingStep.step_id && existingStep.step_id > maxStepId) {
+                    maxStepId = existingStep.step_id;
+                }
+            }
+        } catch (err) {
+            // File chưa tồn tại hoặc rỗng, maxStepId = 0
+        }
+        
+        // Gán step_id = maxStepId + 1
+        const stepId = maxStepId + 1;
+        
         const step = {
+            step_id: stepId,
             panel_before: {
                 item_id: panelBeforeId
             },
@@ -35,7 +56,7 @@ export class StepManager {
 
         const line = JSON.stringify(step) + '\n';
         await fsp.appendFile(this.stepPath, line, 'utf8');
-        console.log(`✅ Created step: ${panelBeforeId} → ${actionId} → ${panelAfterId}`);
+        console.log(`✅ Created step (step_id=${stepId}): ${panelBeforeId} → ${actionId} → ${panelAfterId}`);
     }
 
     async getStepForAction(actionId) {
