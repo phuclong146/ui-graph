@@ -1245,6 +1245,50 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
+            // Check for newly opened tabs (within last 30 seconds)
+            let pageToCapture = tracker.page;
+            let switchedToNewTab = false;
+            const now = Date.now();
+            const recentTabs = tracker.newlyOpenedTabs.filter(tab => (now - tab.timestamp) < 30000);
+            
+            if (recentTabs.length > 0) {
+                // Get the most recent new tab
+                const newestTab = recentTabs[recentTabs.length - 1];
+                try {
+                    // Wait for the page to be ready
+                    try {
+                        await newestTab.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 });
+                    } catch (navErr) {
+                        // Page might already be loaded, continue
+                    }
+                    
+                    // Get URL (might not have been available when tab was created)
+                    let newTabUrl = newestTab.url;
+                    if (!newTabUrl || newTabUrl === 'about:blank') {
+                        try {
+                            newTabUrl = newestTab.page.url();
+                        } catch (urlErr) {
+                            // URL not available yet
+                        }
+                    }
+                    
+                    if (newTabUrl && newTabUrl !== 'about:blank') {
+                        console.log(`🆕 Switching to newly opened tab: ${newTabUrl}`);
+                        tracker.originalPage = tracker.page; // Store original page
+                        tracker.page = newestTab.page;
+                        pageToCapture = newestTab.page;
+                        switchedToNewTab = true;
+                        
+                        // Wait a bit for the page to fully load
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        console.log('⚠️ New tab URL not available or is about:blank, using current page');
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Failed to switch to new tab, using current page:', err);
+                }
+            }
+
             const progressCallback = async (message) => {
                 await tracker.queuePage.evaluate((msg) => {
                     if (window.showToast) {
@@ -1254,14 +1298,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             };
 
             const { captureScreenshot } = await import('../media/screenshot.js');
-            const result = await captureScreenshot(tracker.page, "base64", true, true, progressCallback);
+            const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
             const { screenshot, imageWidth, imageHeight, restoreViewport: restoreViewportFn } = result;
             restoreViewport = restoreViewportFn;
             console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
 
             console.log('📐 Detecting actions from DOM (FULL PAGE)...');
             const { captureActionsFromDOM } = await import('../media/dom-capture.js');
-            const fullPageDomActions = await captureActionsFromDOM(tracker.page, null, true, imageWidth, imageHeight);
+            const fullPageDomActions = await captureActionsFromDOM(pageToCapture, null, true, imageWidth, imageHeight);
             console.log(`✅ Detected ${fullPageDomActions.length} DOM actions from full page`);
 
             const pageHeight = 1080;
@@ -1307,7 +1351,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 imageHeight,
                 pagesData,
                 restoreViewport: restoreViewportFn,
-                fullPageDomActions
+                fullPageDomActions,
+                switchedToNewTab: switchedToNewTab,
+                originalPage: switchedToNewTab ? tracker.originalPage : null
             };
 
             console.log('✅ Opened crop editor. Waiting for user to draw panel...');
@@ -1337,7 +1383,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
-            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions } = tracker.__drawPanelContext;
+            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions, switchedToNewTab, originalPage } = tracker.__drawPanelContext;
 
             cropArea.x = Math.max(0, cropArea.x);
             cropArea.y = Math.max(0, cropArea.y);
@@ -1364,11 +1410,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('🤖 Detecting panel type with Gemini...');
             const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
             let detectedPanelType = 'screen'; // Default
-            try {
-                detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
-                console.log(`✅ Detected panel type: ${detectedPanelType}`);
-            } catch (err) {
-                console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+            
+            // If we switched to a new tab, force panel type to "newtab"
+            if (switchedToNewTab) {
+                detectedPanelType = 'newtab';
+                console.log(`✅ Panel type set to "newtab" (captured from newly opened tab)`);
+            } else {
+                try {
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
+                    console.log(`✅ Detected panel type: ${detectedPanelType}`);
+                } catch (err) {
+                    console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                }
             }
 
             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
@@ -1556,6 +1609,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Tạo quan hệ parent-child từ step
             await createPanelRelationFromStep(tracker.selectedPanelId);
+            
+            // Restore original page if we switched to a new tab
+            if (switchedToNewTab && originalPage) {
+                try {
+                    console.log('🔄 Restoring original page...');
+                    tracker.page = originalPage;
+                    // Bring original page to front
+                    await originalPage.bringToFront().catch(() => {});
+                    console.log('✅ Restored to original page');
+                } catch (err) {
+                    console.warn('⚠️ Failed to restore original page:', err);
+                }
+            }
             
             delete tracker.__drawPanelContext;
             console.log('✅ Draw Panel & Detect Actions completed!');

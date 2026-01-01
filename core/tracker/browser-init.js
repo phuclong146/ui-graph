@@ -52,8 +52,48 @@ export async function initBrowsers(tracker, startUrl) {
 
     tracker.browser = trackingBrowser;
     tracker.page = initialPage;
+    tracker.originalPage = initialPage; // Store original page
     await tracker.page.setJavaScriptEnabled(true);
     await tracker.page.setBypassCSP(true);
+
+    // Listen for newly opened tabs
+    trackingBrowser.on('targetcreated', async (target) => {
+        try {
+            const page = await target.page();
+            if (page && page !== tracker.page) {
+                // Wait a bit for the page to initialize
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                try {
+                    const url = page.url();
+                    console.log(`🆕 New tab opened: ${url}`);
+                    
+                    // Clean up old tabs (older than 1 minute)
+                    const oneMinuteAgo = Date.now() - 60000;
+                    tracker.newlyOpenedTabs = tracker.newlyOpenedTabs.filter(tab => tab.timestamp > oneMinuteAgo);
+                    
+                    tracker.newlyOpenedTabs.push({
+                        page: page,
+                        url: url,
+                        target: target,
+                        timestamp: Date.now()
+                    });
+                } catch (urlErr) {
+                    // Page might not have URL yet, but still track it
+                    console.log(`🆕 New tab opened (URL not available yet)`);
+                    tracker.newlyOpenedTabs.push({
+                        page: page,
+                        url: null,
+                        target: target,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        } catch (err) {
+            // Target might not have a page yet, ignore
+            console.debug('Target created but no page available yet:', err.message);
+        }
+    });
 
     // console.log("🛡️ Injecting adblock into tracking browser...");
     // const blocker = await PuppeteerBlocker.fromPrebuiltFull(fetch, {

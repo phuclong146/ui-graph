@@ -43,6 +43,8 @@ export class PanelScreenTracker {
         this.dataItemManager = null;
         this.parentPanelManager = null;
         this.stepManager = null;
+        this.newlyOpenedTabs = []; // Track newly opened tabs
+        this.originalPage = null; // Store original page before switching to new tab
     }
     
     async init({ startUrl = "about:blank" } = {}) {
