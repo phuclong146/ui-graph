@@ -193,28 +193,11 @@ export class MySQLExporter {
             // Use initial timestamp as record_id for all tables
             const recordId = initialTimestamp || null;
 
-            // Mark published=false for all records of this my_ai_tool in all tables
-            try {
-                await this.connection.execute(
-                    `UPDATE doing_item SET published = 0 WHERE my_ai_tool = ?`,
-                    [this.myAiTool]
-                );
-                await this.connection.execute(
-                    `UPDATE pages SET published = 0 WHERE my_item LIKE ?`,
-                    [`${this.myAiTool}_%`]
-                );
-                await this.connection.execute(
-                    `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ?`,
-                    [`${this.myAiTool}_%`]
-                );
-                await this.connection.execute(
-                    `UPDATE doing_step SET published = 0 WHERE my_ai_tool = ?`,
-                    [this.myAiTool]
-                );
-                console.log(`✅ Marked published=false for all records of my_ai_tool=${this.myAiTool}`);
-            } catch (err) {
-                console.warn('⚠️ Could not update published status for old records:', err.message);
-            }
+            // Collections to track saved codes
+            const savedDoingItemCodes = new Set();
+            const savedPageCodes = new Set();
+            const savedDoingStepCodes = new Set();
+            const savedMyparentPanelCodes = new Set();
 
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
             const myparentPanelPath = path.join(this.sessionFolder, 'myparent_panel.jsonl');
@@ -334,6 +317,11 @@ export class MySQLExporter {
                         recordId
                     ]
                 );
+                
+                // Track saved code
+                if (code) {
+                    savedDoingItemCodes.add(code);
+                }
             }
             
             console.log(`✅ Exported ${items.length} items to doing_item`);
@@ -355,6 +343,7 @@ export class MySQLExporter {
                         const childMyItem = itemIdToMyItemMap.get(childId);
                         if (!childMyItem) continue;
                         
+                        const myItemCode = `${this.myAiTool}_${childMyItem}`;
                         await this.connection.execute(
                             `INSERT INTO myparent_panel 
                              (my_item_code, my_parent_item, published, record_id)
@@ -364,8 +353,11 @@ export class MySQLExporter {
                                 record_id = VALUES(record_id),
                                 published = VALUES(published),
                                 updated_at = CURRENT_TIMESTAMP`,
-                            [`${this.myAiTool}_${childMyItem}`, `${this.myAiTool}_${parentMyItem}`, 1, recordId]
+                            [myItemCode, `${this.myAiTool}_${parentMyItem}`, 1, recordId]
                         );
+                        
+                        // Track saved code
+                        savedMyparentPanelCodes.add(myItemCode);
                         relationCount++;
                     }
                 }
@@ -457,6 +449,9 @@ export class MySQLExporter {
                             1
                         ]
                     );
+                    
+                    // Track saved code
+                    savedDoingStepCodes.add(code);
                     stepCount++;
                 }
                 
@@ -512,12 +507,89 @@ export class MySQLExporter {
                             pageCode
                         ]
                     );
+                    
+                    // Track saved code
+                    savedPageCodes.add(pageCode);
                     pageCount++;
                 }
                 
                 console.log(`✅ Exported ${pageCount} pages to pages table`);
             } catch (err) {
                 console.log('⚠️ No page.jsonl found or empty');
+            }
+            
+            // Mark published=false for records with same record_id but not in saved codes list
+            if (recordId && (savedDoingItemCodes.size > 0 || savedPageCodes.size > 0 || savedDoingStepCodes.size > 0 || savedMyparentPanelCodes.size > 0)) {
+                try {
+                    // Update doing_item: set published=0 for records with same record_id but code not in saved list
+                    if (savedDoingItemCodes.size > 0) {
+                        const codesArray = Array.from(savedDoingItemCodes);
+                        const placeholders = codesArray.map(() => '?').join(',');
+                        await this.connection.execute(
+                            `UPDATE doing_item SET published = 0 
+                             WHERE my_ai_tool = ? AND record_id = ? AND code NOT IN (${placeholders})`,
+                            [this.myAiTool, recordId, ...codesArray]
+                        );
+                    } else {
+                        // If no codes saved, set all with same record_id to published=0
+                        await this.connection.execute(
+                            `UPDATE doing_item SET published = 0 WHERE my_ai_tool = ? AND record_id = ?`,
+                            [this.myAiTool, recordId]
+                        );
+                    }
+                    
+                    // Update pages: set published=0 for records with same record_id but code not in saved list
+                    if (savedPageCodes.size > 0) {
+                        const codesArray = Array.from(savedPageCodes);
+                        const placeholders = codesArray.map(() => '?').join(',');
+                        await this.connection.execute(
+                            `UPDATE pages SET published = 0 
+                             WHERE my_item LIKE ? AND record_id = ? AND code NOT IN (${placeholders})`,
+                            [`${this.myAiTool}_%`, recordId, ...codesArray]
+                        );
+                    } else {
+                        await this.connection.execute(
+                            `UPDATE pages SET published = 0 WHERE my_item LIKE ? AND record_id = ?`,
+                            [`${this.myAiTool}_%`, recordId]
+                        );
+                    }
+                    
+                    // Update doing_step: set published=0 for records with same record_id but code not in saved list
+                    if (savedDoingStepCodes.size > 0) {
+                        const codesArray = Array.from(savedDoingStepCodes);
+                        const placeholders = codesArray.map(() => '?').join(',');
+                        await this.connection.execute(
+                            `UPDATE doing_step SET published = 0 
+                             WHERE my_ai_tool = ? AND record_id = ? AND code NOT IN (${placeholders})`,
+                            [this.myAiTool, recordId, ...codesArray]
+                        );
+                    } else {
+                        await this.connection.execute(
+                            `UPDATE doing_step SET published = 0 WHERE my_ai_tool = ? AND record_id = ?`,
+                            [this.myAiTool, recordId]
+                        );
+                    }
+                    
+                    // Update myparent_panel: set published=0 for records with same record_id but my_item_code not in saved list
+                    if (savedMyparentPanelCodes.size > 0) {
+                        const codesArray = Array.from(savedMyparentPanelCodes);
+                        const placeholders = codesArray.map(() => '?').join(',');
+                        await this.connection.execute(
+                            `UPDATE myparent_panel SET published = 0 
+                             WHERE my_item_code LIKE ? AND record_id = ? AND my_item_code NOT IN (${placeholders})`,
+                            [`${this.myAiTool}_%`, recordId, ...codesArray]
+                        );
+                    } else {
+                        await this.connection.execute(
+                            `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ? AND record_id = ?`,
+                            [`${this.myAiTool}_%`, recordId]
+                        );
+                    }
+                    
+                    console.log(`✅ Marked published=false for records with record_id=${recordId} but not in saved codes list`);
+                } catch (err) {
+                    console.warn('⚠️ Could not update published status for old records:', err.message);
+                }
             }
             
         } catch (err) {
