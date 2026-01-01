@@ -193,29 +193,27 @@ export class MySQLExporter {
             // Use initial timestamp as record_id for all tables
             const recordId = initialTimestamp || null;
 
-            // Mark published=false for records with different record_id in all tables
-            if (recordId) {
-                try {
-                    await this.connection.execute(
-                        `UPDATE doing_item SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_ai_tool = ?`,
-                        [recordId, this.myAiTool]
-                    );
-                    await this.connection.execute(
-                        `UPDATE pages SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_item LIKE ?`,
-                        [recordId, `${this.myAiTool}_%`]
-                    );
-                    await this.connection.execute(
-                        `UPDATE myparent_panel SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_item_code LIKE ?`,
-                        [recordId, `${this.myAiTool}_%`]
-                    );
-                    await this.connection.execute(
-                        `UPDATE doing_step SET published = 0 WHERE record_id IS NOT NULL AND record_id != ? AND my_ai_tool = ?`,
-                        [recordId, this.myAiTool]
-                    );
-                    console.log(`✅ Marked published=false for records with different record_id`);
-                } catch (err) {
-                    console.warn('⚠️ Could not update published status for old records:', err.message);
-                }
+            // Mark published=false for all records of this my_ai_tool in all tables
+            try {
+                await this.connection.execute(
+                    `UPDATE doing_item SET published = 0 WHERE my_ai_tool = ?`,
+                    [this.myAiTool]
+                );
+                await this.connection.execute(
+                    `UPDATE pages SET published = 0 WHERE my_item LIKE ?`,
+                    [`${this.myAiTool}_%`]
+                );
+                await this.connection.execute(
+                    `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ?`,
+                    [`${this.myAiTool}_%`]
+                );
+                await this.connection.execute(
+                    `UPDATE doing_step SET published = 0 WHERE my_ai_tool = ?`,
+                    [this.myAiTool]
+                );
+                console.log(`✅ Marked published=false for all records of my_ai_tool=${this.myAiTool}`);
+            } catch (err) {
+                console.warn('⚠️ Could not update published status for old records:', err.message);
             }
 
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
