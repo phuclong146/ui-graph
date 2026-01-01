@@ -448,7 +448,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
 
                     // Tạo quan hệ parent-child từ step
-                    await createPanelRelationFromStep(tracker.selectedPanelId);
+                    // await createPanelRelationFromStep(tracker.selectedPanelId);
 
                     const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
 
@@ -3026,7 +3026,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             // Tạo quan hệ parent-child từ step
-            await createPanelRelationFromStep(panelId);
+            // await createPanelRelationFromStep(panelId);
 
             await tracker._broadcast({
                 type: 'tree_update',
