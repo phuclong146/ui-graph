@@ -193,6 +193,29 @@ export class MySQLExporter {
             // Use initial timestamp as record_id for all tables
             const recordId = initialTimestamp || null;
 
+            // Mark all existing records for this ai_tool as published=false before saving new ones
+            try {
+                await this.connection.execute(
+                    `UPDATE doing_item SET published = 0 WHERE my_ai_tool = ?`,
+                    [this.myAiTool]
+                );
+                await this.connection.execute(
+                    `UPDATE pages SET published = 0 WHERE my_item LIKE ?`,
+                    [`${this.myAiTool}_%`]
+                );
+                await this.connection.execute(
+                    `UPDATE doing_step SET published = 0 WHERE my_ai_tool = ?`,
+                    [this.myAiTool]
+                );
+                await this.connection.execute(
+                    `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ?`,
+                    [`${this.myAiTool}_%`]
+                );
+                console.log(`✅ Marked all existing records for ai_tool=${this.myAiTool} as published=false`);
+            } catch (err) {
+                console.warn('⚠️ Could not mark existing records as published=false:', err.message);
+            }
+
             // Collections to track saved codes
             const savedDoingItemCodes = new Set();
             const savedPageCodes = new Set();
@@ -516,80 +539,6 @@ export class MySQLExporter {
                 console.log(`✅ Exported ${pageCount} pages to pages table`);
             } catch (err) {
                 console.log('⚠️ No page.jsonl found or empty');
-            }
-            
-            // Mark published=false for records with same record_id but not in saved codes list
-            if (recordId && (savedDoingItemCodes.size > 0 || savedPageCodes.size > 0 || savedDoingStepCodes.size > 0 || savedMyparentPanelCodes.size > 0)) {
-                try {
-                    // Update doing_item: set published=0 for records with same record_id but code not in saved list
-                    if (savedDoingItemCodes.size > 0) {
-                        const codesArray = Array.from(savedDoingItemCodes);
-                        const placeholders = codesArray.map(() => '?').join(',');
-                        await this.connection.execute(
-                            `UPDATE doing_item SET published = 0 
-                             WHERE my_ai_tool = ? AND record_id = ? AND code NOT IN (${placeholders})`,
-                            [this.myAiTool, recordId, ...codesArray]
-                        );
-                    } else {
-                        // If no codes saved, set all with same record_id to published=0
-                        await this.connection.execute(
-                            `UPDATE doing_item SET published = 0 WHERE my_ai_tool = ? AND record_id = ?`,
-                            [this.myAiTool, recordId]
-                        );
-                    }
-                    
-                    // Update pages: set published=0 for records with same record_id but code not in saved list
-                    if (savedPageCodes.size > 0) {
-                        const codesArray = Array.from(savedPageCodes);
-                        const placeholders = codesArray.map(() => '?').join(',');
-                        await this.connection.execute(
-                            `UPDATE pages SET published = 0 
-                             WHERE my_item LIKE ? AND record_id = ? AND code NOT IN (${placeholders})`,
-                            [`${this.myAiTool}_%`, recordId, ...codesArray]
-                        );
-                    } else {
-                        await this.connection.execute(
-                            `UPDATE pages SET published = 0 WHERE my_item LIKE ? AND record_id = ?`,
-                            [`${this.myAiTool}_%`, recordId]
-                        );
-                    }
-                    
-                    // Update doing_step: set published=0 for records with same record_id but code not in saved list
-                    if (savedDoingStepCodes.size > 0) {
-                        const codesArray = Array.from(savedDoingStepCodes);
-                        const placeholders = codesArray.map(() => '?').join(',');
-                        await this.connection.execute(
-                            `UPDATE doing_step SET published = 0 
-                             WHERE my_ai_tool = ? AND record_id = ? AND code NOT IN (${placeholders})`,
-                            [this.myAiTool, recordId, ...codesArray]
-                        );
-                    } else {
-                        await this.connection.execute(
-                            `UPDATE doing_step SET published = 0 WHERE my_ai_tool = ? AND record_id = ?`,
-                            [this.myAiTool, recordId]
-                        );
-                    }
-                    
-                    // Update myparent_panel: set published=0 for records with same record_id but my_item_code not in saved list
-                    if (savedMyparentPanelCodes.size > 0) {
-                        const codesArray = Array.from(savedMyparentPanelCodes);
-                        const placeholders = codesArray.map(() => '?').join(',');
-                        await this.connection.execute(
-                            `UPDATE myparent_panel SET published = 0 
-                             WHERE my_item_code LIKE ? AND record_id = ? AND my_item_code NOT IN (${placeholders})`,
-                            [`${this.myAiTool}_%`, recordId, ...codesArray]
-                        );
-                    } else {
-                        await this.connection.execute(
-                            `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ? AND record_id = ?`,
-                            [`${this.myAiTool}_%`, recordId]
-                        );
-                    }
-                    
-                    console.log(`✅ Marked published=false for records with record_id=${recordId} but not in saved codes list`);
-                } catch (err) {
-                    console.warn('⚠️ Could not update published status for old records:', err.message);
-                }
             }
             
         } catch (err) {
