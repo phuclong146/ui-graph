@@ -176,10 +176,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         try {
             await tracker.saveResults();
-            await tracker.close();
-            console.log('✅ Save completed, button permanently locked');
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '✅ Save completed successfully! Bạn có thể tiếp tục làm việc.'
+            });
+            console.log('✅ Save completed successfully');
+            isSaving = false; // Reset flag để có thể save lại
         } catch (err) {
             console.error('❌ Failed to save results:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `❌ Lỗi khi save: ${err.message || 'Unknown error'}`
+            });
             isSaving = false;
             throw err;
         }
