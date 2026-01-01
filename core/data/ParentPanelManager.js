@@ -370,11 +370,20 @@ export class ParentPanelManager {
             return null;
         }
     }
-    async makeChild(panelParentId, panelChildId) {
+    async makeChild(panelParentId, panelChildId, processedPairs = new Set()) {
         //0. Khong xu ly chinh no
         if (panelParentId === panelChildId) {
             return;
         }
+        
+        // Kiểm tra xem cặp này đã được xử lý chưa để tránh vòng lặp vô tận
+        const pairKey = `${panelParentId}->${panelChildId}`;
+        if (processedPairs.has(pairKey)) {
+            console.log(`⏭️ Skip makeChild: Pair already processed (${pairKey})`);
+            return;
+        }
+        processedPairs.add(pairKey);
+        
         //1. Load panel info
         const panelParent = await this.getPanelEntry(panelParentId);
         if (!panelParent || panelParent.child_actions.length === 0) {
@@ -432,7 +441,7 @@ export class ParentPanelManager {
                     //update
                     await this.updatePanelEntry(panelChildId, panelChild);
                 }
-                await this.makeChild(panelChildId, panelParentId);
+                await this.makeChild(panelChildId, panelParentId, processedPairs);
                 return;
             }
         }
@@ -468,10 +477,10 @@ export class ParentPanelManager {
         }
         // 4. Ghi lại parent vào file
         await this.updatePanelEntry(panelParentId, panelParent);
-        // 5. De quy voi cac panel con
+        // 5. De quy voi cac panel con (truyền processedPairs để tránh vòng lặp)
         const childPanels = panelParent.child_panels;
         for (const cP of childPanels) {
-            await this.makeChild(cP, panelChildId);
+            await this.makeChild(cP, panelChildId, processedPairs);
         }
     }
 }
