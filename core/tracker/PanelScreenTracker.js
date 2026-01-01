@@ -322,22 +322,56 @@ export class PanelScreenTracker {
         }
     }
 
+    /**
+     * Safely close browser with error handling for Windows EPERM issues
+     */
+    async _safeCloseBrowser(browser, browserName = 'browser') {
+        if (!browser) return;
+        
+        try {
+            // Try to disconnect first to gracefully close connections
+            if (browser.disconnect && typeof browser.disconnect === 'function') {
+                browser.disconnect();
+            }
+            
+            // Add a small delay to let processes finish
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Close the browser
+            await browser.close();
+            
+            // Additional delay after close to let cleanup finish
+            await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (err) {
+            // Check if it's a permission error (EPERM) on Windows
+            const isPermissionError = err.code === 'EPERM' || 
+                                    err.errno === 1 || 
+                                    (err.message && err.message.includes('Permission denied')) ||
+                                    (err.message && err.message.includes('EPERM'));
+            
+            if (isPermissionError) {
+                // EPERM errors on Windows are common when cleaning up temp files
+                // They're harmless - Windows will clean up temp files eventually
+                console.warn(`⚠️ Permission warning when closing ${browserName} (harmless on Windows):`, err.message);
+            } else {
+                console.error(`❌ Failed to close ${browserName}:`, err.message || err);
+            }
+        }
+    }
+
     async close() {
         try {
             if (this.panelRecorder) await this.cancelPanelRecording();
         } catch (err) {
             console.error('❌ Failed to cancel panel recording:', err);
         }
-        try {
-            if (this.browser) await this.browser.close();
-        } catch (err) {
-            console.error('❌ Failed to close browser:', err);
-        }
-        try {
-            if (this.queueBrowser) await this.queueBrowser.close();
-        } catch (err) {
-            console.error('❌ Failed to close queue browser:', err);
-        }
+        
+        // Safely close tracking browser (puppeteer-real-browser)
+        await this._safeCloseBrowser(this.browser, 'tracking browser');
+        
+        // Safely close queue browser (regular puppeteer)
+        await this._safeCloseBrowser(this.queueBrowser, 'queue browser');
+        
         try {
             if (this.wss) this.wss.close();
         } catch (err) {
