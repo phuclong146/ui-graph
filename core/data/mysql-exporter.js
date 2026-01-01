@@ -384,20 +384,35 @@ export class MySQLExporter {
                     .filter(line => line.trim())
                     .map(line => JSON.parse(line));
                 
+                // Backfill: Chỉ gán step_id cho những step chưa có step_id (theo thứ tự: 1, 2, 3, ...)
+                let needsBackfill = false;
+                let backfillCount = 0;
+                const stepsWithId = steps.map((step, index) => {
+                    if (!step.step_id) {
+                        step.step_id = index + 1;
+                        needsBackfill = true;
+                        backfillCount++;
+                    }
+                    return step;
+                });
+                
+                // Chỉ ghi lại file nếu có step được backfill
+                if (needsBackfill) {
+                    const newContent = stepsWithId.map(step => JSON.stringify(step)).join('\n') + '\n';
+                    await fsp.writeFile(doingStepPath, newContent, 'utf8');
+                    console.log(`✅ Backfilled ${backfillCount} steps with step_id (1, 2, 3, ...)`);
+                }
+                
                 let stepCount = 0;
-                for (const step of steps) {
+                for (const step of stepsWithId) {
                     const actionItemId = step.action?.item_id;
                     if (!actionItemId) continue;
                     
                     const actionItem = items.find(item => item.item_id === actionItemId);
                     if (!actionItem) continue;
                     
-                    const sessionId = actionItem.metadata?.session_url 
-                        ? this.extractSessionId(actionItem.metadata.session_url)
-                        : null;
-                    
-                    // Use the record_id already calculated (from initialTimestamp)
-                    const stepId = 1;
+                    // Sử dụng step_id từ file (đã được backfill: 1, 2, 3, ...)
+                    const stepId = step.step_id || (stepCount + 1);
                     const stepType = 'A-BROWSER';
                     
                     const clicks = allClicks.filter(c => c.action_item_id === actionItemId)
@@ -419,6 +434,7 @@ export class MySQLExporter {
                           my_panel_before, my_action, my_panel_after, step_input, step_output, step_asset, published)
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
+                            step_id = VALUES(step_id),
                             step_timestamp = VALUES(step_timestamp),
                             my_panel_before = VALUES(my_panel_before),
                             my_action = VALUES(my_action),
@@ -469,11 +485,12 @@ export class MySQLExporter {
                     }
                     
                     const panelCode = `${this.myAiTool}_${panelMyItem}`;
+                    const pageCode = `${this.myAiTool}_${panelMyItem}_${page.page_no}`;
                     
                     await this.connection.execute(
                         `INSERT INTO pages 
-                         (name, coordinate, width, height, screenshot_url, my_item, page_no, record_id, published)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         (name, coordinate, width, height, screenshot_url, my_item, page_no, record_id, published, code)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
                             name = VALUES(name),
                             coordinate = VALUES(coordinate),
@@ -482,6 +499,7 @@ export class MySQLExporter {
                             screenshot_url = VALUES(screenshot_url),
                             record_id = VALUES(record_id),
                             published = VALUES(published),
+                            code = VALUES(code),
                             updated_at = CURRENT_TIMESTAMP`,
                         [
                             page.name,
@@ -492,7 +510,8 @@ export class MySQLExporter {
                             panelCode,
                             page.page_no,
                             recordId,
-                            1
+                            1,
+                            pageCode
                         ]
                     );
                     pageCount++;
