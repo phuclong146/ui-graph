@@ -583,7 +583,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log(`✅ Create new panel completed: "${newPanelName}" (${newPanelId})`);
 
             // Automatically trigger draw panel & detect actions
-            await tracker._broadcast({ type: 'show_toast', message: `✅ Đã tạo panel, đang tự động draw panel & detect actions...` });
+            // Note: We don't show toast here to avoid it being captured in the screenshot
+            // The drawPanelAndDetectActionsHandler will show its own progress messages
+            
+            // Remove any existing toast from tracking page before capturing
+            try {
+                await tracker.page.evaluate(() => {
+                    const existingToast = document.getElementById('__tracking_toast');
+                    if (existingToast) existingToast.remove();
+                });
+            } catch (err) {
+                // Ignore errors when removing toast
+            }
             
             // Call drawPanelAndDetectActionsHandler automatically
             await drawPanelAndDetectActionsHandler();
