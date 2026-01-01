@@ -168,7 +168,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.warn(`⚠️ Cannot save: ${incompletePanels.length} panels not completed:`, panelNames);
                 const validationError = new Error(`Validation failed: ${incompletePanels.length} panels not completed`);
                 validationError.isValidationError = true;
-                throw validationError;
+                // throw validationError; // cho save khi đang làm chưa xong
             }
         }
 
