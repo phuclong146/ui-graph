@@ -674,12 +674,14 @@ export async function detectPanelTypeByGemini(screenshotB64) {
         'Xác định panel này thuộc loại nào dựa trên đặc điểm visual:\n' +
         '\n' +
         '1. **screen**: Panel chiếm toàn bộ hoặc phần lớn màn hình, là giao diện chính của trang web/ứng dụng\n' +
-        '   - Ví dụ: Trang chủ, trang danh sách sản phẩm, trang profile\n' +
+        '   - Ví dụ: Trang chủ, trang danh sách sản phẩm, trang profile, menu dropdown, dropdown menu, select menu\n' +
         '   - Đặc điểm: Không có overlay, không có backdrop tối phía sau\n' +
+        '   - QUAN TRỌNG: Dropdown menu (menu thả xuống) luôn là "screen", KHÔNG phải "popup"\n' +
         '\n' +
         '2. **popup**: Panel là một modal/dialog/popup xuất hiện phía trên nội dung chính\n' +
-        '   - Ví dụ: Dialog xác nhận, form đăng nhập popup, menu dropdown lớn, "Share Lovable" popup\n' +
-        '   - Đặc điểm: Có backdrop tối (overlay) phía sau, có nút đóng (X), thường có border/shadow rõ ràng\n' +
+        '   - Ví dụ: Dialog xác nhận, form đăng nhập popup, modal window, "Share Lovable" popup\n' +
+        '   - Đặc điểm BẮT BUỘC: Phải có backdrop tối (overlay/dark background) phía sau panel, có nút đóng (X), thường có border/shadow rõ ràng\n' +
+        '   - QUAN TRỌNG: Nếu KHÔNG có backdrop tối phía sau, thì KHÔNG phải popup, mà là "screen"\n' +
         '\n' +
         '3. **newtab**: Panel mở trong tab mới của trình duyệt\n' +
         '   - Ví dụ: Trang mới mở từ link target="_blank"\n' +
@@ -687,7 +689,8 @@ export async function detectPanelTypeByGemini(screenshotB64) {
         '\n' +
         '**Lưu ý:**\n' +
         '- Nếu không chắc chắn, trả về "screen"\n' +
-        '- Ưu tiên nhận diện popup nếu thấy backdrop tối hoặc overlay phía sau\n' +
+        '- CHỈ nhận diện popup nếu THẤY RÕ RÀNG backdrop tối (overlay) phía sau panel\n' +
+        '- Dropdown menu, select menu, menu thả xuống luôn là "screen", không bao giờ là "popup"\n' +
         '- Chỉ trả về "newtab" nếu chắc chắn đây là trang mới trong tab mới\n';
 
     const responseSchema = {
