@@ -289,6 +289,9 @@ export class MySQLExporter {
                 if (localPos) {
                     metadataToSave.local_pos = localPos;
                 }
+                if (globalPos) {
+                    metadataToSave.global_pos = globalPos;
+                }
                 
                 if (item.item_category === 'ACTION') {
                     const clicks = allClicks
