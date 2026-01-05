@@ -126,7 +126,8 @@ export const isBoxInside = (a, b, threshold = 0.95) => {
     // 4. Quyết định kết quả dựa trên logic diện tích
     if (isAInB && isBInA) {
         // Nếu cả hai đều thỏa mãn, hình nào nhỏ hơn sẽ được coi là nằm trong hình kia
-        return areaA <= areaB ? "A_in_B" : "B_in_A";
+        // return areaA <= areaB ? "A_in_B" : "B_in_A";
+        return "ERROR";
     }
     
     if (isAInB) return "A_in_B";
