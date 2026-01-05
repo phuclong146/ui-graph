@@ -662,34 +662,62 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
     }
 }
 
-export async function detectPanelTypeByGemini(screenshotB64) {
-    if (!screenshotB64) return 'screen';
+/**
+ * Detect panel type using Gemini (Solution 1: Use full screenshot to see backdrop)
+ * @param {string} croppedScreenshotB64 - Cropped screenshot of the panel
+ * @param {string} fullScreenshotB64 - Full page screenshot (optional, for better popup detection)
+ * @param {object} cropArea - Crop area {x, y, w, h} (optional, when fullScreenshotB64 is provided)
+ * @returns {Promise<string>} - Panel type: 'screen', 'popup', or 'newtab'
+ */
+export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreenshotB64 = null, cropArea = null) {
+    if (!croppedScreenshotB64) return 'screen';
 
     const { ENV } = await import('../config/env.js');
 
-    const prompt =
-        'Phân tích hình ảnh này để xác định loại panel:\n' +
-        '\n' +
-        '**Yêu cầu:**\n' +
+    // Use full screenshot if provided (Solution 1: Better popup detection with backdrop)
+    const screenshotToAnalyze = fullScreenshotB64 || croppedScreenshotB64;
+    const useFullScreenshot = fullScreenshotB64 && cropArea;
+
+    let prompt = 'Phân tích hình ảnh này để xác định loại panel:\n' +
+        '\n';
+
+    if (useFullScreenshot) {
+        prompt += '**QUAN TRỌNG:** Hình ảnh này là toàn bộ trang web. Vùng panel cần phân tích nằm ở vị trí:\n' +
+            `- X: ${cropArea.x}, Y: ${cropArea.y}, Width: ${cropArea.w}, Height: ${cropArea.h}\n` +
+            '- Hãy tập trung vào vùng này và kiểm tra xem có backdrop tối (overlay) xung quanh vùng này không.\n\n';
+    }
+
+    prompt += '**Yêu cầu:**\n' +
         'Xác định panel này thuộc loại nào dựa trên đặc điểm visual:\n' +
         '\n' +
         '1. **screen**: Panel chiếm toàn bộ hoặc phần lớn màn hình, là giao diện chính của trang web/ứng dụng\n' +
         '   - Ví dụ: Trang chủ, trang danh sách sản phẩm, trang profile, menu dropdown, dropdown menu, select menu\n' +
-        '   - Đặc điểm: Không có overlay, không có backdrop tối phía sau\n' +
+        '   - Đặc điểm: Không có overlay, không có backdrop tối phía sau (khi xem full screenshot)\n' +
+        '   - Kích thước: Thường chiếm >70% chiều rộng và chiều cao màn hình\n' +
         '   - QUAN TRỌNG: Dropdown menu (menu thả xuống) luôn là "screen", KHÔNG phải "popup"\n' +
         '\n' +
         '2. **popup**: Panel là một modal/dialog/popup xuất hiện phía trên nội dung chính\n' +
-        '   - Ví dụ: Dialog xác nhận, form đăng nhập popup, modal window, "Share Lovable" popup\n' +
-        '   - Đặc điểm BẮT BUỘC: Phải có backdrop tối (overlay/dark background) phía sau panel, có nút đóng (X), thường có border/shadow rõ ràng\n' +
-        '   - QUAN TRỌNG: Nếu KHÔNG có backdrop tối phía sau, thì KHÔNG phải popup, mà là "screen"\n' +
+        '   - Ví dụ: Dialog xác nhận, form đăng nhập popup, modal window, template selection popup, "Share Lovable" popup\n' +
+        '   - Đặc điểm QUAN TRỌNG:\n' +
+        '     * Có backdrop tối (overlay/dark background) phía sau và xung quanh panel (kiểm tra kỹ trong full screenshot)\n' +
+        '     * Kích thước: Thường nhỏ hơn màn hình (<80% chiều rộng và chiều cao)\n' +
+        '     * Vị trí: Thường ở giữa hoặc gần giữa màn hình\n' +
+        '     * Có border/shadow rõ ràng, có thể có nút đóng (X)\n' +
+        '   - QUYẾT ĐỊNH: Nếu THẤY backdrop tối xung quanh panel trong full screenshot → "popup"\n' +
+        '   - QUYẾT ĐỊNH: Nếu KHÔNG có backdrop tối → "screen"\n' +
         '\n' +
         '3. **newtab**: Panel mở trong tab mới của trình duyệt\n' +
         '   - Ví dụ: Trang mới mở từ link target="_blank"\n' +
         '   - Đặc điểm: Thường là toàn bộ trang web mới, không có backdrop\n' +
         '\n' +
         '**Lưu ý:**\n' +
-        '- Nếu không chắc chắn, trả về "screen"\n' +
-        '- CHỈ nhận diện popup nếu THẤY RÕ RÀNG backdrop tối (overlay) phía sau panel\n' +
+        '- Nếu không chắc chắn, trả về "screen"\n';
+    
+    if (useFullScreenshot) {
+        prompt += '- QUAN TRỌNG: Kiểm tra kỹ vùng xung quanh panel trong full screenshot để tìm backdrop tối\n';
+    }
+    
+    prompt += '- CHỈ nhận diện popup nếu THẤY RÕ RÀNG backdrop tối (overlay) phía sau và xung quanh panel\n' +
         '- Dropdown menu, select menu, menu thả xuống luôn là "screen", không bao giờ là "popup"\n' +
         '- Chỉ trả về "newtab" nếu chắc chắn đây là trang mới trong tab mới\n';
 
@@ -705,7 +733,7 @@ export async function detectPanelTypeByGemini(screenshotB64) {
     };
 
     try {
-        const resizedForGemini = await resizeBase64(screenshotB64, 640);
+        const resizedForGemini = await resizeBase64(screenshotToAnalyze, 640);
         
         const requestBody = {
             contents: [{

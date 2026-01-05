@@ -656,9 +656,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         .toBuffer();
                     const croppedBase64 = croppedBuffer.toString('base64');
                     
-                    console.log('🤖 Detecting panel type with Gemini...');
+                    console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
                     const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
-                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
+                    // Pass both full screenshot and crop area for better popup detection (Solution 1)
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, originalImageBase64, cropPos);
                     console.log(`✅ Detected panel type: ${detectedPanelType}`);
                 } catch (err) {
                     console.error('⚠️ Failed to detect panel type, using default "screen":', err);
@@ -1423,7 +1424,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const croppedBase64 = croppedBuffer.toString('base64');
 
             // Detect panel type using Gemini
-            console.log('🤖 Detecting panel type with Gemini...');
+            // Solution 1: Use full screenshot to see backdrop for better popup detection
+            console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
             const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
             let detectedPanelType = 'screen'; // Default
             
@@ -1433,7 +1435,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.log(`✅ Panel type set to "newtab" (captured from newly opened tab)`);
             } else {
                 try {
-                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64);
+                    // Pass both full screenshot and crop area for better popup detection (Solution 1)
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, screenshot, cropArea);
                     console.log(`✅ Detected panel type: ${detectedPanelType}`);
                 } catch (err) {
                     console.error('⚠️ Failed to detect panel type, using default "screen":', err);
