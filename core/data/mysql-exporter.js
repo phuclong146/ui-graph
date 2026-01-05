@@ -311,15 +311,15 @@ export class MySQLExporter {
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, 
-                      item_category, verb, content, published, session_id, page_index, coordinate, metadata, record_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, coordinate, metadata, record_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
+                        type = VALUES(type),                     
                         name = VALUES(name),
                         image_url = VALUES(image_url),
                         verb = VALUES(verb),
                         content = VALUES(content),
                         session_id = VALUES(session_id),
-                        page_index = VALUES(page_index),
                         coordinate = VALUES(coordinate),
                         metadata = VALUES(metadata),
                         record_id = VALUES(record_id),
@@ -337,7 +337,6 @@ export class MySQLExporter {
                         item.content ?? null,
                         1,
                         sessionId,
-                        pageIndex,
                         globalPos ? JSON.stringify(globalPos) : null,
                         Object.keys(metadataToSave).length > 0 ? JSON.stringify(metadataToSave) : null,
                         recordId
