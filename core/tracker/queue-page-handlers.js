@@ -1365,7 +1365,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log(`📐 Split into ${numPages} pages`);
 
-            await tracker.queuePage.evaluate(async (editorClass, fullScreenshot, pages) => {
+            await tracker.queuePage.evaluate(async (editorClass, fullScreenshot, pages, initialCrop) => {
                 if (window.queueEditor) {
                     try {
                         await window.queueEditor.cancel();
