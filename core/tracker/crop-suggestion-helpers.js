@@ -284,16 +284,16 @@ export const suggestCropAreaForNewPanel = async ({
 
     let best = null;
 
-    if (domRes) {
-        best = domRes;
-        if (imgRes) best = mergeTwoBoxes(best, imgRes, imageWidth, imageHeight);
+    // Priority: image > gemini > dom
+    if (imgRes) {
+        best = imgRes;
         if (gemRes) best = mergeTwoBoxes(best, gemRes, imageWidth, imageHeight);
-    } else {
-        if (imgRes && gemRes) {
-            best = mergeTwoBoxes(imgRes, gemRes, imageWidth, imageHeight);
-        } else {
-            best = imgRes || gemRes || null;
-        }
+        if (domRes) best = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+    } else if (gemRes) {
+        best = gemRes;
+        if (domRes) best = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+    } else if (domRes) {
+        best = domRes;
     }
 
     if (!best) {
@@ -324,5 +324,6 @@ export const suggestCropAreaForNewPanel = async ({
 
     return best;
 };
+
 
 
