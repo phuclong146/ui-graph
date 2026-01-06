@@ -123,117 +123,170 @@ export const detectChangeByDom = (oldDomActions, newDomActions, imageWidth, imag
 };
 
 export const detectChangeByImageDiff = async (oldBase64, newBase64) => {
-    if (!oldBase64 || !newBase64) return null;
-
-    const sharp = (await import('sharp')).default;
-    const targetWidth = 1000;
-
-    const [oldImg, newImg] = await Promise.all([
-        sharp(Buffer.from(oldBase64, 'base64'))
-            .resize({ width: targetWidth })
-            .greyscale()
-            .raw()
-            .toBuffer({ resolveWithObject: true }),
-        sharp(Buffer.from(newBase64, 'base64'))
-            .resize({ width: targetWidth })
-            .greyscale()
-            .raw()
-            .toBuffer({ resolveWithObject: true })
-    ]);
-
-    const { data: oldData, info } = oldImg;
-    const { data: newData } = newImg;
-    const { width, height } = info;
-
-    const diffMask = new Uint8Array(width * height);
-    let maxDiff = 0;
-
-    for (let i = 0; i < oldData.length; i++) {
-        const d = Math.abs(oldData[i] - newData[i]);
-        diffMask[i] = d;
-        if (d > maxDiff) maxDiff = d;
+    if (!oldBase64 || !newBase64) {
+        console.log('🖼️ [IMAGE DIFF] Skipped: missing old or new screenshot');
+        return null;
     }
 
-    if (maxDiff < 10) return null;
+    console.log('🖼️ [IMAGE DIFF] Starting image diff detection...');
+    const startTime = Date.now();
 
-    const threshold = maxDiff * 0.3;
-    const binary = new Uint8Array(width * height);
-    for (let i = 0; i < diffMask.length; i++) {
-        binary[i] = diffMask[i] >= threshold ? 1 : 0;
-    }
+    try {
+        const sharp = (await import('sharp')).default;
+        const targetWidth = 1000;
 
-    const visited = new Uint8Array(width * height);
-    let bestBox = null;
-    let bestArea = 0;
+        console.log(`🖼️ [IMAGE DIFF] Resizing images to ${targetWidth}px width...`);
+        const [oldImg, newImg] = await Promise.all([
+            sharp(Buffer.from(oldBase64, 'base64'))
+                .resize({ width: targetWidth })
+                .greyscale()
+                .raw()
+                .toBuffer({ resolveWithObject: true }),
+            sharp(Buffer.from(newBase64, 'base64'))
+                .resize({ width: targetWidth })
+                .greyscale()
+                .raw()
+                .toBuffer({ resolveWithObject: true })
+        ]);
 
-    const toIndex = (x, y) => y * width + x;
+        const { data: oldData, info } = oldImg;
+        const { data: newData } = newImg;
+        const { width, height } = info;
+        console.log(`🖼️ [IMAGE DIFF] Resized to ${width}x${height}px`);
 
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const i = toIndex(x, y);
-            if (!binary[i] || visited[i]) continue;
+        const diffMask = new Uint8Array(width * height);
+        let maxDiff = 0;
+        let totalDiff = 0;
 
-            let minX = x, maxX = x, minY = y, maxY = y;
-            const stack = [i];
-            visited[i] = 1;
+        for (let i = 0; i < oldData.length; i++) {
+            const d = Math.abs(oldData[i] - newData[i]);
+            diffMask[i] = d;
+            totalDiff += d;
+            if (d > maxDiff) maxDiff = d;
+        }
 
-            while (stack.length) {
-                const cur = stack.pop();
-                const cx = cur % width;
-                const cy = (cur - cx) / width;
+        const avgDiff = totalDiff / oldData.length;
+        console.log(`🖼️ [IMAGE DIFF] Diff stats: max=${maxDiff.toFixed(2)}, avg=${avgDiff.toFixed(2)}`);
 
-                minX = Math.min(minX, cx);
-                maxX = Math.max(maxX, cx);
-                minY = Math.min(minY, cy);
-                maxY = Math.max(maxY, cy);
+        if (maxDiff < 10) {
+            console.log('🖼️ [IMAGE DIFF] ❌ No significant changes detected (maxDiff < 10)');
+            return null;
+        }
 
-                const neighbors = [
-                    [cx + 1, cy],
-                    [cx - 1, cy],
-                    [cx, cy + 1],
-                    [cx, cy - 1]
-                ];
+        const threshold = maxDiff * 0.3;
+        console.log(`🖼️ [IMAGE DIFF] Using threshold: ${threshold.toFixed(2)} (30% of maxDiff)`);
+        const binary = new Uint8Array(width * height);
+        let changedPixels = 0;
+        for (let i = 0; i < diffMask.length; i++) {
+            binary[i] = diffMask[i] >= threshold ? 1 : 0;
+            if (binary[i]) changedPixels++;
+        }
+        console.log(`🖼️ [IMAGE DIFF] Changed pixels: ${changedPixels} / ${diffMask.length} (${(changedPixels / diffMask.length * 100).toFixed(2)}%)`);
 
-                for (const [nx, ny] of neighbors) {
-                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                    const ni = toIndex(nx, ny);
-                    if (!binary[ni] || visited[ni]) continue;
-                    visited[ni] = 1;
-                    stack.push(ni);
+        const visited = new Uint8Array(width * height);
+        let bestBox = null;
+        let bestArea = 0;
+        let componentCount = 0;
+
+        const toIndex = (x, y) => y * width + x;
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const i = toIndex(x, y);
+                if (!binary[i] || visited[i]) continue;
+
+                componentCount++;
+                let minX = x, maxX = x, minY = y, maxY = y;
+                const stack = [i];
+                visited[i] = 1;
+                let pixelCount = 0;
+
+                while (stack.length) {
+                    const cur = stack.pop();
+                    pixelCount++;
+                    const cx = cur % width;
+                    const cy = (cur - cx) / width;
+
+                    minX = Math.min(minX, cx);
+                    maxX = Math.max(maxX, cx);
+                    minY = Math.min(minY, cy);
+                    maxY = Math.max(maxY, cy);
+
+                    const neighbors = [
+                        [cx + 1, cy],
+                        [cx - 1, cy],
+                        [cx, cy + 1],
+                        [cx, cy - 1]
+                    ];
+
+                    for (const [nx, ny] of neighbors) {
+                        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+                        const ni = toIndex(nx, ny);
+                        if (!binary[ni] || visited[ni]) continue;
+                        visited[ni] = 1;
+                        stack.push(ni);
+                    }
+                }
+
+                const area = (maxX - minX + 1) * (maxY - minY + 1);
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestBox = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+                    console.log(`🖼️ [IMAGE DIFF] Found component #${componentCount}: ${bestBox.w}x${bestBox.h}px at (${bestBox.x},${bestBox.y}), pixels=${pixelCount}, area=${area}`);
                 }
             }
-
-            const area = (maxX - minX + 1) * (maxY - minY + 1);
-            if (area > bestArea) {
-                bestArea = area;
-                bestBox = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
-            }
         }
+
+        if (!bestBox) {
+            console.log('🖼️ [IMAGE DIFF] ❌ No valid component found');
+            return null;
+        }
+
+        const newMeta = await sharp(Buffer.from(newBase64, 'base64')).metadata();
+        const scale = newMeta.width / width;
+        const padding = 20 * scale;
+
+        const x = Math.max(0, Math.round(bestBox.x * scale - padding));
+        const y = Math.max(0, Math.round(bestBox.y * scale - padding));
+        const w = Math.min(newMeta.width - x, Math.round(bestBox.w * scale + 2 * padding));
+        const h = Math.min(newMeta.height - y, Math.round(bestBox.h * scale + 2 * padding));
+
+        const result = { x, y, w, h, source: 'image', score: 0.7 };
+        const elapsed = Date.now() - startTime;
+        console.log(`🖼️ [IMAGE DIFF] ✅ Result: ${JSON.stringify(result)} (${componentCount} components, ${elapsed}ms)`);
+        return result;
+    } catch (err) {
+        console.error('🖼️ [IMAGE DIFF] ❌ Error:', err);
+        return null;
     }
-
-    if (!bestBox) return null;
-
-    const newMeta = await sharp(Buffer.from(newBase64, 'base64')).metadata();
-    const scale = newMeta.width / width;
-    const padding = 20 * scale;
-
-    const x = Math.max(0, Math.round(bestBox.x * scale - padding));
-    const y = Math.max(0, Math.round(bestBox.y * scale - padding));
-    const w = Math.min(newMeta.width - x, Math.round(bestBox.w * scale + 2 * padding));
-    const h = Math.min(newMeta.height - y, Math.round(bestBox.h * scale + 2 * padding));
-
-    return { x, y, w, h, source: 'image', score: 0.7 };
 };
 
 export const detectChangeByGemini = async (oldBase64, newBase64) => {
-    if (!oldBase64 || !newBase64) return null;
+    if (!oldBase64 || !newBase64) {
+        console.log('🤖 [GEMINI] Skipped: missing old or new screenshot');
+        return null;
+    }
+
+    console.log('🤖 [GEMINI] Starting Gemini change detection...');
+    const startTime = Date.now();
+
     try {
         const { detectChangeBoxByGemini } = await import('./gemini-handler.js');
+        console.log('🤖 [GEMINI] Calling detectChangeBoxByGemini...');
         const box = await detectChangeBoxByGemini(oldBase64, newBase64);
-        if (!box) return null;
-        return { ...box, source: 'gemini', score: 0.8 };
+        
+        if (!box) {
+            console.log('🤖 [GEMINI] ❌ No box returned from Gemini');
+            return null;
+        }
+
+        const result = { ...box, source: 'gemini', score: 0.8 };
+        const elapsed = Date.now() - startTime;
+        console.log(`🤖 [GEMINI] ✅ Result: ${JSON.stringify(result)} (${elapsed}ms)`);
+        return result;
     } catch (err) {
-        console.error('detectChangeByGemini failed:', err);
+        const elapsed = Date.now() - startTime;
+        console.error(`🤖 [GEMINI] ❌ Error after ${elapsed}ms:`, err);
         return null;
     }
 };
@@ -276,27 +329,58 @@ export const suggestCropAreaForNewPanel = async ({
     oldDomActions,
     newDomActions
 }) => {
+    console.log('🎯 [CROP SUGGEST] Starting crop suggestion with all methods...');
+    console.log(`🎯 [CROP SUGGEST] Image size: ${imageWidth}x${imageHeight}`);
+    console.log(`🎯 [CROP SUGGEST] Old DOM actions: ${oldDomActions?.length || 0}, New DOM actions: ${newDomActions?.length || 0}`);
+
     const [domRes, imgRes, gemRes] = await Promise.all([
         Promise.resolve(detectChangeByDom(oldDomActions, newDomActions, imageWidth, imageHeight)),
         detectChangeByImageDiff(oldScreenshotBase64, newScreenshotBase64),
         detectChangeByGemini(oldScreenshotBase64, newScreenshotBase64)
     ]);
 
+    console.log('🎯 [CROP SUGGEST] All methods completed:');
+    console.log(`  📊 DOM: ${domRes ? JSON.stringify(domRes) : 'null'}`);
+    console.log(`  🖼️ IMAGE: ${imgRes ? JSON.stringify(imgRes) : 'null'}`);
+    console.log(`  🤖 GEMINI: ${gemRes ? JSON.stringify(gemRes) : 'null'}`);
+
     let best = null;
 
     // Priority: image > gemini > dom
     if (imgRes) {
+        console.log('🎯 [CROP SUGGEST] ✅ Using IMAGE as base (priority 1)');
         best = imgRes;
-        if (gemRes) best = mergeTwoBoxes(best, gemRes, imageWidth, imageHeight);
-        if (domRes) best = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+        if (gemRes) {
+            console.log('🎯 [CROP SUGGEST] Merging IMAGE + GEMINI...');
+            const merged = mergeTwoBoxes(best, gemRes, imageWidth, imageHeight);
+            console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
+            best = merged;
+        }
+        // DOM chỉ merge khi đã có ảnh hoặc Gemini để tránh sai lệch do DOM noise
+        if (domRes) {
+            console.log('🎯 [CROP SUGGEST] Merging with DOM...');
+            const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+            console.log(`🎯 [CROP SUGGEST] Final merged: ${JSON.stringify(merged)}`);
+            best = merged;
+        }
     } else if (gemRes) {
+        console.log('🎯 [CROP SUGGEST] ✅ Using GEMINI as base (priority 2, no IMAGE result)');
         best = gemRes;
-        if (domRes) best = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
-    } else if (domRes) {
-        best = domRes;
+        if (domRes) {
+            console.log('🎯 [CROP SUGGEST] Merging GEMINI + DOM...');
+            const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+            console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
+            best = merged;
+        }
+    } else {
+        // Không có ảnh diff và không có Gemini → tránh dùng DOM thuần (thường sai),
+        // fallback full page để CTV tự crop.
+        console.log('🎯 [CROP SUGGEST] ⚠️ No IMAGE or GEMINI result, skipping DOM (fallback to full page)');
+        best = null;
     }
 
     if (!best) {
+        console.log('🎯 [CROP SUGGEST] ⚠️ No valid suggestion, using full page fallback');
         return {
             x: 0,
             y: 0,
@@ -307,21 +391,29 @@ export const suggestCropAreaForNewPanel = async ({
         };
     }
 
+    console.log(`🎯 [CROP SUGGEST] Before min-size check: ${JSON.stringify(best)}`);
     const minSize = 80;
     if (best.w < minSize) {
+        console.log(`🎯 [CROP SUGGEST] Adjusting width: ${best.w} → ${minSize}`);
         best.w = minSize;
     }
     if (best.h < minSize) {
+        console.log(`🎯 [CROP SUGGEST] Adjusting height: ${best.h} → ${minSize}`);
         best.h = minSize;
     }
 
     if (best.x + best.w > imageWidth) {
+        const oldX = best.x;
         best.x = Math.max(0, imageWidth - best.w);
+        console.log(`🎯 [CROP SUGGEST] Adjusting X (out of bounds): ${oldX} → ${best.x}`);
     }
     if (best.y + best.h > imageHeight) {
+        const oldY = best.y;
         best.y = Math.max(0, imageHeight - best.h);
+        console.log(`🎯 [CROP SUGGEST] Adjusting Y (out of bounds): ${oldY} → ${best.y}`);
     }
 
+    console.log(`🎯 [CROP SUGGEST] ✅ Final suggestion: ${JSON.stringify(best)}`);
     return best;
 };
 
