@@ -993,9 +993,13 @@ export const QUEUE_BROWSER_HTML = `
             
             await window.saveEvents();
             
-            saveBtn.removeEventListener("click", handleSaveClick);
-            saveBtn.textContent = '✅ Saved';
-            saveBtn.style.opacity = '0.5';
+            // Reset button để có thể save lại
+            isSaving = false;
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+            saveBtn.style.cursor = 'pointer';
+            saveBtn.style.pointerEvents = 'auto';
+            saveBtn.textContent = '💾 Save';
             console.log('✅ Save completed successfully');
           } catch (err) {
             console.error('❌ Save failed:', err);

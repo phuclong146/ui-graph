@@ -370,11 +370,20 @@ export class ParentPanelManager {
             return null;
         }
     }
-    async makeChild(panelParentId, panelChildId) {
+    async makeChild(panelParentId, panelChildId, processedPairs = new Set()) {
         //0. Khong xu ly chinh no
         if (panelParentId === panelChildId) {
             return;
         }
+        
+        // Kiểm tra xem cặp này đã được xử lý chưa để tránh vòng lặp vô tận
+        const pairKey = `${panelParentId}->${panelChildId}`;
+        if (processedPairs.has(pairKey)) {
+            console.log(`⏭️ Skip makeChild: Pair already processed (${pairKey})`);
+            return;
+        }
+        processedPairs.add(pairKey);
+        
         //1. Load panel info
         const panelParent = await this.getPanelEntry(panelParentId);
         if (!panelParent || panelParent.child_actions.length === 0) {
@@ -393,10 +402,10 @@ export class ParentPanelManager {
             return;
         }
         const myParent = await this.findMyParent(panelParentId);
-        if (!myParent || myParent.child_panels.length === 0) {
-            console.log('makeChild: Khong tim thay myParent của id=', panelParentId);
-            return;
-        }
+        // if (!myParent || myParent.child_panels.length === 0) {
+        //     console.log('makeChild: Khong tim thay myParent của id=', panelParentId);
+        //     return;
+        // }
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
         const parentBox = panelParentInfo.metadata?.global_pos;
@@ -404,15 +413,16 @@ export class ParentPanelManager {
         const overlap = calcOverlapBox(parentBox, childBox);
         if (overlap === 0) {
             // Case A: Khong can loc Action, chi can set parent - child
-            if (!myParent.child_panels.includes(panelChildId)) {
+            if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
                 await this.updatePanelEntry(myParent.parent_panel, myParent);
             }
             return;
-        } else if (overlap === 1) {
+        } else if (overlap >= 0.95) {
             // Case D: trung len nhau thi 2 thang deu la con cua MyParent
-            if (!myParent.child_panels.includes(panelChildId)) {
+            console.log('makeChild: case D', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
+            if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
                 await this.updatePanelEntry(myParent.parent_panel, myParent);
@@ -420,9 +430,11 @@ export class ParentPanelManager {
             return;
         } else {
             // Case BCE: co giao nhau
-            if (isBoxInside(parentBox, childBox) === "A_in_B") {
+            const result = isBoxInside(parentBox, childBox);
+            if (result === "A_in_B") {
+                console.log('makeChild: case C', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
                 // Case C: doi cho Parent va Child
-                if (!myParent.child_panels.includes(panelChildId)) {
+                if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
                     await this.updatePanelEntry(myParent.parent_panel, myParent);
@@ -432,11 +444,20 @@ export class ParentPanelManager {
                     //update
                     await this.updatePanelEntry(panelChildId, panelChild);
                 }
-                await this.makeChild(panelChildId, panelParentId);
+                await this.makeChild(panelChildId, panelParentId, processedPairs);
+                return;
+            }
+            if (result === "ERROR") {
+                console.log('makeChild: case E', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                if (myParent && !myParent.child_panels.includes(panelChildId)) {
+                    myParent.child_panels.push(panelChildId);
+                    //update
+                    await this.updatePanelEntry(myParent.parent_panel, myParent);
+                }                
                 return;
             }
         }
-
+        console.log('makeChild: case B', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
         const parentActionInfo = await this.getActionInfo(panelParent.child_actions);
         if (!parentActionInfo) {
             return;
@@ -461,17 +482,17 @@ export class ParentPanelManager {
         const afterCount = filteredParentActions.length;
         const removedCount = beforeCount - afterCount;
         panelParent.child_actions = filteredParentActions.map(item => item.item_id);
-        console.log(`🗑️ Removed ${removedCount} duplicate actions from parent panel (${beforeCount} → ${afterCount})`);
+        console.log(`makeChild: Removed ${removedCount} duplicate actions from parent panel (${beforeCount} → ${afterCount})`);
         // 3. Add panelChildId to child_panels nếu chưa có
         if (!panelParent.child_panels.includes(panelChildId)) {
             panelParent.child_panels.push(panelChildId);
         }
         // 4. Ghi lại parent vào file
         await this.updatePanelEntry(panelParentId, panelParent);
-        // 5. De quy voi cac panel con
+        // 5. De quy voi cac panel con (truyền processedPairs để tránh vòng lặp)
         const childPanels = panelParent.child_panels;
         for (const cP of childPanels) {
-            await this.makeChild(cP, panelChildId);
+            await this.makeChild(cP, panelChildId, processedPairs);
         }
     }
 }

@@ -83,6 +83,35 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Tạo quan hệ parent-child giữa các panel dựa trên step
+     * Tìm step có panel_after trùng với panelId, sau đó tạo quan hệ parent (panel_before) -> child (panel_after)
+     * @param {string} panelId - ID của panel cần tìm step và tạo quan hệ
+     */
+    const createPanelRelationFromStep = async (panelId) => {
+        try {
+            const stepContent = await tracker.stepManager.getAllSteps();
+            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
+            
+            if (relatedStep) {
+                const panelBeforeId = relatedStep.panel_before.item_id;
+                const panelAfterId = relatedStep.panel_after.item_id;
+                
+                if (panelBeforeId !== panelAfterId) {
+                    console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
+                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
+                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                } else {
+                    console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
+                }
+            } else {
+                console.log(`⚠️ No step found with panel_after="${panelId}"`);
+            }
+        } catch (err) {
+            console.error('Failed to create panel relation from step:', err);
+        }
+    };
+
     const removeActionFromItem = async (itemId, itemCategory, actionId) => {
         await tracker.dataItemManager.deleteItem(actionId);
 
@@ -139,7 +168,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.warn(`⚠️ Cannot save: ${incompletePanels.length} panels not completed:`, panelNames);
                 const validationError = new Error(`Validation failed: ${incompletePanels.length} panels not completed`);
                 validationError.isValidationError = true;
-                throw validationError;
+                // throw validationError; // cho save khi đang làm chưa xong
             }
         }
 
@@ -147,10 +176,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         try {
             await tracker.saveResults();
-            await tracker.close();
-            console.log('✅ Save completed, button permanently locked');
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '✅ Save completed successfully! Bạn có thể tiếp tục làm việc.'
+            });
+            console.log('✅ Save completed successfully');
+            isSaving = false; // Reset flag để có thể save lại
         } catch (err) {
             console.error('❌ Failed to save results:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `❌ Lỗi khi save: ${err.message || 'Unknown error'}`
+            });
             isSaving = false;
             throw err;
         }
@@ -418,23 +455,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         await tracker.parentPanelManager.updatePanelEntry(tracker.selectedPanelId, panelEntry);
                     }
 
-                    const stepContent = await tracker.stepManager.getAllSteps();
-                    const relatedStep = stepContent.find(step => step.panel_after.item_id === tracker.selectedPanelId);
-                    
-                    if (relatedStep) {
-                        const panelBeforeId = relatedStep.panel_before.item_id;
-                        const panelAfterId = relatedStep.panel_after.item_id;
-                        
-                        if (panelBeforeId !== panelAfterId) {
-                            console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                            await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                            console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
-                        } else {
-                            console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
-                        }
-                    } else {
-                        console.log(`⚠️ No step found with panel_after="${tracker.selectedPanelId}"`);
-                    }
+                    // Tạo quan hệ parent-child từ step
+                    // await createPanelRelationFromStep(tracker.selectedPanelId);
 
                     const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
 
@@ -553,13 +575,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
 
-            await selectPanelHandler(tracker.selectedPanelId);
-
             await checkAndUpdatePanelStatusHandler(parentPanelId);
 
-            await tracker._broadcast({ type: 'show_toast', message: `✅ Đã tạo panel rỗng: "${newPanelName}"` });
+            // Select the newly created panel
+            await selectPanelHandler(newPanelId);
 
             console.log(`✅ Create new panel completed: "${newPanelName}" (${newPanelId})`);
+
+            // Automatically trigger draw panel & detect actions
+            // Note: We don't show toast here to avoid it being captured in the screenshot
+            // The drawPanelAndDetectActionsHandler will show its own progress messages
+            
+            // Remove any existing toast from tracking page before capturing
+            try {
+                await tracker.page.evaluate(() => {
+                    const existingToast = document.getElementById('__tracking_toast');
+                    if (existingToast) existingToast.remove();
+                });
+            } catch (err) {
+                // Ignore errors when removing toast
+            }
+            
+            // Call drawPanelAndDetectActionsHandler automatically
+            await drawPanelAndDetectActionsHandler();
 
             return { mode: 'DRAW_NEW', panelId: newPanelId, panelName: newPanelName, success: true };
 
@@ -603,7 +641,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const fullBuffer = Buffer.from(originalImageBase64, "base64");
             const fullMeta = await sharp(fullBuffer).metadata();
 
+            // Detect panel type using Gemini
+            let detectedPanelType = 'screen'; // Default
+            if (cropPos) {
+                try {
+                    // Crop the image for panel type detection
+                    const croppedBuffer = await sharp(fullBuffer)
+                        .extract({
+                            left: cropPos.x,
+                            top: cropPos.y,
+                            width: cropPos.w,
+                            height: cropPos.h
+                        })
+                        .toBuffer();
+                    const croppedBase64 = croppedBuffer.toString('base64');
+                    
+                    console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
+                    const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
+                    // Pass both full screenshot and crop area for better popup detection (Solution 1)
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, originalImageBase64, cropPos);
+                    console.log(`✅ Detected panel type: ${detectedPanelType}`);
+                } catch (err) {
+                    console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                }
+            }
+
             await tracker.dataItemManager.updateItem(newPanelId, {
+                type: detectedPanelType,
                 metadata: cropPos ? {
                     global_pos: {
                         x: cropPos.x,
@@ -1198,6 +1262,50 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
+            // Check for newly opened tabs (within last 30 seconds)
+            let pageToCapture = tracker.page;
+            let switchedToNewTab = false;
+            const now = Date.now();
+            const recentTabs = tracker.newlyOpenedTabs.filter(tab => (now - tab.timestamp) < 30000);
+            
+            if (recentTabs.length > 0) {
+                // Get the most recent new tab
+                const newestTab = recentTabs[recentTabs.length - 1];
+                try {
+                    // Wait for the page to be ready
+                    try {
+                        await newestTab.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 });
+                    } catch (navErr) {
+                        // Page might already be loaded, continue
+                    }
+                    
+                    // Get URL (might not have been available when tab was created)
+                    let newTabUrl = newestTab.url;
+                    if (!newTabUrl || newTabUrl === 'about:blank') {
+                        try {
+                            newTabUrl = newestTab.page.url();
+                        } catch (urlErr) {
+                            // URL not available yet
+                        }
+                    }
+                    
+                    if (newTabUrl && newTabUrl !== 'about:blank') {
+                        console.log(`🆕 Switching to newly opened tab: ${newTabUrl}`);
+                        tracker.originalPage = tracker.page; // Store original page
+                        tracker.page = newestTab.page;
+                        pageToCapture = newestTab.page;
+                        switchedToNewTab = true;
+                        
+                        // Wait a bit for the page to fully load
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        console.log('⚠️ New tab URL not available or is about:blank, using current page');
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Failed to switch to new tab, using current page:', err);
+                }
+            }
+
             const progressCallback = async (message) => {
                 await tracker.queuePage.evaluate((msg) => {
                     if (window.showToast) {
@@ -1207,14 +1315,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             };
 
             const { captureScreenshot } = await import('../media/screenshot.js');
-            const result = await captureScreenshot(tracker.page, "base64", true, true, progressCallback);
+            const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
             const { screenshot, imageWidth, imageHeight, restoreViewport: restoreViewportFn } = result;
             restoreViewport = restoreViewportFn;
             console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
 
             console.log('📐 Detecting actions from DOM (FULL PAGE)...');
             const { captureActionsFromDOM } = await import('../media/dom-capture.js');
-            const fullPageDomActions = await captureActionsFromDOM(tracker.page, null, true, imageWidth, imageHeight);
+            const fullPageDomActions = await captureActionsFromDOM(pageToCapture, null, true, imageWidth, imageHeight);
             console.log(`✅ Detected ${fullPageDomActions.length} DOM actions from full page`);
 
             const pageHeight = 1080;
@@ -1260,7 +1368,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 imageHeight,
                 pagesData,
                 restoreViewport: restoreViewportFn,
-                fullPageDomActions
+                fullPageDomActions,
+                switchedToNewTab: switchedToNewTab,
+                originalPage: switchedToNewTab ? tracker.originalPage : null
             };
 
             console.log('✅ Opened crop editor. Waiting for user to draw panel...');
@@ -1290,7 +1400,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
-            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions } = tracker.__drawPanelContext;
+            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions, switchedToNewTab, originalPage } = tracker.__drawPanelContext;
 
             cropArea.x = Math.max(0, cropArea.x);
             cropArea.y = Math.max(0, cropArea.y);
@@ -1313,8 +1423,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const croppedBase64 = croppedBuffer.toString('base64');
 
+            // Detect panel type using Gemini
+            // Solution 1: Use full screenshot to see backdrop for better popup detection
+            console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
+            const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
+            let detectedPanelType = 'screen'; // Default
+            
+            // If we switched to a new tab, force panel type to "newtab"
+            if (switchedToNewTab) {
+                detectedPanelType = 'newtab';
+                console.log(`✅ Panel type set to "newtab" (captured from newly opened tab)`);
+            } else {
+                try {
+                    // Pass both full screenshot and crop area for better popup detection (Solution 1)
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, screenshot, cropArea);
+                    console.log(`✅ Detected panel type: ${detectedPanelType}`);
+                } catch (err) {
+                    console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                }
+            }
+
             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
                 image_base64: croppedBase64,
+                type: detectedPanelType,
                 metadata: {
                     global_pos: {
                         x: cropArea.x,
@@ -1495,6 +1626,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
+            // Tạo quan hệ parent-child từ step
+            await createPanelRelationFromStep(tracker.selectedPanelId);
+            
+            // Restore original page if we switched to a new tab
+            if (switchedToNewTab && originalPage) {
+                try {
+                    console.log('🔄 Restoring original page...');
+                    tracker.page = originalPage;
+                    // Bring original page to front
+                    await originalPage.bringToFront().catch(() => {});
+                    console.log('✅ Restored to original page');
+                } catch (err) {
+                    console.warn('⚠️ Failed to restore original page:', err);
+                }
+            }
+            
             delete tracker.__drawPanelContext;
             console.log('✅ Draw Panel & Detect Actions completed!');
 
@@ -3008,19 +3155,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
-            const stepContent = await tracker.stepManager.getAllSteps();
-            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
-            
-            if (relatedStep) {
-                const panelBeforeId = relatedStep.panel_before.item_id;
-                const panelAfterId = relatedStep.panel_after.item_id;
-                
-                console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
-            } else {
-                console.log(`⚠️ No step found with panel_after="${panelId}"`);
-            }
+            // Tạo quan hệ parent-child từ step
+            // await createPanelRelationFromStep(panelId);
 
             await tracker._broadcast({
                 type: 'tree_update',

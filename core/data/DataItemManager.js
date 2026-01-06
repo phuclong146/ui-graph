@@ -211,6 +211,17 @@ export class DataItemManager {
                 }
             }
 
+            // Merge metadata để giữ lại global_pos và các metadata khác
+            if ('metadata' in updates && updates.metadata !== null && typeof updates.metadata === 'object') {
+                const oldMetadata = oldItem.metadata || {};
+                // Merge metadata: giữ lại metadata cũ, override bằng metadata mới
+                // Điều này đảm bảo global_pos được giữ lại nếu updates không có global_pos mới
+                updates.metadata = {
+                    ...oldMetadata,
+                    ...updates.metadata
+                };
+            }
+
             entries[index] = { ...oldItem, ...updates };
 
             const newContent = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n';
