@@ -119,7 +119,7 @@ export const detectChangeByDom = (oldDomActions, newDomActions, imageWidth, imag
     const w = Math.min(imageWidth - x, best.w + 2 * padding);
     const h = Math.min(imageHeight - y, best.h + 2 * padding);
 
-    return { x, y, w, h, source: 'dom', score: 0.9 };
+    return { x, y, w, h, source: 'dom', score: 0.6 };
 };
 
 export const detectChangeByImageDiff = async (oldBase64, newBase64) => {
@@ -280,7 +280,7 @@ export const detectChangeByGemini = async (oldBase64, newBase64) => {
             return null;
         }
 
-        const result = { ...box, source: 'gemini', score: 0.8 };
+        const result = { ...box, source: 'gemini', score: 0.95 };
         const elapsed = Date.now() - startTime;
         console.log(`🤖 [GEMINI] ✅ Result: ${JSON.stringify(result)} (${elapsed}ms)`);
         return result;
@@ -346,31 +346,43 @@ export const suggestCropAreaForNewPanel = async ({
 
     let best = null;
 
-    // Priority: image > gemini > dom
-    if (imgRes) {
-        console.log('🎯 [CROP SUGGEST] ✅ Using IMAGE as base (priority 1)');
-        best = imgRes;
-        if (gemRes) {
-            console.log('🎯 [CROP SUGGEST] Merging IMAGE + GEMINI...');
-            const merged = mergeTwoBoxes(best, gemRes, imageWidth, imageHeight);
-            console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
-            best = merged;
-        }
-        // DOM chỉ merge khi đã có ảnh hoặc Gemini để tránh sai lệch do DOM noise
-        if (domRes) {
-            console.log('🎯 [CROP SUGGEST] Merging with DOM...');
-            const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
-            console.log(`🎯 [CROP SUGGEST] Final merged: ${JSON.stringify(merged)}`);
-            best = merged;
-        }
-    } else if (gemRes) {
-        console.log('🎯 [CROP SUGGEST] ✅ Using GEMINI as base (priority 2, no IMAGE result)');
+    // Priority: gemini > image > dom
+    // Gemini thường đúng hơn vì hiểu được ngữ cảnh và vùng quan trọng
+    if (gemRes) {
+        console.log('🎯 [CROP SUGGEST] ✅ Using GEMINI as base (priority 1)');
         best = gemRes;
-        if (domRes) {
-            console.log('🎯 [CROP SUGGEST] Merging GEMINI + DOM...');
-            const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+        if (imgRes) {
+            console.log('🎯 [CROP SUGGEST] Merging GEMINI + IMAGE...');
+            const merged = mergeTwoBoxes(best, imgRes, imageWidth, imageHeight);
             console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
             best = merged;
+        }
+        // DOM chỉ merge khi overlap nhiều với GEMINI để tránh sai lệch do DOM noise
+        if (domRes) {
+            const overlap = calcOverlapBox(best, domRes);
+            if (overlap > 0.3) {
+                console.log(`🎯 [CROP SUGGEST] Merging with DOM (overlap: ${overlap.toFixed(2)})...`);
+                const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+                console.log(`🎯 [CROP SUGGEST] Final merged: ${JSON.stringify(merged)}`);
+                best = merged;
+            } else {
+                console.log(`🎯 [CROP SUGGEST] Skipping DOM merge (overlap: ${overlap.toFixed(2)} < 0.3, DOM may be noise)`);
+            }
+        }
+    } else if (imgRes) {
+        console.log('🎯 [CROP SUGGEST] ✅ Using IMAGE as base (priority 2, no GEMINI result)');
+        best = imgRes;
+        // DOM chỉ merge khi overlap nhiều với IMAGE để tránh sai lệch do DOM noise
+        if (domRes) {
+            const overlap = calcOverlapBox(best, domRes);
+            if (overlap > 0.3) {
+                console.log(`🎯 [CROP SUGGEST] Merging IMAGE + DOM (overlap: ${overlap.toFixed(2)})...`);
+                const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
+                console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
+                best = merged;
+            } else {
+                console.log(`🎯 [CROP SUGGEST] Skipping DOM merge (overlap: ${overlap.toFixed(2)} < 0.3, DOM may be noise)`);
+            }
         }
     } else {
         // Không có ảnh diff và không có Gemini → tránh dùng DOM thuần (thường sai),
