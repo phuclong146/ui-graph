@@ -663,6 +663,124 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
 }
 
 /**
+ * Ask Gemini to return the single rectangular region that best covers
+ * the most important visual changes between two screenshots.
+ * Result is in coordinates of the NEW screenshot.
+ */
+export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64) {
+    if (!oldScreenshotB64 || !newScreenshotB64) return null;
+
+    const { ENV } = await import('../config/env.js');
+
+    const prompt =
+        'Compare the OLD and NEW UI screenshots and find the single rectangular region that ' +
+        'best covers the most important visual changes (new cards, new popup, new content or layout changes).\n' +
+        '\n' +
+        '**Task:**\n' +
+        '- Work in the coordinate system of the NEW screenshot.\n' +
+        '- Return exactly one rectangle that tightly bounds the biggest changed area.\n' +
+        '- Do not include unchanged areas.\n' +
+        '\n' +
+        '**Output format:**\n' +
+        '{ "x": number, "y": number, "w": number, "h": number }\n' +
+        '- (x, y) is the top-left pixel in the NEW screenshot.\n' +
+        '- (w, h) are width and height in pixels.\n';
+
+    const responseSchema = {
+        type: "object",
+        required: ["x", "y", "w", "h"],
+        properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            w: { type: "number" },
+            h: { type: "number" }
+        }
+    };
+
+    try {
+        const resizedOld = await resizeBase64(oldScreenshotB64, 640);
+        const resizedNew = await resizeBase64(newScreenshotB64, 640);
+
+        const requestBody = {
+            contents: [{
+                parts: [
+                    { text: prompt },
+                    {
+                        inline_data: {
+                            mime_type: 'image/png',
+                            data: resizedOld
+                        }
+                    },
+                    {
+                        inline_data: {
+                            mime_type: 'image/png',
+                            data: resizedNew
+                        }
+                    }
+                ]
+            }],
+            generation_config: {
+                response_mime_type: 'application/json',
+                response_schema: responseSchema
+            }
+        };
+
+        const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'x-goog-api-key': ENV.GEMINI_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            }
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Gemini Change Box API error response:', errorText);
+            return null;
+        }
+
+        const data = await response.json();
+        let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!jsonText) {
+            console.warn('No text in Gemini change box response');
+            return null;
+        }
+
+        jsonText = jsonText.trim()
+            .replace(/^```json\s*/i, '')
+            .replace(/^```/, '')
+            .replace(/```$/i, '');
+
+        const result = JSON.parse(jsonText);
+        if (
+            typeof result.x === 'number' &&
+            typeof result.y === 'number' &&
+            typeof result.w === 'number' &&
+            typeof result.h === 'number'
+        ) {
+            return {
+                x: Math.round(result.x),
+                y: Math.round(result.y),
+                w: Math.round(result.w),
+                h: Math.round(result.h)
+            };
+        }
+
+        console.warn('Invalid change box from Gemini:', result);
+        return null;
+    } catch (err) {
+        console.error('Gemini Change Box API failed:', err);
+        return null;
+    }
+}
+
+/**
  * Detect panel type using Gemini (Solution 1: Use full screenshot to see backdrop)
  * @param {string} croppedScreenshotB64 - Cropped screenshot of the panel
  * @param {string} fullScreenshotB64 - Full page screenshot (optional, for better popup detection)

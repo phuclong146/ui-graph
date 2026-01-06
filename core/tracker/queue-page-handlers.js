@@ -1,6 +1,7 @@
 import { getPanelEditorClassCode } from './panel-editor-class.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
+import { suggestCropAreaForNewPanel } from './crop-suggestion-helpers.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -1325,6 +1326,30 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const fullPageDomActions = await captureActionsFromDOM(pageToCapture, null, true, imageWidth, imageHeight);
             console.log(`✅ Detected ${fullPageDomActions.length} DOM actions from full page`);
 
+            let suggestedCrop = null;
+            try {
+                const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+                const oldDom = await tracker.parentPanelManager.getParentDom(tracker.selectedPanelId);
+                const oldScreenshotBase64 = panelItem?.image_base64
+                    ? await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64)
+                    : null;
+
+                suggestedCrop = await suggestCropAreaForNewPanel({
+                    oldScreenshotBase64,
+                    newScreenshotBase64: screenshot,
+                    imageWidth,
+                    imageHeight,
+                    oldDomActions: oldDom,
+                    newDomActions: fullPageDomActions
+                });
+
+                if (suggestedCrop) {
+                    console.log('🎯 Suggested crop area:', suggestedCrop);
+                }
+            } catch (cropErr) {
+                console.error('Failed to suggest crop area:', cropErr);
+            }
+
             const pageHeight = 1080;
             const numPages = Math.ceil(imageHeight / pageHeight);
             const pagesData = [];
@@ -1356,11 +1381,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     fullScreenshot,
                     null,
                     'twoPointCrop',
-                    pages
+                    pages,
+                    initialCrop
                 );
                 await editor.init();
                 window.queueEditor = editor;
-            }, await getPanelEditorClassHandler(), screenshot, pagesData);
+            }, await getPanelEditorClassHandler(), screenshot, pagesData, suggestedCrop);
 
             tracker.__drawPanelContext = {
                 screenshot,

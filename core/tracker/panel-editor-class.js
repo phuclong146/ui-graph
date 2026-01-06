@@ -1,7 +1,7 @@
 export function getPanelEditorClassCode() {
     return `
 window.PanelEditor = class PanelEditor {
-    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null) {
+    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, initialCrop = null) {
         this.imageBase64 = imageBase64;
         
         if (mode === 'cropOnly' || mode === 'confirmOnly' || mode === 'twoPointCrop') {
@@ -16,6 +16,7 @@ window.PanelEditor = class PanelEditor {
                 this.cropMarkers = [];
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
+                this.initialCrop = initialCrop;
             }
         } else {
             this.geminiResult = geminiResultOrActionId;
@@ -174,6 +175,9 @@ window.PanelEditor = class PanelEditor {
         
         if (this.mode === 'twoPointCrop') {
             this.enableTwoPointCropMode();
+            if (this.initialCrop) {
+                await this.applyInitialCropSuggestion(this.initialCrop);
+            }
         }
         
         this.setupEventHandlers();
@@ -1695,6 +1699,73 @@ window.PanelEditor = class PanelEditor {
         
         this.canvas.on('mouse:down', clickHandler);
         this._twoPointHandler = clickHandler;
+    }
+    
+    async applyInitialCropSuggestion(cropArea) {
+        try {
+            if (!this.pagesData || !cropArea) return;
+
+            const bottomY = cropArea.y + cropArea.h;
+
+            const topPageIndex = this.pagesData.findIndex(p =>
+                cropArea.y >= p.y_start && cropArea.y < p.y_end
+            );
+            const bottomPageIndex = this.pagesData.findIndex(p =>
+                bottomY > p.y_start && bottomY <= p.y_end
+            );
+
+            if (topPageIndex === -1 || bottomPageIndex === -1) {
+                console.warn('Initial crop suggestion is out of page bounds', cropArea);
+                return;
+            }
+
+            this.cropPoints = [
+                {
+                    x: cropArea.x,
+                    y: cropArea.y - this.pagesData[topPageIndex].y_start,
+                    pageIndex: topPageIndex
+                },
+                {
+                    x: cropArea.x + cropArea.w,
+                    y: bottomY - this.pagesData[bottomPageIndex].y_start,
+                    pageIndex: bottomPageIndex
+                }
+            ];
+
+            this.currentPageIndex = topPageIndex;
+
+            const pageBase64 = await this.cropPageFromFull(this.currentPageIndex);
+            this.currentPageBase64 = pageBase64;
+
+            const img = new Image();
+            img.src = 'data:image/png;base64,' + pageBase64;
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+            });
+
+            this.canvas.setWidth(img.naturalWidth);
+            this.canvas.setHeight(img.naturalHeight);
+
+            await new Promise((resolve) => {
+                fabric.Image.fromURL(img.src, (fabricImg) => {
+                    this.canvas.setBackgroundImage(fabricImg, () => {
+                        this.canvas.renderAll();
+                        resolve();
+                    });
+                });
+            });
+
+            const indicator = document.getElementById('pageIndicator');
+            if (indicator) {
+                indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
+            }
+
+            this.enableTwoPointCropMode();
+            await this.confirmTwoPointCrop();
+        } catch (err) {
+            console.error('Failed to apply initial crop suggestion:', err);
+        }
     }
     
     async confirmTwoPointCrop() {
