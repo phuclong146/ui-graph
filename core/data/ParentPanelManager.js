@@ -408,6 +408,8 @@ export class ParentPanelManager {
         // }
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
+        const panelParentName = panelParentInfo.name;
+        const panelChildName = panelChildInfo.name;
         const parentBox = panelParentInfo.metadata?.global_pos;
         const childBox = panelChildInfo.metadata?.global_pos;
         const overlap = calcOverlapBox(parentBox, childBox);
@@ -421,7 +423,7 @@ export class ParentPanelManager {
             return;
         } else if (overlap >= 0.95) {
             // Case D: trung len nhau thi 2 thang deu la con cua MyParent
-            console.log('makeChild: case D', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
+            console.log('makeChild: case D', panelParentId, '=', panelParentName, '->', panelChildId, '=', panelChildName, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
             if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
@@ -432,7 +434,7 @@ export class ParentPanelManager {
             // Case BCE: co giao nhau
             const result = isBoxInside(parentBox, childBox);
             if (result === "A_in_B") {
-                console.log('makeChild: case C', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                console.log('makeChild: case C', panelParentId, '=', panelParentName, '->', panelChildId, '=', panelChildName, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
                 // Case C: doi cho Parent va Child
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
@@ -448,7 +450,7 @@ export class ParentPanelManager {
                 return;
             }
             if (result === "ERROR") {
-                console.log('makeChild: case E', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                console.log('makeChild: case E', panelParentId, '=', panelParentName, '->', panelChildId, '=', panelChildName, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
@@ -457,7 +459,7 @@ export class ParentPanelManager {
                 return;
             }
         }
-        console.log('makeChild: case B', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+        console.log('makeChild: case B', panelParentId, '=', panelParentName, '->', panelChildId, '=', panelChildName, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
         const parentActionInfo = await this.getActionInfo(panelParent.child_actions);
         if (!parentActionInfo) {
             return;
