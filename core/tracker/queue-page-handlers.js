@@ -1328,11 +1328,47 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             let suggestedCrop = null;
             try {
-                const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+                const currentPanelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
                 const oldDom = await tracker.parentPanelManager.getParentDom(tracker.selectedPanelId);
-                const oldScreenshotBase64 = panelItem?.image_base64
-                    ? await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64)
+
+                // Lấy panel_before từ doing_step (chính xác hơn findMyParent)
+                let oldPanelItem = currentPanelItem;
+                try {
+                    const stepContent = await tracker.stepManager.getAllSteps();
+                    const relatedStep = stepContent.find(step => step.panel_after?.item_id === tracker.selectedPanelId);
+                    
+                    if (relatedStep && relatedStep.panel_before?.item_id) {
+                        const panelBeforeId = relatedStep.panel_before.item_id;
+                        const panelBeforeItem = await tracker.dataItemManager.getItem(panelBeforeId);
+                        
+                        if (panelBeforeItem?.image_base64) {
+                            oldPanelItem = panelBeforeItem;
+                            console.log('🎯 [CROP SUGGEST] Using panel_before from step as baseline image:', {
+                                panel_before_id: panelBeforeId,
+                                panel_after_id: tracker.selectedPanelId,
+                                panel_before_name: panelBeforeItem.name,
+                                panel_after_name: currentPanelItem?.name,
+                                step_id: relatedStep.step_id
+                            });
+                        } else {
+                            console.log('🎯 [CROP SUGGEST] panel_before has no image_base64, fallback to current panel');
+                        }
+                    } else {
+                        console.log('🎯 [CROP SUGGEST] No step found with panel_after matching selectedPanelId, using current panel as baseline');
+                    }
+                } catch (stepErr) {
+                    console.error('🎯 [CROP SUGGEST] Failed to resolve panel_before from step, using current panel as baseline:', stepErr);
+                }
+
+                const oldScreenshotBase64 = oldPanelItem?.image_base64
+                    ? await tracker.dataItemManager.loadBase64FromFile(oldPanelItem.image_base64)
                     : null;
+
+                console.log('🎯 [CROP SUGGEST] Baseline image info:', {
+                    panel_id: oldPanelItem?.item_id,
+                    panel_name: oldPanelItem?.name,
+                    has_image: !!oldScreenshotBase64
+                });
 
                 suggestedCrop = await suggestCropAreaForNewPanel({
                     oldScreenshotBase64,

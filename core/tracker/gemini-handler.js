@@ -668,7 +668,13 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
  * Result is in coordinates of the NEW screenshot.
  */
 export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64) {
-    if (!oldScreenshotB64 || !newScreenshotB64) return null;
+    if (!oldScreenshotB64 || !newScreenshotB64) {
+        console.log('🤖 [GEMINI CHANGE BOX] Skipped: missing screenshots');
+        return null;
+    }
+
+    console.log('🤖 [GEMINI CHANGE BOX] Starting Gemini API call...');
+    const startTime = Date.now();
 
     const { ENV } = await import('../config/env.js');
 
@@ -698,8 +704,10 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
     };
 
     try {
+        console.log('🤖 [GEMINI CHANGE BOX] Resizing images to 640px...');
         const resizedOld = await resizeBase64(oldScreenshotB64, 640);
         const resizedNew = await resizeBase64(newScreenshotB64, 640);
+        console.log(`🤖 [GEMINI CHANGE BOX] Resized images: old=${resizedOld.length} bytes, new=${resizedNew.length} bytes`);
 
         const requestBody = {
             contents: [{
@@ -726,6 +734,8 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         };
 
         const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
+        console.log(`🤖 [GEMINI CHANGE BOX] Calling Gemini API (model: ${modelName})...`);
+        const apiStartTime = Date.now();
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {
@@ -738,9 +748,12 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
             }
         );
 
+        const apiElapsed = Date.now() - apiStartTime;
+        console.log(`🤖 [GEMINI CHANGE BOX] API response received (${apiElapsed}ms), status: ${response.status}`);
+
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Gemini Change Box API error response:', errorText);
+            console.error(`🤖 [GEMINI CHANGE BOX] ❌ API error (${response.status}):`, errorText);
             return null;
         }
 
@@ -748,34 +761,44 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
         if (!jsonText) {
-            console.warn('No text in Gemini change box response');
+            console.warn('🤖 [GEMINI CHANGE BOX] ❌ No text in response');
             return null;
         }
+
+        console.log(`🤖 [GEMINI CHANGE BOX] Raw response text (${jsonText.length} chars):`, jsonText.substring(0, 200));
 
         jsonText = jsonText.trim()
             .replace(/^```json\s*/i, '')
             .replace(/^```/, '')
             .replace(/```$/i, '');
 
+        console.log(`🤖 [GEMINI CHANGE BOX] Cleaned JSON text:`, jsonText);
+
         const result = JSON.parse(jsonText);
+        console.log(`🤖 [GEMINI CHANGE BOX] Parsed result:`, result);
+
         if (
             typeof result.x === 'number' &&
             typeof result.y === 'number' &&
             typeof result.w === 'number' &&
             typeof result.h === 'number'
         ) {
-            return {
+            const finalBox = {
                 x: Math.round(result.x),
                 y: Math.round(result.y),
                 w: Math.round(result.w),
                 h: Math.round(result.h)
             };
+            const totalElapsed = Date.now() - startTime;
+            console.log(`🤖 [GEMINI CHANGE BOX] ✅ Valid box: ${JSON.stringify(finalBox)} (total ${totalElapsed}ms)`);
+            return finalBox;
         }
 
-        console.warn('Invalid change box from Gemini:', result);
+        console.warn('🤖 [GEMINI CHANGE BOX] ❌ Invalid box format:', result);
         return null;
     } catch (err) {
-        console.error('Gemini Change Box API failed:', err);
+        const totalElapsed = Date.now() - startTime;
+        console.error(`🤖 [GEMINI CHANGE BOX] ❌ Error after ${totalElapsed}ms:`, err);
         return null;
     }
 }
