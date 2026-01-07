@@ -15,14 +15,9 @@ window.PanelEditor = class PanelEditor {
                 this.cropPoints = [];
                 this.cropMarkers = [];
                 this.cropRectangle = null;
-                // Dải crop dùng chung cho multi-page: { x, w }.
-                // Với single-page, không dùng sharedStrip, cho phép tự do.
-                this.sharedCropStrip = null;
-                // Multi-page: top offset trên page đầu, height override cho page cuối
-                this.firstPageTopOffset = 0;
-                this.lastPageHeightOverride = null;
-                // Lưu vị trí crop trên từng page: { pageIndex: { top, height } }
-                this.cropPagePositions = {};
+                // cropRectangleLogic: khung crop duy nhất trong panel (tọa độ tuyệt đối)
+                // Format: { x, y, w, h } - tọa độ trong panel
+                this.cropRectangleLogic = null;
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
                 this.initialCrop = initialCrop;
@@ -1704,8 +1699,11 @@ window.PanelEditor = class PanelEditor {
                 if (this.cropRectangle) {
                     this.cropRectangle.set({ left: x, top: y, width: w, height: h });
                 } else {
-                    this.createCropRectangle(x, y, w, h);
+                    // forceUseParams = true để vẽ khung mới, không dùng logic cũ
+                    this.createCropRectangle(x, y, w, h, true);
                 }
+                // Cập nhật cropRectangleLogic từ khung vừa vẽ
+                this.updateCropRectangleLogicFromDisplay();
                 this.canvas.renderAll();
             }
         };
@@ -1716,6 +1714,8 @@ window.PanelEditor = class PanelEditor {
                 // Select the rectangle so user can immediately resize it
                 this.canvas.setActiveObject(this.cropRectangle);
                 this.canvas.renderAll();
+                // Cập nhật cropRectangleLogic và confirm
+                this.updateCropRectangleLogicFromDisplay();
                 this.confirmTwoPointCrop();
             }
         };
@@ -1727,15 +1727,133 @@ window.PanelEditor = class PanelEditor {
         this._twoPointHandler = { mouseDown: mouseDownHandler, mouseMove: mouseMoveHandler, mouseUp: mouseUpHandler };
     }
     
-    createCropRectangle(x, y, w, h) {
+    /**
+     * Tính toán cropRectangleDisplay từ cropRectangleLogic cho một page cụ thể
+     * @param {number} pageIndex - Index của page
+     * @returns {Object|null} - { x, y, w, h } trong tọa độ local của page, hoặc null nếu không có intersection
+     */
+    calculateCropRectangleDisplay(pageIndex) {
+        if (!this.cropRectangleLogic || !this.pagesData || pageIndex < 0 || pageIndex >= this.pagesData.length) {
+            return null;
+        }
+        
+        const page = this.pagesData[pageIndex];
+        const pageYStart = page.y_start;
+        const pageYEnd = page.y_start + page.height;
+        
+        const logic = this.cropRectangleLogic;
+        const logicYStart = logic.y;
+        const logicYEnd = logic.y + logic.h;
+        
+        // Kiểm tra xem cropRectangleLogic có giao với page này không
+        if (logicYEnd <= pageYStart || logicYStart >= pageYEnd) {
+            // Không có intersection
+            return null;
+        }
+        
+        // Tính intersection
+        const displayYStart = Math.max(logicYStart, pageYStart);
+        const displayYEnd = Math.min(logicYEnd, pageYEnd);
+        const displayY = displayYStart - pageYStart; // Chuyển về tọa độ local của page
+        const displayH = displayYEnd - displayYStart;
+        
+        return {
+            x: logic.x,
+            y: displayY,
+            w: logic.w,
+            h: displayH
+        };
+    }
+    
+    /**
+     * Cập nhật cropRectangleLogic từ cropRectangleDisplay trên page hiện tại
+     * Chuyển đổi từ tọa độ local của page sang tọa độ tuyệt đối của panel
+     */
+    updateCropRectangleLogicFromDisplay() {
+        if (!this.cropRectangle || !this.pagesData || this.currentPageIndex < 0 || this.currentPageIndex >= this.pagesData.length) {
+            return;
+        }
+        
+        const rect = this.cropRectangle;
+        const actualWidth = rect.width * (rect.scaleX || 1);
+        const actualHeight = rect.height * (rect.scaleY || 1);
+        const displayX = Math.round(rect.left);
+        const displayY = Math.round(rect.top);
+        const displayW = Math.round(actualWidth);
+        const displayH = Math.round(actualHeight);
+        
+        const page = this.pagesData[this.currentPageIndex];
+        const pageYStart = page.y_start;
+        
+        // Chuyển đổi từ tọa độ local của page sang tọa độ tuyệt đối của panel
+        const logicYOnThisPage = pageYStart + displayY;
+        
+        // Nếu chưa có cropRectangleLogic, tạo mới từ display rectangle hiện tại
+        if (!this.cropRectangleLogic) {
+            this.cropRectangleLogic = {
+                x: displayX,
+                y: logicYOnThisPage,
+                w: displayW,
+                h: displayH
+            };
+            return;
+        }
+        
+        // Cập nhật cropRectangleLogic sao cho intersection với page hiện tại khớp với display rectangle
+        // Tìm tất cả các page có intersection với cropRectangleLogic hiện tại
+        const oldLogic = this.cropRectangleLogic;
+        const oldLogicYStart = oldLogic.y;
+        const oldLogicYEnd = oldLogic.y + oldLogic.h;
+        
+        // Tìm các page có intersection với logic cũ
+        const affectedPages = [];
+        for (let i = 0; i < this.pagesData.length; i++) {
+            const p = this.pagesData[i];
+            const pYStart = p.y_start;
+            const pYEnd = p.y_start + p.height;
+            if (oldLogicYEnd > pYStart && oldLogicYStart < pYEnd) {
+                affectedPages.push(i);
+            }
+        }
+        
+        // Cập nhật logic để intersection với page hiện tại khớp với display
+        // Điều chỉnh logic.y và logic.h sao cho:
+        // - logic.y <= pageYStart + displayY (để display bắt đầu đúng vị trí)
+        // - logic.y + logic.h >= pageYStart + displayY + displayH (để display kết thúc đúng vị trí)
+        
+        const newLogicYStart = Math.min(oldLogicYStart, logicYOnThisPage);
+        const newLogicYEnd = Math.max(oldLogicYEnd, logicYOnThisPage + displayH);
+        
+        this.cropRectangleLogic = {
+            x: displayX,
+            y: newLogicYStart,
+            w: displayW,
+            h: newLogicYEnd - newLogicYStart
+        };
+    }
+    
+    createCropRectangle(x, y, w, h, forceUseParams = false) {
         // Remove old rectangle if exists
         if (this.cropRectangle) {
             this.canvas.remove(this.cropRectangle);
         }
         
-        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-        const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
-        const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+        // Nếu có cropRectangleLogic và không force dùng params, tính toán cropRectangleDisplay cho page hiện tại
+        // forceUseParams = true khi vẽ khung mới (không dùng logic cũ)
+        if (!forceUseParams && this.cropRectangleLogic) {
+            const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+            if (display) {
+                x = display.x;
+                y = display.y;
+                w = display.w;
+                h = display.h;
+            } else {
+                // Không có intersection với page này, không hiển thị
+                this.cropRectangle = null;
+                return;
+            }
+        }
+        
         const minHeight = 50;
         
         // Create resizable and draggable rectangle
@@ -1771,6 +1889,7 @@ window.PanelEditor = class PanelEditor {
                     scaleY: 1
                 });
             }
+            this.updateCropRectangleLogicFromDisplay();
             this.confirmTwoPointCrop();
         });
         
@@ -1798,6 +1917,7 @@ window.PanelEditor = class PanelEditor {
         
         // Update crop area after moving
         this.cropRectangle.on('moved', () => {
+            this.updateCropRectangleLogicFromDisplay();
             this.confirmTwoPointCrop();
         });
         
@@ -1976,6 +2096,7 @@ window.PanelEditor = class PanelEditor {
                 this.canvas.off('mouse:move', scalingMouseMoveHandler);
                 scalingMouseMoveHandler = null;
             }
+            this.updateCropRectangleLogicFromDisplay();
             this.confirmTwoPointCrop();
         });
         
@@ -1997,29 +2118,13 @@ window.PanelEditor = class PanelEditor {
             return;
         }
 
-        // Dùng gợi ý để set dải dọc chung: chỉ lấy x và w
-        this.sharedCropStrip = {
+        // Lưu cropRectangleLogic từ gợi ý (tọa độ tuyệt đối trong panel)
+        this.cropRectangleLogic = {
             x: cropArea.x,
-            w: cropArea.w
+            y: cropArea.y,
+            w: cropArea.w,
+            h: cropArea.h
         };
-
-        // Tính top offset nếu gợi ý bắt đầu ở page đầu
-        if (topPageIndex === 0) {
-            this.firstPageTopOffset = cropArea.y;
-        } else {
-            this.firstPageTopOffset = 0;
-        }
-
-        // Tính height override cho page cuối nếu gợi ý kết thúc ở page cuối
-        const bottomY = cropArea.y + cropArea.h;
-        const lastPageIndex = this.pagesData.length - 1;
-        const lastPage = this.pagesData[lastPageIndex];
-        if (bottomY > lastPage.y_start) {
-            const lastHeight = Math.min(lastPage.height, bottomY - lastPage.y_start);
-            this.lastPageHeightOverride = lastHeight;
-        } else {
-            this.lastPageHeightOverride = null;
-        }
 
         this.currentPageIndex = topPageIndex;
 
@@ -2050,29 +2155,20 @@ window.PanelEditor = class PanelEditor {
                 indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
             }
 
-        // Tạo khung dọc trên page hiện tại (tôn trọng top/bottom override)
-        const pageH = this.canvas.getHeight();
-        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-        const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
-        const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
-        let y = 0;
-        let h = pageH;
-        if (isFirstPage) {
-            y = Math.max(0, Math.min(this.firstPageTopOffset || 0, pageH - 10));
-            h = pageH - y;
-        } else if (isLastPage && this.lastPageHeightOverride) {
-            h = Math.min(pageH, Math.max(10, this.lastPageHeightOverride));
-        }
-        this.createCropRectangle(this.sharedCropStrip.x, y, this.sharedCropStrip.w, h);
+        // Tính toán và hiển thị cropRectangleDisplay cho page hiện tại
+        const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+        if (display) {
+            this.createCropRectangle(display.x, display.y, display.w, display.h);
             await this.confirmTwoPointCrop();
+        }
         } catch (err) {
             console.error('Failed to apply initial crop suggestion:', err);
         }
     }
     
     async confirmTwoPointCrop() {
-        if (!this.cropRectangle) {
-            // Fallback to old two-point system if rectangle doesn't exist
+        if (!this.cropRectangleLogic) {
+            // Fallback to old two-point system if logic doesn't exist
             if (!this.cropPoints || this.cropPoints.length !== 2) {
                 return;
             }
@@ -2113,111 +2209,41 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Use rectangle-based system
-        const rect = this.cropRectangle;
-        // Get actual dimensions accounting for scale
-        const actualWidth = rect.width * (rect.scaleX || 1);
-        const actualHeight = rect.height * (rect.scaleY || 1);
-        const x = Math.round(rect.left);
-        const w = Math.round(actualWidth);
-        const hLocal = Math.round(actualHeight);
-        const pageHeight = this.canvas.getHeight();
-        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-        const isFirstPage = isSinglePage || this.currentPageIndex === 0;
-        const isLastPage = isSinglePage || this.currentPageIndex === this.pagesData.length - 1;
+        // Sử dụng cropRectangleLogic (tọa độ tuyệt đối trong panel)
+        const logic = this.cropRectangleLogic;
         
-        console.log('=== CONFIRM CROP (Rectangle) ===');
-        console.log('Rectangle position (local):', { x, y: Math.round(rect.top), w, h: hLocal });
+        console.log('=== CONFIRM CROP (Rectangle Logic) ===');
+        console.log('CropRectangleLogic:', logic);
         console.log('Current page:', this.currentPageIndex);
         console.log('Pages data:', this.pagesData);
         
-        if (w < 50 || hLocal < 50) {
+        if (logic.w < 50 || logic.h < 50) {
             alert('⚠️ Crop area quá nhỏ (min 50x50px). Vui lòng vẽ lại.');
-            this.canvas.remove(this.cropRectangle);
-            this.cropRectangle = null;
+            this.cropRectangleLogic = null;
+            if (this.cropRectangle) {
+                this.canvas.remove(this.cropRectangle);
+                this.cropRectangle = null;
+            }
             this.enableTwoPointCropMode();
             return;
         }
         
-        // Lưu vị trí crop trên page hiện tại
-        if (!this.cropPagePositions) {
-            this.cropPagePositions = {};
-        }
-        this.cropPagePositions[this.currentPageIndex] = {
-            top: Math.round(rect.top),
-            height: hLocal
+        // cropRectangleLogic đã là tọa độ tuyệt đối trong panel, dùng trực tiếp
+        this.calculatedCropArea = {
+            x: logic.x,
+            y: logic.y,
+            w: logic.w,
+            h: logic.h
         };
         
-        // Build absolute crop rectangle từ các vị trí đã lưu trên các page
-        let startY = 0;
-        let endY = 0;
-        
-        if (isSinglePage) {
-            // Single page: dùng vị trí trực tiếp
-            startY = Math.max(0, Math.round(rect.top));
-            endY = startY + hLocal;
-        } else {
-            // Multi-page: tìm page đầu và page cuối có crop
-            let firstPageWithCrop = null;
-            let lastPageWithCrop = null;
-            
-            // Tìm page đầu tiên có crop
-            for (let i = 0; i < this.pagesData.length; i++) {
-                if (this.cropPagePositions && this.cropPagePositions[i]) {
-                    firstPageWithCrop = i;
-                    break;
-                }
-            }
-            
-            // Tìm page cuối cùng có crop
-            for (let i = this.pagesData.length - 1; i >= 0; i--) {
-                if (this.cropPagePositions && this.cropPagePositions[i]) {
-                    lastPageWithCrop = i;
-                    break;
-                }
-            }
-            
-            if (firstPageWithCrop !== null && lastPageWithCrop !== null) {
-                // Tính startY từ page đầu
-                const firstPage = this.pagesData[firstPageWithCrop];
-                const firstPos = this.cropPagePositions[firstPageWithCrop];
-                startY = firstPage.y_start + firstPos.top;
-                
-                // Tính endY từ page cuối
-                const lastPage = this.pagesData[lastPageWithCrop];
-                const lastPos = this.cropPagePositions[lastPageWithCrop];
-                endY = lastPage.y_start + lastPos.top + lastPos.height;
-                
-                // Đảm bảo các page ở giữa được tính vào
-                // (chúng đã được lưu với full height trong _switchPageDuringScaling)
-            } else {
-                // Fallback: dùng vị trí hiện tại
-                const currentPage = this.pagesData[this.currentPageIndex];
-                startY = currentPage.y_start + Math.round(rect.top);
-                endY = startY + hLocal;
-            }
-        }
-        
-        let cropArea = {
-            x: x,
-            y: startY,
-            w: w,
-            h: endY - startY
-        };
-        
-        // Lưu dải crop dùng chung cho tất cả page (toạ độ local trên page)
-        this.sharedCropStrip = { x, w };
-        
-        console.log('Final crop area:', cropArea);
-        
-        this.calculatedCropArea = cropArea;
+        console.log('Final crop area:', this.calculatedCropArea);
         
         const saveBtn = document.getElementById('editorSaveCropBtn');
         if (saveBtn) {
             saveBtn.style.display = 'inline-block';
         }
         
-        this.showStatus(\`✅ Crop area ready: \${cropArea.w}x\${cropArea.h}px. Kéo để điều chỉnh, click Save để xác nhận.\`, 'success');
+        this.showStatus(\`✅ Crop area ready: \${this.calculatedCropArea.w}x\${this.calculatedCropArea.h}px. Kéo để điều chỉnh, click Save để xác nhận.\`, 'success');
     }
     
     async saveTwoPointCrop() {
@@ -2393,24 +2419,8 @@ window.PanelEditor = class PanelEditor {
         const rect = this.cropRectangle;
         if (!rect) return;
         
-        // Save current crop rectangle state
-        const actualWidth = rect.width * (rect.scaleX || 1);
-        const actualHeight = rect.height * (rect.scaleY || 1);
-        const currentX = Math.round(rect.left);
-        const currentTop = Math.round(rect.top);
-        const currentHeight = Math.round(actualHeight);
-        
-        // Save shared crop strip (x, w) cho tất cả các page
-        this.sharedCropStrip = { x: currentX, w: actualWidth };
-        
-        // Lưu vị trí crop trên page hiện tại
-        if (!this.cropPagePositions) {
-            this.cropPagePositions = {};
-        }
-        this.cropPagePositions[oldIndex] = {
-            top: currentTop,
-            height: currentHeight
-        };
+        // Cập nhật cropRectangleLogic từ display rectangle hiện tại trước khi chuyển page
+        this.updateCropRectangleLogicFromDisplay();
         
         // Switch page
         this.currentPageIndex = targetPageIndex;
@@ -2444,92 +2454,25 @@ window.PanelEditor = class PanelEditor {
             indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
         }
         
-        // Recreate crop rectangle on new page
-        const canvasHeight = this.canvas.getHeight();
-        
-        let newY = 0;
-        let newH = canvasHeight;
-        
-        // Khôi phục vị trí đã lưu cho page này nếu có
-        if (this.cropPagePositions && this.cropPagePositions[this.currentPageIndex]) {
-            const savedPos = this.cropPagePositions[this.currentPageIndex];
-            newY = Math.max(0, Math.min(savedPos.top, canvasHeight - 10));
-            newH = Math.min(canvasHeight, Math.max(10, savedPos.height));
-        } else {
-            // Nếu chưa có vị trí cho page này, tạo khung mặc định
-            // Tùy theo hướng kéo để quyết định vị trí
-            if (handleType === 'bottom-right' || handleType === 'top-left-down') {
-                // Kéo xuống: bắt đầu từ top của page mới
-                newY = 0;
-                newH = canvasHeight;
-                // Lưu vị trí cho page này
-                if (!this.cropPagePositions) {
-                    this.cropPagePositions = {};
+        // Tính toán và hiển thị cropRectangleDisplay cho page mới
+        if (this.cropRectangleLogic) {
+            const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+            if (display) {
+                // Remove old rectangle and create new one
+                const oldRect = this.cropRectangle;
+                if (oldRect) {
+                    this.canvas.remove(oldRect);
+                    this.cropRectangle = null;
                 }
-                this.cropPagePositions[this.currentPageIndex] = {
-                    top: newY,
-                    height: newH
-                };
-            } else if (handleType === 'top-left' || handleType === 'bottom-right-up') {
-                // Kéo lên: kết thúc ở bottom của page mới
-                newY = 0;
-                newH = canvasHeight;
-                // Lưu vị trí cho page này
-                if (!this.cropPagePositions) {
-                    this.cropPagePositions = {};
-                }
-                this.cropPagePositions[this.currentPageIndex] = {
-                    top: newY,
-                    height: newH
-                };
-            } else {
-                // Mặc định: full height
-                newY = 0;
-                newH = canvasHeight;
-                // Lưu vị trí cho page này
-                if (!this.cropPagePositions) {
-                    this.cropPagePositions = {};
-                }
-                this.cropPagePositions[this.currentPageIndex] = {
-                    top: newY,
-                    height: newH
-                };
+                
+                // Create new rectangle on the new page
+                this.createCropRectangle(display.x, display.y, display.w, display.h);
+                
+                // Select the new rectangle so user can continue dragging
+                this.canvas.setActiveObject(this.cropRectangle);
+                this.canvas.renderAll();
             }
         }
-        
-        // Nếu có các page ở giữa (giữa firstPageWithCrop và lastPageWithCrop),
-        // đảm bảo chúng có full height
-        if (this.cropPagePositions) {
-            const pagesWithCrop = Object.keys(this.cropPagePositions).map(Number).sort((a, b) => a - b);
-            if (pagesWithCrop.length >= 2) {
-                const firstPage = pagesWithCrop[0];
-                const lastPage = pagesWithCrop[pagesWithCrop.length - 1];
-                // Các page ở giữa nên có full height
-                for (let i = firstPage + 1; i < lastPage; i++) {
-                    if (!this.cropPagePositions[i]) {
-                        const pageH = this.pagesData[i]?.height || canvasHeight;
-                        this.cropPagePositions[i] = {
-                            top: 0,
-                            height: pageH
-                        };
-                    }
-                }
-            }
-        }
-        
-        // Remove old rectangle and create new one
-        const oldRect = this.cropRectangle;
-        if (oldRect) {
-            this.canvas.remove(oldRect);
-            this.cropRectangle = null;
-        }
-        
-        // Create new rectangle on the new page
-        this.createCropRectangle(this.sharedCropStrip.x, newY, this.sharedCropStrip.w, newH);
-        
-        // Select the new rectangle so user can continue dragging
-        this.canvas.setActiveObject(this.cropRectangle);
-        this.canvas.renderAll();
         
         this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length} - Kéo tiếp để mở rộng khung\`, 'info');
     }
@@ -2547,27 +2490,9 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Lưu thông tin khung crop khi chuyển page
-        // Lưu dải chung (x, w) và vị trí Y trên page hiện tại
+        // Lưu cropRectangleLogic trước khi chuyển page
         if (this.mode === 'twoPointCrop' && this.cropRectangle) {
-            const rect = this.cropRectangle;
-            const actualWidth = rect.width * (rect.scaleX || 1);
-            const actualHeight = rect.height * (rect.scaleY || 1);
-            
-            // Lưu dải crop chung (x, w) cho tất cả các page
-            this.sharedCropStrip = { 
-                x: Math.round(rect.left), 
-                w: Math.round(actualWidth) 
-            };
-            
-            // Lưu vị trí Y trên page hiện tại để có thể khôi phục sau
-            if (!this.cropPagePositions) {
-                this.cropPagePositions = {};
-            }
-            this.cropPagePositions[oldIndex] = {
-                top: Math.round(rect.top),
-                height: Math.round(actualHeight)
-            };
+            this.updateCropRectangleLogicFromDisplay();
         }
         
         if (this.cropMarkers && this.cropMarkers.length > 0) {
@@ -2620,29 +2545,13 @@ window.PanelEditor = class PanelEditor {
         this.enableTwoPointCropMode();
         console.log('After enableTwoPointCropMode - cropPoints:', this.cropPoints);
         
-        // Sau khi load page mới, nếu đã có dải crop chung thì tạo lại khung crop
-        if (this.mode === 'twoPointCrop' && this.sharedCropStrip) {
-            const { x, w } = this.sharedCropStrip;
-            const pageH = this.canvas.getHeight();
-            
-            // Khôi phục vị trí Y trên page hiện tại nếu đã có
-            let y = 0;
-            let h = pageH;
-            
-            if (this.cropPagePositions && this.cropPagePositions[this.currentPageIndex]) {
-                // Khôi phục vị trí đã lưu cho page này
-                const savedPos = this.cropPagePositions[this.currentPageIndex];
-                y = Math.max(0, Math.min(savedPos.top, pageH - 10));
-                h = Math.min(pageH, Math.max(10, savedPos.height));
-            } else {
-                // Nếu chưa có vị trí cho page này, tạo khung mặc định
-                // Cho phép người dùng vẽ hoặc điều chỉnh sau
-                y = 0;
-                h = pageH;
+        // Sau khi load page mới, nếu đã có cropRectangleLogic thì tính toán và hiển thị cropRectangleDisplay
+        if (this.mode === 'twoPointCrop' && this.cropRectangleLogic) {
+            const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+            if (display) {
+                this.createCropRectangle(display.x, display.y, display.w, display.h);
+                await this.confirmTwoPointCrop();
             }
-            
-            this.createCropRectangle(x, y, w, h);
-            await this.confirmTwoPointCrop();
         }
         
         if (this.cropPoints.length === 1) {
