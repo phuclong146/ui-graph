@@ -1826,8 +1826,87 @@ window.PanelEditor = class PanelEditor {
             this.confirmTwoPointCrop();
         });
         
-        // Constrain resizing to canvas bounds (chỉ cho phép resize theo trục X)
-        this.cropRectangle.on('scaling', () => {
+        // Track which handle is being dragged and handle cross-page dragging
+        let isScaling = false;
+        let isSwitchingPage = false;
+        let scalingStartPage = this.currentPageIndex;
+        let activeCorner = null;
+        let scalingMouseMoveHandler = null;
+        
+        // Detect which corner is being dragged and handle cross-page dragging
+        this.cropRectangle.on('scaling', (e) => {
+            if (!isScaling) {
+                isScaling = true;
+                scalingStartPage = this.currentPageIndex;
+                // Detect active corner from Fabric.js internal state
+                activeCorner = this.canvas._activeObject?._activeCorner;
+                
+                // Add mousemove handler to detect cross-page dragging
+                scalingMouseMoveHandler = (evt) => {
+                    if (!isScaling || isSwitchingPage || !this.cropRectangle) return;
+                    
+                    const pointer = this.canvas.getPointer(evt.e);
+                    const mouseY = pointer.y;
+                    const mouseX = pointer.x;
+                    const canvasHeight = this.canvas.getHeight();
+                    const canvasWidth = this.canvas.getWidth();
+                    const rect = this.cropRectangle;
+                    
+                    // Detect which handle is being dragged
+                    // Try to get from Fabric.js internal state first
+                    let detectedCorner = activeCorner;
+                    if (!detectedCorner) {
+                        // Fallback: detect based on mouse position relative to rectangle center
+                        const rectCenterX = rect.left + (rect.width * rect.scaleX) / 2;
+                        const rectCenterY = rect.top + (rect.height * rect.scaleY) / 2;
+                        const isRightSide = mouseX > rectCenterX;
+                        const isBottomSide = mouseY > rectCenterY;
+                        
+                        if (isRightSide && isBottomSide) {
+                            detectedCorner = 'br';
+                        } else if (!isRightSide && !isBottomSide) {
+                            detectedCorner = 'tl';
+                        } else if (isRightSide && !isBottomSide) {
+                            detectedCorner = 'tr';
+                        } else {
+                            detectedCorner = 'bl';
+                        }
+                    }
+                    
+                    // Detect bottom-right handle dragging downward
+                    const isBottomRight = detectedCorner === 'br' || detectedCorner === 'mr' || detectedCorner === 'mb';
+                    const isTopLeft = detectedCorner === 'tl' || detectedCorner === 'ml' || detectedCorner === 'mt';
+                    
+                    // Handle bottom-right dragging: extend to next pages
+                    if (isBottomRight && mouseY > canvasHeight && this.currentPageIndex < this.pagesData.length - 1) {
+                        isSwitchingPage = true;
+                        const nextPageIndex = this.currentPageIndex + 1;
+                        this._switchPageDuringScaling(nextPageIndex, 'bottom-right').then(() => {
+                            isSwitchingPage = false;
+                        }).catch(() => {
+                            isSwitchingPage = false;
+                        });
+                        return;
+                    }
+                    
+                    // Handle top-left dragging: extend to previous pages
+                    if (isTopLeft && mouseY < 0 && this.currentPageIndex > 0) {
+                        isSwitchingPage = true;
+                        const prevPageIndex = this.currentPageIndex - 1;
+                        this._switchPageDuringScaling(prevPageIndex, 'top-left').then(() => {
+                            isSwitchingPage = false;
+                        }).catch(() => {
+                            isSwitchingPage = false;
+                        });
+                        return;
+                    }
+                };
+                
+                this.canvas.on('mouse:move', scalingMouseMoveHandler);
+            }
+            
+            if (isSwitchingPage) return; // Don't process scaling while switching pages
+            
             const canvasWidth = this.canvas.getWidth();
             const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
@@ -1857,7 +1936,9 @@ window.PanelEditor = class PanelEditor {
                 // Adjust top so bottom stays at canvas bottom
                 let newHeight = rect.height * rect.scaleY;
                 if (newHeight < minHeight) newHeight = minHeight;
-                if (newHeight > canvasHeight) newHeight = canvasHeight;
+                if (newHeight > canvasHeight) {
+                    newHeight = canvasHeight;
+                }
                 let newTop = rect.top + rect.height - newHeight;
                 if (newTop < 0) {
                     newTop = 0;
@@ -1872,7 +1953,9 @@ window.PanelEditor = class PanelEditor {
                 // Only bottom changes, top fixed
                 let newHeight = rect.height * rect.scaleY;
                 if (newHeight < minHeight) newHeight = minHeight;
-                if (newHeight > canvasHeight) newHeight = canvasHeight;
+                if (newHeight > canvasHeight) {
+                    newHeight = canvasHeight;
+                }
                 rect.set({
                     top: 0,
                     height: newHeight,
@@ -1886,6 +1969,18 @@ window.PanelEditor = class PanelEditor {
                     scaleY: 1
                 });
             }
+        });
+        
+        // Reset scaling state when done
+        this.cropRectangle.on('scaled', () => {
+            isScaling = false;
+            isSwitchingPage = false;
+            activeCorner = null;
+            if (scalingMouseMoveHandler) {
+                this.canvas.off('mouse:move', scalingMouseMoveHandler);
+                scalingMouseMoveHandler = null;
+            }
+            this.confirmTwoPointCrop();
         });
         
         this.canvas.add(this.cropRectangle);
@@ -2248,6 +2343,125 @@ window.PanelEditor = class PanelEditor {
         this.canvas.renderAll();
         
         this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.numPages}\`, 'success');
+    }
+    
+    async _switchPageDuringScaling(targetPageIndex, handleType) {
+        if (!this.pagesData || this.pagesData.length === 0) return;
+        if (targetPageIndex < 0 || targetPageIndex >= this.pagesData.length) return;
+        if (targetPageIndex === this.currentPageIndex) return;
+        
+        const oldIndex = this.currentPageIndex;
+        const rect = this.cropRectangle;
+        if (!rect) return;
+        
+        // Save current crop rectangle state
+        const actualWidth = rect.width * (rect.scaleX || 1);
+        const actualHeight = rect.height * (rect.scaleY || 1);
+        const currentX = Math.round(rect.left);
+        const currentTop = Math.round(rect.top);
+        const currentHeight = Math.round(actualHeight);
+        
+        // Save shared crop strip
+        if (!this.sharedCropStrip) {
+            this.sharedCropStrip = { x: currentX, w: actualWidth };
+        } else {
+            this.sharedCropStrip = { x: currentX, w: actualWidth };
+        }
+        
+        // Save first/last page offsets
+        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+        const isFirstPage = !isSinglePage && oldIndex === 0;
+        const isLastPage = !isSinglePage && oldIndex === this.pagesData.length - 1;
+        
+        if (isFirstPage) {
+            this.firstPageTopOffset = Math.max(0, currentTop);
+        }
+        if (isLastPage) {
+            const pageH = this.pagesData[oldIndex]?.height || currentHeight;
+            this.lastPageHeightOverride = Math.min(pageH, Math.max(10, currentHeight));
+        }
+        
+        // Switch page
+        this.currentPageIndex = targetPageIndex;
+        
+        // Load new page
+        const pageBase64 = await this.cropPageFromFull(this.currentPageIndex);
+        this.currentPageBase64 = pageBase64;
+        
+        const img = new Image();
+        img.src = 'data:image/png;base64,' + pageBase64;
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+        });
+        
+        this.canvas.setWidth(img.naturalWidth);
+        this.canvas.setHeight(img.naturalHeight);
+        
+        await new Promise((resolve) => {
+            fabric.Image.fromURL(img.src, (fabricImg) => {
+                this.canvas.setBackgroundImage(fabricImg, () => {
+                    this.canvas.renderAll();
+                    resolve();
+                });
+            });
+        });
+        
+        // Update page indicator
+        const indicator = document.getElementById('pageIndicator');
+        if (indicator) {
+            indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
+        }
+        
+        // Recreate crop rectangle on new page
+        const canvasHeight = this.canvas.getHeight();
+        const newIsFirstPage = !isSinglePage && this.currentPageIndex === 0;
+        const newIsLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+        
+        let newY = 0;
+        let newH = canvasHeight;
+        
+        if (handleType === 'bottom-right') {
+            // Extending downward: start from top of new page, full height
+            newY = 0;
+            newH = canvasHeight;
+            // Update lastPageHeightOverride if this is the last page
+            if (newIsLastPage) {
+                this.lastPageHeightOverride = canvasHeight;
+            }
+        } else if (handleType === 'top-left') {
+            // Extending upward: end at bottom of new page, full height
+            newY = 0;
+            newH = canvasHeight;
+            // Update firstPageTopOffset if this is the first page
+            if (newIsFirstPage) {
+                this.firstPageTopOffset = 0;
+            }
+        } else {
+            // Default: use saved offsets
+            if (newIsFirstPage && this.firstPageTopOffset !== undefined) {
+                newY = Math.max(0, Math.min(this.firstPageTopOffset, canvasHeight - 10));
+                newH = canvasHeight - newY;
+            } else if (newIsLastPage && this.lastPageHeightOverride !== undefined) {
+                newH = Math.min(canvasHeight, Math.max(10, this.lastPageHeightOverride));
+            }
+        }
+        
+        // Remove old rectangle and create new one
+        const oldRect = this.cropRectangle;
+        if (oldRect) {
+            this.canvas.remove(oldRect);
+            this.cropRectangle = null;
+        }
+        
+        // Create new rectangle on the new page
+        this.createCropRectangle(this.sharedCropStrip.x, newY, this.sharedCropStrip.w, newH);
+        
+        // Select the new rectangle so user can continue dragging
+        this.canvas.setActiveObject(this.cropRectangle);
+        this.canvas.renderAll();
+        
+        this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length} - Kéo tiếp để mở rộng khung\`, 'info');
     }
     
     async switchPage(direction) {
