@@ -18,7 +18,8 @@ window.PanelEditor = class PanelEditor {
                 // Dải crop dùng chung cho multi-page: { x, w }.
                 // Với single-page, không dùng sharedStrip, cho phép tự do.
                 this.sharedCropStrip = null;
-                // Với multi-page, lưu chiều cao cắt riêng cho page cuối
+                // Multi-page: top offset trên page đầu, height override cho page cuối
+                this.firstPageTopOffset = 0;
                 this.lastPageHeightOverride = null;
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
@@ -1650,10 +1651,15 @@ window.PanelEditor = class PanelEditor {
         
         document.addEventListener('keydown', this._twoPointUndoHandler);
         
-        // Drawing handler for creating new rectangle (vertical strip)
+        // Drawing handler for creating new rectangle
         let isDrawing = false;
         let startX = 0;
         let startY = 0;
+        
+        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+        const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
+        const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+        const minSize = 10;
         
         const mouseDownHandler = (e) => {
             // Don't start drawing if clicking on existing rectangle or its controls
@@ -1666,7 +1672,7 @@ window.PanelEditor = class PanelEditor {
             if (!e.target || e.target === this.canvas.backgroundImage) {
                 const pointer = this.canvas.getPointer(e.e);
                 startX = Math.round(pointer.x);
-                startY = 0; // luôn bắt đầu từ top
+                startY = isSinglePage || isFirstPage ? Math.round(pointer.y) : 0;
                 isDrawing = true;
                 
                 // Remove existing rectangle if starting new one
@@ -1683,13 +1689,29 @@ window.PanelEditor = class PanelEditor {
             
             const pointer = this.canvas.getPointer(e.e);
             const currentX = Math.round(pointer.x);
+            const currentY = Math.round(pointer.y);
             
-            const x = Math.min(startX, currentX);
-            const w = Math.abs(currentX - startX);
-            const y = 0;
-            const h = this.canvas.getHeight();
+            let x = Math.min(startX, currentX);
+            let w = Math.abs(currentX - startX);
+            let y = 0;
+            let h = this.canvas.getHeight();
             
-            if (w > 10) {
+            if (isSinglePage) {
+                y = Math.min(startY, currentY);
+                h = Math.abs(currentY - startY);
+            } else if (isFirstPage) {
+                y = Math.min(startY, currentY);
+                y = Math.max(0, Math.min(y, this.canvas.getHeight() - minSize));
+                h = this.canvas.getHeight() - y;
+            } else if (isLastPage) {
+                y = 0;
+                h = Math.max(minSize, Math.min(this.canvas.getHeight(), Math.abs(currentY - startY)));
+            } else {
+                y = 0;
+                h = this.canvas.getHeight();
+            }
+            
+            if (w > minSize && h > minSize) {
                 if (this.cropRectangle) {
                     this.cropRectangle.set({ left: x, top: y, width: w, height: h });
                 } else {
@@ -1722,6 +1744,11 @@ window.PanelEditor = class PanelEditor {
             this.canvas.remove(this.cropRectangle);
         }
         
+        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+        const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
+        const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+        const minHeight = 50;
+        
         // Create resizable and draggable rectangle
         this.cropRectangle = new fabric.Rect({
             left: x,
@@ -1750,10 +1777,9 @@ window.PanelEditor = class PanelEditor {
             if (rect.scaleX !== 1 || rect.scaleY !== 1) {
                 rect.set({
                     width: rect.width * rect.scaleX,
-                    height: this.canvas.getHeight(),
+                    height: rect.height * rect.scaleY,
                     scaleX: 1,
-                    scaleY: 1,
-                    top: 0
+                    scaleY: 1
                 });
             }
             this.confirmTwoPointCrop();
@@ -1761,18 +1787,38 @@ window.PanelEditor = class PanelEditor {
         
         // Update crop area when rectangle is moved
         this.cropRectangle.on('moving', () => {
-            // Constrain to canvas bounds (dải dọc: khóa theo trục Y)
             const canvasWidth = this.canvas.getWidth();
+            const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
             const currentWidth = rect.width * (rect.scaleX || 1);
             
+            // X constraints common
             if (rect.left < 0) rect.left = 0;
             if (rect.left + currentWidth > canvasWidth) {
                 rect.left = Math.max(0, canvasWidth - currentWidth);
             }
-            // Luôn giữ top = 0 và full height
-            rect.top = 0;
-            rect.height = this.canvas.getHeight();
+            
+            if (isSinglePage) {
+                // Free move within bounds
+                if (rect.top < 0) rect.top = 0;
+                if (rect.top + rect.height > canvasHeight) {
+                    rect.top = Math.max(0, canvasHeight - rect.height);
+                }
+            } else if (isFirstPage) {
+                // Allow moving top; bottom sticks to page bottom
+                if (rect.top < 0) rect.top = 0;
+                if (rect.top > canvasHeight - minHeight) rect.top = canvasHeight - minHeight;
+                rect.height = canvasHeight - rect.top;
+            } else if (isLastPage) {
+                // Top fixed; only bottom matters (through height)
+                rect.top = 0;
+                if (rect.height < minHeight) rect.height = minHeight;
+                if (rect.height > canvasHeight) rect.height = canvasHeight;
+            } else {
+                // Middle pages: lock full height
+                rect.top = 0;
+                rect.height = canvasHeight;
+            }
         });
         
         // Update crop area after moving
@@ -1783,10 +1829,11 @@ window.PanelEditor = class PanelEditor {
         // Constrain resizing to canvas bounds (chỉ cho phép resize theo trục X)
         this.cropRectangle.on('scaling', () => {
             const canvasWidth = this.canvas.getWidth();
+            const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
             
+            // X scaling constraints
             const newWidth = rect.width * rect.scaleX;
-            
             if (rect.left + newWidth > canvasWidth) {
                 const maxScaleX = (canvasWidth - rect.left) / rect.width;
                 rect.scaleX = Math.min(rect.scaleX, maxScaleX);
@@ -1795,10 +1842,50 @@ window.PanelEditor = class PanelEditor {
                 rect.left = 0;
             }
             
-            // Khóa chiều cao & scale Y
-            rect.top = 0;
-            rect.height = this.canvas.getHeight();
-            rect.scaleY = 1;
+            if (isSinglePage) {
+                // Free scale within bounds
+                let newHeight = rect.height * rect.scaleY;
+                if (newHeight < minHeight) newHeight = minHeight;
+                if (rect.top + newHeight > canvasHeight) {
+                    newHeight = canvasHeight - rect.top;
+                }
+                rect.set({
+                    height: newHeight,
+                    scaleY: 1
+                });
+            } else if (isFirstPage) {
+                // Adjust top so bottom stays at canvas bottom
+                let newHeight = rect.height * rect.scaleY;
+                if (newHeight < minHeight) newHeight = minHeight;
+                if (newHeight > canvasHeight) newHeight = canvasHeight;
+                let newTop = rect.top + rect.height - newHeight;
+                if (newTop < 0) {
+                    newTop = 0;
+                    newHeight = canvasHeight;
+                }
+                rect.set({
+                    top: newTop,
+                    height: newHeight,
+                    scaleY: 1
+                });
+            } else if (isLastPage) {
+                // Only bottom changes, top fixed
+                let newHeight = rect.height * rect.scaleY;
+                if (newHeight < minHeight) newHeight = minHeight;
+                if (newHeight > canvasHeight) newHeight = canvasHeight;
+                rect.set({
+                    top: 0,
+                    height: newHeight,
+                    scaleY: 1
+                });
+            } else {
+                // Middle pages: lock full height
+                rect.set({
+                    top: 0,
+                    height: canvasHeight,
+                    scaleY: 1
+                });
+            }
         });
         
         this.canvas.add(this.cropRectangle);
@@ -1808,24 +1895,42 @@ window.PanelEditor = class PanelEditor {
     
     async applyInitialCropSuggestion(cropArea) {
         try {
-            if (!this.pagesData || !cropArea) return;
+        if (!this.pagesData || !cropArea) return;
 
-            const topPageIndex = this.pagesData.findIndex(p =>
-                cropArea.y >= p.y_start && cropArea.y < p.y_end
-            );
+        const topPageIndex = this.pagesData.findIndex(p =>
+            cropArea.y >= p.y_start && cropArea.y < p.y_end
+        );
 
-            if (topPageIndex === -1) {
-                console.warn('Initial crop suggestion is out of page bounds', cropArea);
-                return;
-            }
+        if (topPageIndex === -1) {
+            console.warn('Initial crop suggestion is out of page bounds', cropArea);
+            return;
+        }
 
-            // Dùng gợi ý để set dải dọc chung: chỉ lấy x và w
-            this.sharedCropStrip = {
-                x: cropArea.x,
-                w: cropArea.w
-            };
+        // Dùng gợi ý để set dải dọc chung: chỉ lấy x và w
+        this.sharedCropStrip = {
+            x: cropArea.x,
+            w: cropArea.w
+        };
 
-            this.currentPageIndex = topPageIndex;
+        // Tính top offset nếu gợi ý bắt đầu ở page đầu
+        if (topPageIndex === 0) {
+            this.firstPageTopOffset = cropArea.y;
+        } else {
+            this.firstPageTopOffset = 0;
+        }
+
+        // Tính height override cho page cuối nếu gợi ý kết thúc ở page cuối
+        const bottomY = cropArea.y + cropArea.h;
+        const lastPageIndex = this.pagesData.length - 1;
+        const lastPage = this.pagesData[lastPageIndex];
+        if (bottomY > lastPage.y_start) {
+            const lastHeight = Math.min(lastPage.height, bottomY - lastPage.y_start);
+            this.lastPageHeightOverride = lastHeight;
+        } else {
+            this.lastPageHeightOverride = null;
+        }
+
+        this.currentPageIndex = topPageIndex;
 
             const pageBase64 = await this.cropPageFromFull(this.currentPageIndex);
             this.currentPageBase64 = pageBase64;
@@ -1854,8 +1959,20 @@ window.PanelEditor = class PanelEditor {
                 indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
             }
 
-            // Tạo khung dọc full-height trên page đầu tiên
-            this.createCropRectangle(this.sharedCropStrip.x, 0, this.sharedCropStrip.w, this.canvas.getHeight());
+        // Tạo khung dọc trên page hiện tại (tôn trọng top/bottom override)
+        const pageH = this.canvas.getHeight();
+        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+        const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
+        const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+        let y = 0;
+        let h = pageH;
+        if (isFirstPage) {
+            y = Math.max(0, Math.min(this.firstPageTopOffset || 0, pageH - 10));
+            h = pageH - y;
+        } else if (isLastPage && this.lastPageHeightOverride) {
+            h = Math.min(pageH, Math.max(10, this.lastPageHeightOverride));
+        }
+        this.createCropRectangle(this.sharedCropStrip.x, y, this.sharedCropStrip.w, h);
             await this.confirmTwoPointCrop();
         } catch (err) {
             console.error('Failed to apply initial crop suggestion:', err);
@@ -2138,20 +2255,26 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Lưu preset khung crop của page cũ (nếu đang có rectangle)
+        // Lưu dải chung và override top/bottom khi rời page hiện tại
         if (this.mode === 'twoPointCrop' && this.cropRectangle) {
             const rect = this.cropRectangle;
             const actualWidth = rect.width * (rect.scaleX || 1);
             const actualHeight = rect.height * (rect.scaleY || 1);
-            if (!this.pageCropPresets) {
-                this.pageCropPresets = {};
+            if (!this.sharedCropStrip) {
+                this.sharedCropStrip = { x: Math.round(rect.left), w: Math.round(actualWidth) };
+            } else {
+                this.sharedCropStrip = { x: Math.round(rect.left), w: Math.round(actualWidth) };
             }
-            this.pageCropPresets[oldIndex] = {
-                x: Math.round(rect.left),
-                y: Math.round(rect.top),
-                w: Math.round(actualWidth),
-                h: Math.round(actualHeight)
-            };
+            const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+            const isFirstPage = !isSinglePage && oldIndex === 0;
+            const isLastPage = !isSinglePage && oldIndex === this.pagesData.length - 1;
+            if (isFirstPage) {
+                this.firstPageTopOffset = Math.max(0, Math.round(rect.top));
+            }
+            if (isLastPage) {
+                const pageH = this.pagesData[oldIndex]?.height || actualHeight;
+                this.lastPageHeightOverride = Math.min(pageH, Math.max(10, Math.round(actualHeight)));
+            }
         }
         
         if (this.cropMarkers && this.cropMarkers.length > 0) {
@@ -2207,8 +2330,19 @@ window.PanelEditor = class PanelEditor {
         // Sau khi load page mới, nếu đã có dải crop chung thì tạo lại khung crop
         if (this.mode === 'twoPointCrop' && this.sharedCropStrip) {
             const { x, w } = this.sharedCropStrip;
-            const h = this.canvas.getHeight();
-            this.createCropRectangle(x, 0, w, h);
+            const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+            const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
+            const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
+            const pageH = this.canvas.getHeight();
+            let y = 0;
+            let h = pageH;
+            if (isFirstPage) {
+                y = Math.max(0, Math.min(this.firstPageTopOffset || 0, pageH - 10));
+                h = pageH - y;
+            } else if (isLastPage && this.lastPageHeightOverride) {
+                h = Math.min(pageH, Math.max(10, this.lastPageHeightOverride));
+            }
+            this.createCropRectangle(x, y, w, h);
             await this.confirmTwoPointCrop();
         }
         
