@@ -329,70 +329,15 @@ export const suggestCropAreaForNewPanel = async ({
     oldDomActions,
     newDomActions
 }) => {
-    console.log('🎯 [CROP SUGGEST] Starting crop suggestion with all methods...');
+    console.log('🎯 [CROP SUGGEST] Starting crop suggestion with Gemini only...');
     console.log(`🎯 [CROP SUGGEST] Image size: ${imageWidth}x${imageHeight}`);
-    console.log(`🎯 [CROP SUGGEST] Old DOM actions: ${oldDomActions?.length || 0}, New DOM actions: ${newDomActions?.length || 0}`);
 
-    const [domRes, imgRes, gemRes] = await Promise.all([
-        Promise.resolve(detectChangeByDom(oldDomActions, newDomActions, imageWidth, imageHeight)),
-        detectChangeByImageDiff(oldScreenshotBase64, newScreenshotBase64),
-        detectChangeByGemini(oldScreenshotBase64, newScreenshotBase64)
-    ]);
+    const gemRes = await detectChangeByGemini(oldScreenshotBase64, newScreenshotBase64);
 
-    console.log('🎯 [CROP SUGGEST] All methods completed:');
-    console.log(`  📊 DOM: ${domRes ? JSON.stringify(domRes) : 'null'}`);
-    console.log(`  🖼️ IMAGE: ${imgRes ? JSON.stringify(imgRes) : 'null'}`);
-    console.log(`  🤖 GEMINI: ${gemRes ? JSON.stringify(gemRes) : 'null'}`);
+    console.log(`🎯 [CROP SUGGEST] GEMINI result: ${gemRes ? JSON.stringify(gemRes) : 'null'}`);
 
-    let best = null;
-
-    // Priority: gemini > image > dom
-    // Gemini thường đúng hơn vì hiểu được ngữ cảnh và vùng quan trọng
-    if (gemRes) {
-        console.log('🎯 [CROP SUGGEST] ✅ Using GEMINI as base (priority 1)');
-        best = gemRes;
-        if (imgRes) {
-            console.log('🎯 [CROP SUGGEST] Merging GEMINI + IMAGE...');
-            const merged = mergeTwoBoxes(best, imgRes, imageWidth, imageHeight);
-            console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
-            best = merged;
-        }
-        // DOM chỉ merge khi overlap nhiều với GEMINI để tránh sai lệch do DOM noise
-        if (domRes) {
-            const overlap = calcOverlapBox(best, domRes);
-            if (overlap > 0.3) {
-                console.log(`🎯 [CROP SUGGEST] Merging with DOM (overlap: ${overlap.toFixed(2)})...`);
-                const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
-                console.log(`🎯 [CROP SUGGEST] Final merged: ${JSON.stringify(merged)}`);
-                best = merged;
-            } else {
-                console.log(`🎯 [CROP SUGGEST] Skipping DOM merge (overlap: ${overlap.toFixed(2)} < 0.3, DOM may be noise)`);
-            }
-        }
-    } else if (imgRes) {
-        console.log('🎯 [CROP SUGGEST] ✅ Using IMAGE as base (priority 2, no GEMINI result)');
-        best = imgRes;
-        // DOM chỉ merge khi overlap nhiều với IMAGE để tránh sai lệch do DOM noise
-        if (domRes) {
-            const overlap = calcOverlapBox(best, domRes);
-            if (overlap > 0.3) {
-                console.log(`🎯 [CROP SUGGEST] Merging IMAGE + DOM (overlap: ${overlap.toFixed(2)})...`);
-                const merged = mergeTwoBoxes(best, domRes, imageWidth, imageHeight);
-                console.log(`🎯 [CROP SUGGEST] Merged result: ${JSON.stringify(merged)}`);
-                best = merged;
-            } else {
-                console.log(`🎯 [CROP SUGGEST] Skipping DOM merge (overlap: ${overlap.toFixed(2)} < 0.3, DOM may be noise)`);
-            }
-        }
-    } else {
-        // Không có ảnh diff và không có Gemini → tránh dùng DOM thuần (thường sai),
-        // fallback full page để CTV tự crop.
-        console.log('🎯 [CROP SUGGEST] ⚠️ No IMAGE or GEMINI result, skipping DOM (fallback to full page)');
-        best = null;
-    }
-
-    if (!best) {
-        console.log('🎯 [CROP SUGGEST] ⚠️ No valid suggestion, using full page fallback');
+    if (!gemRes) {
+        console.log('🎯 [CROP SUGGEST] ⚠️ No valid suggestion from Gemini, using full page fallback');
         return {
             x: 0,
             y: 0,
@@ -402,6 +347,8 @@ export const suggestCropAreaForNewPanel = async ({
             score: 0.1
         };
     }
+
+    let best = gemRes;
 
     console.log(`🎯 [CROP SUGGEST] Before min-size check: ${JSON.stringify(best)}`);
     const minSize = 80;
