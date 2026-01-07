@@ -18,6 +18,9 @@ window.PanelEditor = class PanelEditor {
                 // cropRectangleLogic: khung crop duy nhất trong panel (tọa độ tuyệt đối)
                 // Format: { x, y, w, h } - tọa độ trong panel
                 this.cropRectangleLogic = null;
+                // pageCropDisplays: lưu crop rectangle display cho từng page (tọa độ local của page)
+                // Format: { pageIndex: { x, y, w, h } }
+                this.pageCropDisplays = {};
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
                 this.initialCrop = initialCrop;
@@ -1737,6 +1740,11 @@ window.PanelEditor = class PanelEditor {
             return null;
         }
         
+        // Nếu đã có display đã lưu cho page này, ưu tiên sử dụng
+        if (this.pageCropDisplays && this.pageCropDisplays[pageIndex]) {
+            return this.pageCropDisplays[pageIndex];
+        }
+        
         const page = this.pagesData[pageIndex];
         const pageYStart = page.y_start;
         const pageYEnd = page.y_start + page.height;
@@ -1757,12 +1765,20 @@ window.PanelEditor = class PanelEditor {
         const displayY = displayYStart - pageYStart; // Chuyển về tọa độ local của page
         const displayH = displayYEnd - displayYStart;
         
-        return {
+        const display = {
             x: logic.x,
             y: displayY,
             w: logic.w,
             h: displayH
         };
+        
+        // Lưu display đã tính toán để sử dụng sau
+        if (!this.pageCropDisplays) {
+            this.pageCropDisplays = {};
+        }
+        this.pageCropDisplays[pageIndex] = display;
+        
+        return display;
     }
     
     /**
@@ -1781,6 +1797,14 @@ window.PanelEditor = class PanelEditor {
         const displayY = Math.round(rect.top);
         const displayW = Math.round(actualWidth);
         const displayH = Math.round(actualHeight);
+        
+        // Lưu crop rectangle display cho page hiện tại
+        this.pageCropDisplays[this.currentPageIndex] = {
+            x: displayX,
+            y: displayY,
+            w: displayW,
+            h: displayH
+        };
         
         const page = this.pagesData[this.currentPageIndex];
         const pageYStart = page.y_start;
@@ -2547,7 +2571,14 @@ window.PanelEditor = class PanelEditor {
         
         // Sau khi load page mới, nếu đã có cropRectangleLogic thì tính toán và hiển thị cropRectangleDisplay
         if (this.mode === 'twoPointCrop' && this.cropRectangleLogic) {
-            const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+            // Ưu tiên sử dụng crop rectangle display đã lưu cho page này
+            let display = this.pageCropDisplays[this.currentPageIndex];
+            
+            // Nếu chưa có display đã lưu, tính toán từ logic
+            if (!display) {
+                display = this.calculateCropRectangleDisplay(this.currentPageIndex);
+            }
+            
             if (display) {
                 this.createCropRectangle(display.x, display.y, display.w, display.h);
                 await this.confirmTwoPointCrop();
