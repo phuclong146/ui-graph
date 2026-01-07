@@ -2026,19 +2026,21 @@ window.PanelEditor = class PanelEditor {
         const rect = this.cropRectangle;
         // Get actual dimensions accounting for scale
         const actualWidth = rect.width * (rect.scaleX || 1);
+        const actualHeight = rect.height * (rect.scaleY || 1);
         const x = Math.round(rect.left);
         const w = Math.round(actualWidth);
-        
-        // Trên mỗi page: y luôn = 0, height = chiều cao page (canvas height)
-        const localY = 0;
-        const localH = this.canvas.getHeight();
+        const hLocal = Math.round(actualHeight);
+        const pageHeight = this.canvas.getHeight();
+        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
+        const isFirstPage = isSinglePage || this.currentPageIndex === 0;
+        const isLastPage = isSinglePage || this.currentPageIndex === this.pagesData.length - 1;
         
         console.log('=== CONFIRM CROP (Rectangle) ===');
-        console.log('Rectangle position (local):', { x, y: localY, w, h: localH });
+        console.log('Rectangle position (local):', { x, y: Math.round(rect.top), w, h: hLocal });
         console.log('Current page:', this.currentPageIndex);
         console.log('Pages data:', this.pagesData);
         
-        if (w < 50 || localH < 50) {
+        if (w < 50 || hLocal < 50) {
             alert('⚠️ Crop area quá nhỏ (min 50x50px). Vui lòng vẽ lại.');
             this.canvas.remove(this.cropRectangle);
             this.cropRectangle = null;
@@ -2046,21 +2048,27 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Convert to absolute coordinates
-        const page = this.pagesData[this.currentPageIndex];
-        if (!page) {
-            console.error('No page data for current page index:', this.currentPageIndex);
-            return;
+        // Persist first/last page offsets so we keep user top/bottom trims
+        if (isFirstPage) {
+            this.firstPageTopOffset = Math.max(0, Math.min(Math.round(rect.top), pageHeight - 10));
         }
-                
-        // Với yêu cầu mới: cùng 1 dải dọc cho toàn bộ panel,
-        // nên cropArea luôn bắt đầu từ y = 0 tới hết chiều cao full screenshot
+        if (isLastPage) {
+            this.lastPageHeightOverride = Math.min(pageHeight, Math.max(10, hLocal));
+        }
+        
+        // Build absolute crop rectangle
         const totalHeight = this.pagesData[this.pagesData.length - 1].y_end;
-        const cropArea = {
+        const startY = isSinglePage ? Math.max(0, Math.round(rect.top)) : Math.max(0, this.firstPageTopOffset || 0);
+        const lastPage = this.pagesData[this.pagesData.length - 1];
+        const bottomLimit = lastPage.y_start + (this.lastPageHeightOverride ? Math.min(lastPage.height, this.lastPageHeightOverride) : lastPage.height);
+        const safeBottom = isSinglePage
+            ? Math.min(pageHeight, startY + hLocal)
+            : Math.max(startY + 10, Math.min(bottomLimit, totalHeight));
+        let cropArea = {
             x: x,
-            y: 0,
+            y: startY,
             w: w,
-            h: totalHeight
+            h: safeBottom - startY
         };
         
         // Lưu dải crop dùng chung cho tất cả page (toạ độ local trên page)
@@ -2075,7 +2083,7 @@ window.PanelEditor = class PanelEditor {
             saveBtn.style.display = 'inline-block';
         }
         
-        this.showStatus(\`✅ Crop area ready: \${w}x\${h}px. Kéo để điều chỉnh, click Save để xác nhận.\`, 'success');
+        this.showStatus(\`✅ Crop area ready: \${cropArea.w}x\${cropArea.h}px. Kéo để điều chỉnh, click Save để xác nhận.\`, 'success');
     }
     
     async saveTwoPointCrop() {
@@ -2411,4 +2419,6 @@ spinnerStyle.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 10
 document.head.appendChild(spinnerStyle);
     `;
 }
+
+
 
