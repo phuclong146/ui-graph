@@ -704,31 +704,15 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
     };
 
     try {
-        // Lấy kích thước gốc của ảnh mới trước khi resize
+        // Lấy kích thước gốc của ảnh mới để log
         const sharp = (await import('sharp')).default;
         const originalBuffer = Buffer.from(newScreenshotB64, 'base64');
         const originalMeta = await sharp(originalBuffer).metadata();
         const originalWidth = originalMeta.width;
         const originalHeight = originalMeta.height;
-        console.log(`🤖 [GEMINI CHANGE BOX] Original image size: ${originalWidth}x${originalHeight}`);
+        console.log(`🤖 [GEMINI CHANGE BOX] Using original image size: ${originalWidth}x${originalHeight}`);
 
-        console.log('🤖 [GEMINI CHANGE BOX] Resizing images to 640px...');
-        const resizedOld = await resizeBase64(oldScreenshotB64, 640);
-        const resizedNew = await resizeBase64(newScreenshotB64, 640);
-        
-        // Lấy kích thước của ảnh đã resize để tính scale factor
-        const resizedBuffer = Buffer.from(resizedNew, 'base64');
-        const resizedMeta = await sharp(resizedBuffer).metadata();
-        const resizedWidth = resizedMeta.width;
-        const resizedHeight = resizedMeta.height;
-        console.log(`🤖 [GEMINI CHANGE BOX] Resized image size: ${resizedWidth}x${resizedHeight}`);
-        console.log(`🤖 [GEMINI CHANGE BOX] Resized images: old=${resizedOld.length} bytes, new=${resizedNew.length} bytes`);
-
-        // Tính scale factor để scale lại tọa độ về ảnh gốc
-        const scaleX = originalWidth / resizedWidth;
-        const scaleY = originalHeight / resizedHeight;
-        console.log(`🤖 [GEMINI CHANGE BOX] Scale factors: scaleX=${scaleX.toFixed(3)}, scaleY=${scaleY.toFixed(3)}`);
-
+        // Dùng ảnh gốc trực tiếp, không resize
         const requestBody = {
             contents: [{
                 parts: [
@@ -736,13 +720,13 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
                     {
                         inline_data: {
                             mime_type: 'image/png',
-                            data: resizedOld
+                            data: oldScreenshotB64
                         }
                     },
                     {
                         inline_data: {
                             mime_type: 'image/png',
-                            data: resizedNew
+                            data: newScreenshotB64
                         }
                     }
                 ]
@@ -795,7 +779,7 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         console.log(`🤖 [GEMINI CHANGE BOX] Cleaned JSON text:`, jsonText);
 
         const result = JSON.parse(jsonText);
-        console.log(`🤖 [GEMINI CHANGE BOX] Parsed result (resized coordinates):`, result);
+        console.log(`🤖 [GEMINI CHANGE BOX] Parsed result (original coordinates):`, result);
 
         if (
             typeof result.x === 'number' &&
@@ -803,16 +787,16 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
             typeof result.w === 'number' &&
             typeof result.h === 'number'
         ) {
-            // Scale lại tọa độ từ ảnh đã resize về ảnh gốc
-            const scaledBox = {
-                x: Math.round(result.x * scaleX),
-                y: Math.round(result.y * scaleY),
-                w: Math.round(result.w * scaleX),
-                h: Math.round(result.h * scaleY)
+            // Kết quả đã theo tọa độ ảnh gốc, không cần scale
+            const finalBox = {
+                x: Math.round(result.x),
+                y: Math.round(result.y),
+                w: Math.round(result.w),
+                h: Math.round(result.h)
             };
             const totalElapsed = Date.now() - startTime;
-            console.log(`🤖 [GEMINI CHANGE BOX] ✅ Scaled box (original coordinates): ${JSON.stringify(scaledBox)} (total ${totalElapsed}ms)`);
-            return scaledBox;
+            console.log(`🤖 [GEMINI CHANGE BOX] ✅ Final box (original coordinates): ${JSON.stringify(finalBox)} (total ${totalElapsed}ms)`);
+            return finalBox;
         }
 
         console.warn('🤖 [GEMINI CHANGE BOX] ❌ Invalid box format:', result);
