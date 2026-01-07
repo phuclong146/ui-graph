@@ -14,6 +14,7 @@ window.PanelEditor = class PanelEditor {
                 this.currentPageIndex = 0;
                 this.cropPoints = [];
                 this.cropMarkers = [];
+                this.cropRectangle = null;
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
                 this.initialCrop = initialCrop;
@@ -1579,42 +1580,42 @@ window.PanelEditor = class PanelEditor {
     }
 
     enableTwoPointCropMode() {
-        console.log('✅ Two-Point Crop Mode enabled, cropPoints:', this.cropPoints);
+        console.log('✅ Two-Point Crop Mode enabled, cropRectangle:', this.cropRectangle);
         
-        if (!this.cropPoints) {
-            this.cropPoints = [];
-        }
-        
+        // Remove old markers
         if (this.cropMarkers && this.cropMarkers.length > 0) {
             this.cropMarkers.forEach(m => this.canvas.remove(m));
         }
         this.cropMarkers = [];
         
-        this.cropPoints.forEach((point, index) => {
-            if (point.pageIndex === this.currentPageIndex) {
-                const marker = new fabric.Circle({
-                    left: point.x - 8,
-                    top: point.y - 8,
-                    radius: 8,
-                    fill: index === 0 ? 'lime' : 'red',
-                    stroke: '#000',
-                    strokeWidth: 2,
-                    selectable: false,
-                    evented: false
-                });
-                this.canvas.add(marker);
-                this.cropMarkers.push(marker);
+        // Remove old rectangle if exists
+        if (this.cropRectangle) {
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
+        }
+        
+        // If we have cropPoints from old system, convert to rectangle
+        if (this.cropPoints && this.cropPoints.length === 2) {
+            const point1 = this.cropPoints[0];
+            const point2 = this.cropPoints[1];
+            
+            if (point1.pageIndex === this.currentPageIndex && point2.pageIndex === this.currentPageIndex) {
+                const x = Math.min(point1.x, point2.x);
+                const y = Math.min(point1.y, point2.y);
+                const w = Math.abs(point2.x - point1.x);
+                const h = Math.abs(point2.y - point1.y);
+                
+                this.createCropRectangle(x, y, w, h);
+                this.confirmTwoPointCrop();
+                return;
             }
-        });
-        this.canvas.renderAll();
+        }
         
-        this.canvas.selection = false;
+        // Allow selection so users can select and modify the rectangle
+        this.canvas.selection = true;
+        this.showStatus('📍 Kéo chuột để vẽ vùng crop, hoặc kéo và thay đổi kích thước khung hiện có', 'info');
         
-        const statusMsg = this.cropPoints.length === 1 
-            ? \`📍 Point 1 set on Page \${this.cropPoints[0].pageIndex + 1}. Click BottomRight corner.\`
-            : '📍 Click TopLeft corner (or switch page first)';
-        this.showStatus(statusMsg, 'info');
-        
+        // Remove old handlers
         if (this._twoPointHandler) {
             this.canvas.off('mouse:down', this._twoPointHandler);
         }
@@ -1623,12 +1624,14 @@ window.PanelEditor = class PanelEditor {
             document.removeEventListener('keydown', this._twoPointUndoHandler);
         }
         
+        // Undo handler
         this._twoPointUndoHandler = (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && this.cropPoints.length > 0) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && this.cropRectangle) {
                 e.preventDefault();
-                console.log('↶ Undo crop point');
+                console.log('↶ Undo crop rectangle');
                 
-                this.cropPoints.pop();
+                this.canvas.remove(this.cropRectangle);
+                this.cropRectangle = null;
                 
                 const saveBtn = document.getElementById('editorSaveCropBtn');
                 if (saveBtn) {
@@ -1636,69 +1639,173 @@ window.PanelEditor = class PanelEditor {
                 }
                 this.calculatedCropArea = null;
                 
-                if (this.cropPoints.length === 0) {
-                    this.showStatus('↶ Undo: Point removed. Click TopLeft corner', 'info');
-                } else {
-                    this.showStatus(\`↶ Undo: Point 2 removed. Point 1 at Page \${this.cropPoints[0].pageIndex + 1}\`, 'info');
-                }
-                
-                this.enableTwoPointCropMode();
+                this.showStatus('↶ Undo: Crop rectangle removed. Kéo chuột để vẽ vùng crop mới', 'info');
             }
         };
         
         document.addEventListener('keydown', this._twoPointUndoHandler);
         
-        const clickHandler = (e) => {
+        // Drawing handler for creating new rectangle
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
+        
+        const mouseDownHandler = (e) => {
+            // Don't start drawing if clicking on existing rectangle or its controls
+            if (this.cropRectangle && (e.target === this.cropRectangle || e.target === this.canvas.getActiveObject())) {
+                // Allow Fabric.js to handle selection and resizing
+                return;
+            }
+            
+            // If clicking on empty space, start drawing new rectangle
+            if (!e.target || e.target === this.canvas.backgroundImage) {
+                const pointer = this.canvas.getPointer(e.e);
+                startX = Math.round(pointer.x);
+                startY = Math.round(pointer.y);
+                isDrawing = true;
+                
+                // Remove existing rectangle if starting new one
+                if (this.cropRectangle) {
+                    this.canvas.remove(this.cropRectangle);
+                    this.cropRectangle = null;
+                    this.canvas.discardActiveObject();
+                }
+            }
+        };
+        
+        const mouseMoveHandler = (e) => {
+            if (!isDrawing) return;
+            
             const pointer = this.canvas.getPointer(e.e);
-            const x = Math.round(pointer.x);
-            const y = Math.round(pointer.y);
+            const currentX = Math.round(pointer.x);
+            const currentY = Math.round(pointer.y);
             
-            console.log('Click detected! Current cropPoints:', this.cropPoints, 'Current page:', this.currentPageIndex);
+            const x = Math.min(startX, currentX);
+            const y = Math.min(startY, currentY);
+            const w = Math.abs(currentX - startX);
+            const h = Math.abs(currentY - startY);
             
-            if (this.cropPoints.length === 0) {
-                console.log('Adding Point 1 at:', {x, y, pageIndex: this.currentPageIndex});
-                this.cropPoints.push({ x, y, pageIndex: this.currentPageIndex });
-                
-                const marker = new fabric.Circle({
-                    left: x - 8,
-                    top: y - 8,
-                    radius: 8,
-                    fill: 'lime',
-                    stroke: '#000',
-                    strokeWidth: 2,
-                    selectable: false,
-                    evented: false
-                });
-                this.canvas.add(marker);
-                this.cropMarkers.push(marker);
-                
-                this.showStatus('📍 Point 1 set. Click BottomRight corner (or switch page)', 'success');
-                
-            } else if (this.cropPoints.length === 1) {
-                console.log('Adding Point 2 at:', {x, y, pageIndex: this.currentPageIndex});
-                console.log('Point 1 was at:', this.cropPoints[0]);
-                this.cropPoints.push({ x, y, pageIndex: this.currentPageIndex });
-                
-                const marker = new fabric.Circle({
-                    left: x - 8,
-                    top: y - 8,
-                    radius: 8,
-                    fill: 'red',
-                    stroke: '#000',
-                    strokeWidth: 2,
-                    selectable: false,
-                    evented: false
-                });
-                this.canvas.add(marker);
-                this.cropMarkers.push(marker);
-                
-                this.canvas.off('mouse:down', clickHandler);
+            if (w > 10 && h > 10) {
+                if (this.cropRectangle) {
+                    this.cropRectangle.set({ left: x, top: y, width: w, height: h });
+                } else {
+                    this.createCropRectangle(x, y, w, h);
+                }
+                this.canvas.renderAll();
+            }
+        };
+        
+        const mouseUpHandler = (e) => {
+            if (isDrawing && this.cropRectangle) {
+                isDrawing = false;
+                // Select the rectangle so user can immediately resize it
+                this.canvas.setActiveObject(this.cropRectangle);
+                this.canvas.renderAll();
                 this.confirmTwoPointCrop();
             }
         };
         
-        this.canvas.on('mouse:down', clickHandler);
-        this._twoPointHandler = clickHandler;
+        this.canvas.on('mouse:down', mouseDownHandler);
+        this.canvas.on('mouse:move', mouseMoveHandler);
+        this.canvas.on('mouse:up', mouseUpHandler);
+        
+        this._twoPointHandler = { mouseDown: mouseDownHandler, mouseMove: mouseMoveHandler, mouseUp: mouseUpHandler };
+    }
+    
+    createCropRectangle(x, y, w, h) {
+        // Remove old rectangle if exists
+        if (this.cropRectangle) {
+            this.canvas.remove(this.cropRectangle);
+        }
+        
+        // Create resizable and draggable rectangle
+        this.cropRectangle = new fabric.Rect({
+            left: x,
+            top: y,
+            width: w,
+            height: h,
+            fill: 'rgba(0, 150, 255, 0.1)',
+            stroke: '#0096ff',
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+            selectable: true,
+            hasControls: true,
+            hasBorders: true,
+            lockRotation: true,
+            cornerColor: '#0096ff',
+            cornerSize: 10,
+            transparentCorners: false,
+            borderColor: '#0096ff',
+            borderScaleFactor: 2
+        });
+        
+        // Update crop area when rectangle is modified (resized or rotated)
+        this.cropRectangle.on('modified', () => {
+            // Normalize scale to width/height
+            const rect = this.cropRectangle;
+            if (rect.scaleX !== 1 || rect.scaleY !== 1) {
+                rect.set({
+                    width: rect.width * rect.scaleX,
+                    height: rect.height * rect.scaleY,
+                    scaleX: 1,
+                    scaleY: 1
+                });
+            }
+            this.confirmTwoPointCrop();
+        });
+        
+        // Update crop area when rectangle is moved
+        this.cropRectangle.on('moving', () => {
+            // Constrain to canvas bounds
+            const canvasWidth = this.canvas.getWidth();
+            const canvasHeight = this.canvas.getHeight();
+            const rect = this.cropRectangle;
+            const currentWidth = rect.width * (rect.scaleX || 1);
+            const currentHeight = rect.height * (rect.scaleY || 1);
+            
+            if (rect.left < 0) rect.left = 0;
+            if (rect.top < 0) rect.top = 0;
+            if (rect.left + currentWidth > canvasWidth) {
+                rect.left = Math.max(0, canvasWidth - currentWidth);
+            }
+            if (rect.top + currentHeight > canvasHeight) {
+                rect.top = Math.max(0, canvasHeight - currentHeight);
+            }
+        });
+        
+        // Update crop area after moving
+        this.cropRectangle.on('moved', () => {
+            this.confirmTwoPointCrop();
+        });
+        
+        // Constrain resizing to canvas bounds
+        this.cropRectangle.on('scaling', (e) => {
+            const canvasWidth = this.canvas.getWidth();
+            const canvasHeight = this.canvas.getHeight();
+            const rect = this.cropRectangle;
+            
+            const newWidth = rect.width * rect.scaleX;
+            const newHeight = rect.height * rect.scaleY;
+            
+            if (rect.left + newWidth > canvasWidth) {
+                const maxScaleX = (canvasWidth - rect.left) / rect.width;
+                rect.scaleX = Math.min(rect.scaleX, maxScaleX);
+            }
+            if (rect.top + newHeight > canvasHeight) {
+                const maxScaleY = (canvasHeight - rect.top) / rect.height;
+                rect.scaleY = Math.min(rect.scaleY, maxScaleY);
+            }
+            if (rect.left < 0) {
+                rect.left = 0;
+            }
+            if (rect.top < 0) {
+                rect.top = 0;
+            }
+        });
+        
+        this.canvas.add(this.cropRectangle);
+        this.canvas.setActiveObject(this.cropRectangle);
+        this.canvas.renderAll();
     }
     
     async applyInitialCropSuggestion(cropArea) {
@@ -1719,16 +1826,20 @@ window.PanelEditor = class PanelEditor {
                 return;
             }
 
+            // Convert to relative coordinates for the top page
+            const relativeY = cropArea.y - this.pagesData[topPageIndex].y_start;
+            
+            // Store old cropPoints for backward compatibility, but we'll use rectangle
             this.cropPoints = [
                 {
                     x: cropArea.x,
-                    y: cropArea.y - this.pagesData[topPageIndex].y_start,
+                    y: relativeY,
                     pageIndex: topPageIndex
                 },
                 {
                     x: cropArea.x + cropArea.w,
-                    y: bottomY - this.pagesData[bottomPageIndex].y_start,
-                    pageIndex: bottomPageIndex
+                    y: relativeY + cropArea.h,
+                    pageIndex: topPageIndex
                 }
             ];
 
@@ -1761,7 +1872,8 @@ window.PanelEditor = class PanelEditor {
                 indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
             }
 
-            this.enableTwoPointCropMode();
+            // Create rectangle directly instead of using two points
+            this.createCropRectangle(cropArea.x, relativeY, cropArea.w, cropArea.h);
             await this.confirmTwoPointCrop();
         } catch (err) {
             console.error('Failed to apply initial crop suggestion:', err);
@@ -1769,43 +1881,97 @@ window.PanelEditor = class PanelEditor {
     }
     
     async confirmTwoPointCrop() {
-        const point1 = this.cropPoints[0];
-        const point2 = this.cropPoints[1];
+        if (!this.cropRectangle) {
+            // Fallback to old two-point system if rectangle doesn't exist
+            if (!this.cropPoints || this.cropPoints.length !== 2) {
+                return;
+            }
+            
+            const point1 = this.cropPoints[0];
+            const point2 = this.cropPoints[1];
+            
+            const page1Y = this.pagesData[point1.pageIndex].y_start;
+            const page2Y = this.pagesData[point2.pageIndex].y_start;
+            
+            const absolutePoint1 = { x: point1.x, y: page1Y + point1.y };
+            const absolutePoint2 = { x: point2.x, y: page2Y + point2.y };
+            
+            const cropArea = {
+                x: Math.min(absolutePoint1.x, absolutePoint2.x),
+                y: Math.min(absolutePoint1.y, absolutePoint2.y),
+                w: Math.abs(absolutePoint2.x - absolutePoint1.x),
+                h: Math.abs(absolutePoint2.y - absolutePoint1.y)
+            };
+            
+            if (cropArea.w < 50 || cropArea.h < 50) {
+                alert('⚠️ Crop area quá nhỏ (min 50x50px). Vui lòng vẽ lại.');
+                this.cropPoints = [];
+                this.cropMarkers.forEach(m => this.canvas.remove(m));
+                this.cropMarkers = [];
+                this.enableTwoPointCropMode();
+                return;
+            }
+            
+            this.calculatedCropArea = cropArea;
+            
+            const saveBtn = document.getElementById('editorSaveCropBtn');
+            if (saveBtn) {
+                saveBtn.style.display = 'inline-block';
+            }
+            
+            this.showStatus(\`✅ Crop area ready: \${cropArea.w}x\${cropArea.h}px. Click Save to confirm.\`, 'success');
+            return;
+        }
         
-        console.log('=== CONFIRM CROP ===');
-        console.log('Point 1:', point1);
-        console.log('Point 2:', point2);
+        // Use rectangle-based system
+        const rect = this.cropRectangle;
+        // Get actual dimensions accounting for scale
+        const actualWidth = rect.width * (rect.scaleX || 1);
+        const actualHeight = rect.height * (rect.scaleY || 1);
+        const x = Math.round(rect.left);
+        const y = Math.round(rect.top);
+        const w = Math.round(actualWidth);
+        const h = Math.round(actualHeight);
+        
+        console.log('=== CONFIRM CROP (Rectangle) ===');
+        console.log('Rectangle position:', { x, y, w, h });
+        console.log('Current page:', this.currentPageIndex);
         console.log('Pages data:', this.pagesData);
         
-        const page1Y = this.pagesData[point1.pageIndex].y_start;
-        const page2Y = this.pagesData[point2.pageIndex].y_start;
-        
-        console.log('Page 1 Y start:', page1Y);
-        console.log('Page 2 Y start:', page2Y);
-        
-        const absolutePoint1 = { x: point1.x, y: page1Y + point1.y };
-        const absolutePoint2 = { x: point2.x, y: page2Y + point2.y };
-        
-        console.log('Absolute Point 1:', absolutePoint1);
-        console.log('Absolute Point 2:', absolutePoint2);
-        
-        const cropArea = {
-            x: Math.min(absolutePoint1.x, absolutePoint2.x),
-            y: Math.min(absolutePoint1.y, absolutePoint2.y),
-            w: Math.abs(absolutePoint2.x - absolutePoint1.x),
-            h: Math.abs(absolutePoint2.y - absolutePoint1.y)
-        };
-        
-        console.log('Final crop area:', cropArea);
-        
-        if (cropArea.w < 50 || cropArea.h < 50) {
+        if (w < 50 || h < 50) {
             alert('⚠️ Crop area quá nhỏ (min 50x50px). Vui lòng vẽ lại.');
-            this.cropPoints = [];
-            this.cropMarkers.forEach(m => this.canvas.remove(m));
-            this.cropMarkers = [];
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
             this.enableTwoPointCropMode();
             return;
         }
+        
+        // Convert to absolute coordinates
+        const page = this.pagesData[this.currentPageIndex];
+        if (!page) {
+            console.error('No page data for current page index:', this.currentPageIndex);
+            return;
+        }
+        
+        const absoluteY = page.y_start + y;
+        const bottomY = absoluteY + h;
+        
+        // Check if crop spans multiple pages
+        const topPageIndex = this.currentPageIndex;
+        const bottomPageIndex = this.pagesData.findIndex(p =>
+            bottomY > p.y_start && bottomY <= p.y_end
+        );
+        
+        // For now, we'll use the current page's coordinates
+        // If the rectangle spans multiple pages, we'll use the top page
+        const cropArea = {
+            x: x,
+            y: absoluteY,
+            w: w,
+            h: h
+        };
+        
+        console.log('Final crop area:', cropArea);
         
         this.calculatedCropArea = cropArea;
         
@@ -1814,7 +1980,7 @@ window.PanelEditor = class PanelEditor {
             saveBtn.style.display = 'inline-block';
         }
         
-        this.showStatus(\`✅ Crop area ready: \${cropArea.w}x\${cropArea.h}px. Click Save to confirm.\`, 'success');
+        this.showStatus(\`✅ Crop area ready: \${w}x\${h}px. Kéo để điều chỉnh, click Save để xác nhận.\`, 'success');
     }
     
     async saveTwoPointCrop() {
@@ -1999,6 +2165,12 @@ window.PanelEditor = class PanelEditor {
             this.cropMarkers = [];
         }
         
+        // Remove crop rectangle when switching pages
+        if (this.cropRectangle) {
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
+        }
+        
         const saveBtn = document.getElementById('editorSaveCropBtn');
         if (saveBtn) {
             saveBtn.style.display = 'none';
@@ -2052,8 +2224,22 @@ window.PanelEditor = class PanelEditor {
         }
         
         if (this._twoPointHandler) {
-            this.canvas.off('mouse:down', this._twoPointHandler);
+            if (typeof this._twoPointHandler === 'object' && this._twoPointHandler.mouseDown) {
+                // New rectangle-based handler
+                this.canvas.off('mouse:down', this._twoPointHandler.mouseDown);
+                this.canvas.off('mouse:move', this._twoPointHandler.mouseMove);
+                this.canvas.off('mouse:up', this._twoPointHandler.mouseUp);
+            } else {
+                // Old point-based handler
+                this.canvas.off('mouse:down', this._twoPointHandler);
+            }
             this._twoPointHandler = null;
+        }
+        
+        // Remove crop rectangle if exists
+        if (this.cropRectangle && this.canvas) {
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
         }
         
         if (this._twoPointUndoHandler) {
