@@ -15,6 +15,11 @@ window.PanelEditor = class PanelEditor {
                 this.cropPoints = [];
                 this.cropMarkers = [];
                 this.cropRectangle = null;
+                // Dải crop dùng chung cho multi-page: { x, w }.
+                // Với single-page, không dùng sharedStrip, cho phép tự do.
+                this.sharedCropStrip = null;
+                // Với multi-page, lưu chiều cao cắt riêng cho page cuối
+                this.lastPageHeightOverride = null;
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
                 this.initialCrop = initialCrop;
@@ -1645,7 +1650,7 @@ window.PanelEditor = class PanelEditor {
         
         document.addEventListener('keydown', this._twoPointUndoHandler);
         
-        // Drawing handler for creating new rectangle
+        // Drawing handler for creating new rectangle (vertical strip)
         let isDrawing = false;
         let startX = 0;
         let startY = 0;
@@ -1661,7 +1666,7 @@ window.PanelEditor = class PanelEditor {
             if (!e.target || e.target === this.canvas.backgroundImage) {
                 const pointer = this.canvas.getPointer(e.e);
                 startX = Math.round(pointer.x);
-                startY = Math.round(pointer.y);
+                startY = 0; // luôn bắt đầu từ top
                 isDrawing = true;
                 
                 // Remove existing rectangle if starting new one
@@ -1678,14 +1683,13 @@ window.PanelEditor = class PanelEditor {
             
             const pointer = this.canvas.getPointer(e.e);
             const currentX = Math.round(pointer.x);
-            const currentY = Math.round(pointer.y);
             
             const x = Math.min(startX, currentX);
-            const y = Math.min(startY, currentY);
             const w = Math.abs(currentX - startX);
-            const h = Math.abs(currentY - startY);
+            const y = 0;
+            const h = this.canvas.getHeight();
             
-            if (w > 10 && h > 10) {
+            if (w > 10) {
                 if (this.cropRectangle) {
                     this.cropRectangle.set({ left: x, top: y, width: w, height: h });
                 } else {
@@ -1746,9 +1750,10 @@ window.PanelEditor = class PanelEditor {
             if (rect.scaleX !== 1 || rect.scaleY !== 1) {
                 rect.set({
                     width: rect.width * rect.scaleX,
-                    height: rect.height * rect.scaleY,
+                    height: this.canvas.getHeight(),
                     scaleX: 1,
-                    scaleY: 1
+                    scaleY: 1,
+                    top: 0
                 });
             }
             this.confirmTwoPointCrop();
@@ -1756,21 +1761,18 @@ window.PanelEditor = class PanelEditor {
         
         // Update crop area when rectangle is moved
         this.cropRectangle.on('moving', () => {
-            // Constrain to canvas bounds
+            // Constrain to canvas bounds (dải dọc: khóa theo trục Y)
             const canvasWidth = this.canvas.getWidth();
-            const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
             const currentWidth = rect.width * (rect.scaleX || 1);
-            const currentHeight = rect.height * (rect.scaleY || 1);
             
             if (rect.left < 0) rect.left = 0;
-            if (rect.top < 0) rect.top = 0;
             if (rect.left + currentWidth > canvasWidth) {
                 rect.left = Math.max(0, canvasWidth - currentWidth);
             }
-            if (rect.top + currentHeight > canvasHeight) {
-                rect.top = Math.max(0, canvasHeight - currentHeight);
-            }
+            // Luôn giữ top = 0 và full height
+            rect.top = 0;
+            rect.height = this.canvas.getHeight();
         });
         
         // Update crop area after moving
@@ -1778,29 +1780,25 @@ window.PanelEditor = class PanelEditor {
             this.confirmTwoPointCrop();
         });
         
-        // Constrain resizing to canvas bounds
-        this.cropRectangle.on('scaling', (e) => {
+        // Constrain resizing to canvas bounds (chỉ cho phép resize theo trục X)
+        this.cropRectangle.on('scaling', () => {
             const canvasWidth = this.canvas.getWidth();
-            const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
             
             const newWidth = rect.width * rect.scaleX;
-            const newHeight = rect.height * rect.scaleY;
             
             if (rect.left + newWidth > canvasWidth) {
                 const maxScaleX = (canvasWidth - rect.left) / rect.width;
                 rect.scaleX = Math.min(rect.scaleX, maxScaleX);
             }
-            if (rect.top + newHeight > canvasHeight) {
-                const maxScaleY = (canvasHeight - rect.top) / rect.height;
-                rect.scaleY = Math.min(rect.scaleY, maxScaleY);
-            }
             if (rect.left < 0) {
                 rect.left = 0;
             }
-            if (rect.top < 0) {
-                rect.top = 0;
-            }
+            
+            // Khóa chiều cao & scale Y
+            rect.top = 0;
+            rect.height = this.canvas.getHeight();
+            rect.scaleY = 1;
         });
         
         this.canvas.add(this.cropRectangle);
@@ -1812,36 +1810,20 @@ window.PanelEditor = class PanelEditor {
         try {
             if (!this.pagesData || !cropArea) return;
 
-            const bottomY = cropArea.y + cropArea.h;
-
             const topPageIndex = this.pagesData.findIndex(p =>
                 cropArea.y >= p.y_start && cropArea.y < p.y_end
             );
-            const bottomPageIndex = this.pagesData.findIndex(p =>
-                bottomY > p.y_start && bottomY <= p.y_end
-            );
 
-            if (topPageIndex === -1 || bottomPageIndex === -1) {
+            if (topPageIndex === -1) {
                 console.warn('Initial crop suggestion is out of page bounds', cropArea);
                 return;
             }
 
-            // Convert to relative coordinates for the top page
-            const relativeY = cropArea.y - this.pagesData[topPageIndex].y_start;
-            
-            // Store old cropPoints for backward compatibility, but we'll use rectangle
-            this.cropPoints = [
-                {
-                    x: cropArea.x,
-                    y: relativeY,
-                    pageIndex: topPageIndex
-                },
-                {
-                    x: cropArea.x + cropArea.w,
-                    y: relativeY + cropArea.h,
-                    pageIndex: topPageIndex
-                }
-            ];
+            // Dùng gợi ý để set dải dọc chung: chỉ lấy x và w
+            this.sharedCropStrip = {
+                x: cropArea.x,
+                w: cropArea.w
+            };
 
             this.currentPageIndex = topPageIndex;
 
@@ -1872,8 +1854,8 @@ window.PanelEditor = class PanelEditor {
                 indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
             }
 
-            // Create rectangle directly instead of using two points
-            this.createCropRectangle(cropArea.x, relativeY, cropArea.w, cropArea.h);
+            // Tạo khung dọc full-height trên page đầu tiên
+            this.createCropRectangle(this.sharedCropStrip.x, 0, this.sharedCropStrip.w, this.canvas.getHeight());
             await this.confirmTwoPointCrop();
         } catch (err) {
             console.error('Failed to apply initial crop suggestion:', err);
@@ -1927,18 +1909,19 @@ window.PanelEditor = class PanelEditor {
         const rect = this.cropRectangle;
         // Get actual dimensions accounting for scale
         const actualWidth = rect.width * (rect.scaleX || 1);
-        const actualHeight = rect.height * (rect.scaleY || 1);
         const x = Math.round(rect.left);
-        const y = Math.round(rect.top);
         const w = Math.round(actualWidth);
-        const h = Math.round(actualHeight);
+        
+        // Trên mỗi page: y luôn = 0, height = chiều cao page (canvas height)
+        const localY = 0;
+        const localH = this.canvas.getHeight();
         
         console.log('=== CONFIRM CROP (Rectangle) ===');
-        console.log('Rectangle position:', { x, y, w, h });
+        console.log('Rectangle position (local):', { x, y: localY, w, h: localH });
         console.log('Current page:', this.currentPageIndex);
         console.log('Pages data:', this.pagesData);
         
-        if (w < 50 || h < 50) {
+        if (w < 50 || localH < 50) {
             alert('⚠️ Crop area quá nhỏ (min 50x50px). Vui lòng vẽ lại.');
             this.canvas.remove(this.cropRectangle);
             this.cropRectangle = null;
@@ -1952,24 +1935,19 @@ window.PanelEditor = class PanelEditor {
             console.error('No page data for current page index:', this.currentPageIndex);
             return;
         }
-        
-        const absoluteY = page.y_start + y;
-        const bottomY = absoluteY + h;
-        
-        // Check if crop spans multiple pages
-        const topPageIndex = this.currentPageIndex;
-        const bottomPageIndex = this.pagesData.findIndex(p =>
-            bottomY > p.y_start && bottomY <= p.y_end
-        );
-        
-        // For now, we'll use the current page's coordinates
-        // If the rectangle spans multiple pages, we'll use the top page
+                
+        // Với yêu cầu mới: cùng 1 dải dọc cho toàn bộ panel,
+        // nên cropArea luôn bắt đầu từ y = 0 tới hết chiều cao full screenshot
+        const totalHeight = this.pagesData[this.pagesData.length - 1].y_end;
         const cropArea = {
             x: x,
-            y: absoluteY,
+            y: 0,
             w: w,
-            h: h
+            h: totalHeight
         };
+        
+        // Lưu dải crop dùng chung cho tất cả page (toạ độ local trên page)
+        this.sharedCropStrip = { x, w };
         
         console.log('Final crop area:', cropArea);
         
@@ -2160,12 +2138,28 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
+        // Lưu preset khung crop của page cũ (nếu đang có rectangle)
+        if (this.mode === 'twoPointCrop' && this.cropRectangle) {
+            const rect = this.cropRectangle;
+            const actualWidth = rect.width * (rect.scaleX || 1);
+            const actualHeight = rect.height * (rect.scaleY || 1);
+            if (!this.pageCropPresets) {
+                this.pageCropPresets = {};
+            }
+            this.pageCropPresets[oldIndex] = {
+                x: Math.round(rect.left),
+                y: Math.round(rect.top),
+                w: Math.round(actualWidth),
+                h: Math.round(actualHeight)
+            };
+        }
+        
         if (this.cropMarkers && this.cropMarkers.length > 0) {
             this.cropMarkers.forEach(m => this.canvas.remove(m));
             this.cropMarkers = [];
         }
         
-        // Remove crop rectangle when switching pages
+        // Remove crop rectangle when switching pages (sẽ tạo lại từ preset nếu có)
         if (this.cropRectangle) {
             this.canvas.remove(this.cropRectangle);
             this.cropRectangle = null;
@@ -2209,6 +2203,14 @@ window.PanelEditor = class PanelEditor {
         console.log('Before enableTwoPointCropMode - cropPoints:', this.cropPoints);
         this.enableTwoPointCropMode();
         console.log('After enableTwoPointCropMode - cropPoints:', this.cropPoints);
+        
+        // Sau khi load page mới, nếu đã có dải crop chung thì tạo lại khung crop
+        if (this.mode === 'twoPointCrop' && this.sharedCropStrip) {
+            const { x, w } = this.sharedCropStrip;
+            const h = this.canvas.getHeight();
+            this.createCropRectangle(x, 0, w, h);
+            await this.confirmTwoPointCrop();
+        }
         
         if (this.cropPoints.length === 1) {
             this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length} | 📍 Point 1 set on Page \${this.cropPoints[0].pageIndex + 1}. Click BottomRight corner.\`, 'success');
