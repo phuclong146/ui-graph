@@ -680,34 +680,7 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
 
     const prompt =
         'Compare the OLD and NEW UI screenshots and find the single rectangular region that ' +
-        'best covers the most important visual changes.\n' +
-        '\n' +
-        '**PRIORITY ORDER (MOST IMPORTANT FIRST):**\n' +
-        '1. **Dropdown menus, popups, modals (HIGHEST PRIORITY - CHECK THIS FIRST):**\n' +
-        '   Look carefully for any dropdown menu, popup, or modal that appears in the NEW screenshot but NOT in the OLD screenshot.\n' +
-        '   \n' +
-        '   **How to identify a dropdown menu:**\n' +
-        '   - A rectangular panel that appears BELOW or ABOVE a button/filter (like "Last edited", "Sort by", etc.)\n' +
-        '   - Contains a list of selectable options (text items, checkboxes, radio buttons)\n' +
-        '   - Usually has a darker background than the main page\n' +
-        '   - Has visible borders or shadows separating it from the page\n' +
-        '   - Examples: "Sort by" menu with options like "Last edited", "Date created", "Alphabetical"\n' +
-        '   - Examples: Filter dropdowns, selection menus, context menus\n' +
-        '   \n' +
-        '   **If you find a dropdown menu:**\n' +
-        '   - Return ONLY the bounding box of the dropdown menu panel itself\n' +
-        '   - Include all visible menu items/options inside the dropdown\n' +
-        '   - Do NOT include the button that triggered it (e.g., "Last edited" button)\n' +
-        '   - The box should be SMALL and PRECISE (typically 150-400px wide, 100-500px tall)\n' +
-        '   - The dropdown is usually positioned near the top or middle of the screen, not covering the entire screen\n' +
-        '\n' +
-        '2. **Small UI elements that appeared:** If a small new UI element appeared (button, card, notification):\n' +
-        '   - Return the bounding box of that specific element\n' +
-        '   - Examples: new notification banner, new action button, new card\n' +
-        '\n' +
-        '3. **Main content area changes:** Only if NO dropdown/popup/small element is present:\n' +
-        '   - Return the region where the main content changed (e.g., new cards, lists, layout changes)\n' +
-        '   - Exclude unchanged sidebars, navigation bars, headers, footers\n' +
+        'best covers the most important visual changes (new cards, new popup, new content or layout changes).\n' +
         '\n' +
         '**CRITICAL REQUIREMENTS:**\n' +
         '1. **Exclude unchanged UI elements:** Identify and EXCLUDE any areas that remain visually identical between OLD and NEW screenshots:\n' +
@@ -715,27 +688,27 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         '   - Backgrounds, borders, or decorative elements that are unchanged\n' +
         '   - Any UI components that appear identical in both screenshots\n' +
         '\n' +
-        '2. **Be precise and small:** The bounding box should tightly wrap ONLY the changed content area.\n' +
-        '   - If a dropdown menu appeared, return ONLY the dropdown menu box (SMALL box, not the entire screen)\n' +
-        '   - Dropdown menus are typically 150-400px wide and 100-500px tall\n' +
-        '   - If the result box is very large (covering >50% of screen width or height), you likely missed the dropdown - look again!\n' +
+        '2. **Focus on changed content area:** Only include the region where the MAIN CONTENT has changed:\n' +
+        '   - New cards, lists, or content items that appeared\n' +
+        '   - Changed layout or structure in the main content area\n' +
+        '   - New popups, modals, or overlays\n' +
+        '   - The primary content region that differs between screenshots\n' +
+        '\n' +
+        '3. **Be precise:** The bounding box should tightly wrap ONLY the changed content area, not the entire screen.\n' +
+        '   - If only the right side changed (e.g., main content area), return coordinates for that region only\n' +
+        '   - If only the center changed, return coordinates for the center region only\n' +
         '   - Do NOT return a box that covers the entire screen or includes unchanged sidebars\n' +
         '\n' +
         '**Task:**\n' +
         '- Work in the coordinate system of the NEW screenshot.\n' +
-        '- FIRST: Carefully scan for any dropdown menu, popup, or modal that appeared\n' +
-        '- If found, return ONLY that dropdown/popup box (should be small, precise)\n' +
-        '- If no dropdown found, then look for other changes\n' +
         '- Return exactly one rectangle that tightly bounds ONLY the changed content area.\n' +
-        '- PRIORITIZE dropdown menus, popups, and small UI elements over large content areas.\n' +
         '- Exclude all unchanged UI elements (sidebars, navigation, etc.).\n' +
         '\n' +
         '**Output format:**\n' +
         '{ "x": number, "y": number, "w": number, "h": number }\n' +
         '- (x, y) is the top-left pixel in the NEW screenshot.\n' +
         '- (w, h) are width and height in pixels.\n' +
-        '- For dropdown menus: w should typically be 150-400px, h should typically be 100-500px\n' +
-        '- The box should cover ONLY the changed content (prefer dropdown/popup if present), excluding any unchanged sidebars or navigation.\n';
+        '- The box should cover ONLY the changed content, excluding any unchanged sidebars or navigation.\n';
 
     const responseSchema = {
         type: "object",
