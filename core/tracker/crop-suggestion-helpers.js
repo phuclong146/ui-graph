@@ -332,12 +332,53 @@ export const suggestCropAreaForNewPanel = async ({
     console.log('🎯 [CROP SUGGEST] Starting crop suggestion with Gemini only...');
     console.log(`🎯 [CROP SUGGEST] Image size: ${imageWidth}x${imageHeight}`);
 
+    // First, check if there's a dropdown menu in DOM actions
+    let dropdownFromDom = null;
+    if (newDomActions && Array.isArray(newDomActions)) {
+        const scaleX = imageWidth / 1000;
+        const scaleY = imageHeight / 1000;
+        
+        // Find dropdown menus that are new (not in old DOM)
+        const oldActionNames = new Set((oldDomActions || []).map(a => a.action_name?.toLowerCase()));
+        
+        for (const action of newDomActions) {
+            const actionType = (action.action_type || '').toLowerCase();
+            const actionName = (action.action_name || '').toLowerCase();
+            
+            // Check if it's a dropdown menu and is new
+            const isDropdown = actionType.includes('dropdown') || 
+                              actionName.includes('sort') || 
+                              actionName.includes('filter') ||
+                              actionName.includes('menu');
+            
+            if (isDropdown && action.action_pos) {
+                const isNew = !oldActionNames.has(actionName);
+                
+                if (isNew) {
+                    dropdownFromDom = {
+                        x: Math.round(action.action_pos.x * scaleX),
+                        y: Math.round(action.action_pos.y * scaleY),
+                        w: Math.round(action.action_pos.w * scaleX),
+                        h: Math.round(action.action_pos.h * scaleY),
+                        source: 'dom-dropdown',
+                        score: 0.9
+                    };
+                    console.log(`🎯 [CROP SUGGEST] Found dropdown menu in DOM: ${action.action_name} at ${JSON.stringify(dropdownFromDom)}`);
+                    break;
+                }
+            }
+        }
+    }
+
     const gemRes = await detectChangeByGemini(oldScreenshotBase64, newScreenshotBase64);
 
     console.log(`🎯 [CROP SUGGEST] GEMINI result: ${gemRes ? JSON.stringify(gemRes) : 'null'}`);
 
-    if (!gemRes) {
-        console.log('🎯 [CROP SUGGEST] ⚠️ No valid suggestion from Gemini, using full page fallback');
+    // Prefer dropdown from DOM if found, otherwise use Gemini result
+    let best = dropdownFromDom || gemRes;
+
+    if (!best) {
+        console.log('🎯 [CROP SUGGEST] ⚠️ No valid suggestion from Gemini or DOM, using full page fallback');
         return {
             x: 0,
             y: 0,
@@ -348,7 +389,16 @@ export const suggestCropAreaForNewPanel = async ({
         };
     }
 
-    let best = gemRes;
+    // Validate if result looks like a dropdown menu (small box) or large content area
+    const widthRatio = best.w / imageWidth;
+    const heightRatio = best.h / imageHeight;
+    const isLikelyDropdown = best.w < 500 && best.h < 600 && widthRatio < 0.3 && heightRatio < 0.5;
+    
+    if (isLikelyDropdown) {
+        console.log(`🎯 [CROP SUGGEST] ✅ Result looks like a dropdown menu (${best.w}x${best.h}px, ${(widthRatio * 100).toFixed(1)}% width, ${(heightRatio * 100).toFixed(1)}% height)`);
+    } else {
+        console.log(`🎯 [CROP SUGGEST] ⚠️ Result is large (${best.w}x${best.h}px, ${(widthRatio * 100).toFixed(1)}% width, ${(heightRatio * 100).toFixed(1)}% height) - might not be a dropdown menu`);
+    }
 
     console.log(`🎯 [CROP SUGGEST] Before min-size check: ${JSON.stringify(best)}`);
     const minSize = 80;
