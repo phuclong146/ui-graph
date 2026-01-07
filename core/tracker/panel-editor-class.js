@@ -21,6 +21,8 @@ window.PanelEditor = class PanelEditor {
                 // Multi-page: top offset trên page đầu, height override cho page cuối
                 this.firstPageTopOffset = 0;
                 this.lastPageHeightOverride = null;
+                // Lưu vị trí crop trên từng page: { pageIndex: { top, height } }
+                this.cropPagePositions = {};
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
                 this.initialCrop = initialCrop;
@@ -1672,7 +1674,7 @@ window.PanelEditor = class PanelEditor {
             if (!e.target || e.target === this.canvas.backgroundImage) {
                 const pointer = this.canvas.getPointer(e.e);
                 startX = Math.round(pointer.x);
-                startY = isSinglePage || isFirstPage ? Math.round(pointer.y) : 0;
+                startY = Math.round(pointer.y); // Cho phép vẽ ở bất kỳ vị trí nào trên page
                 isDrawing = true;
                 
                 // Remove existing rectangle if starting new one
@@ -1693,24 +1695,11 @@ window.PanelEditor = class PanelEditor {
             
             let x = Math.min(startX, currentX);
             let w = Math.abs(currentX - startX);
-            let y = 0;
-            let h = this.canvas.getHeight();
+            let y = Math.min(startY, currentY);
+            let h = Math.abs(currentY - startY);
             
-            if (isSinglePage) {
-                y = Math.min(startY, currentY);
-                h = Math.abs(currentY - startY);
-            } else if (isFirstPage) {
-                y = Math.min(startY, currentY);
-                y = Math.max(0, Math.min(y, this.canvas.getHeight() - minSize));
-                h = this.canvas.getHeight() - y;
-            } else if (isLastPage) {
-                y = 0;
-                h = Math.max(minSize, Math.min(this.canvas.getHeight(), Math.abs(currentY - startY)));
-            } else {
-                y = 0;
-                h = this.canvas.getHeight();
-            }
-            
+            // Cho phép vẽ khung crop tự do trên bất kỳ page nào
+            // Không giới hạn theo vị trí first/last/middle page
             if (w > minSize && h > minSize) {
                 if (this.cropRectangle) {
                     this.cropRectangle.set({ left: x, top: y, width: w, height: h });
@@ -1791,33 +1780,19 @@ window.PanelEditor = class PanelEditor {
             const canvasHeight = this.canvas.getHeight();
             const rect = this.cropRectangle;
             const currentWidth = rect.width * (rect.scaleX || 1);
+            const currentHeight = rect.height * (rect.scaleY || 1);
             
-            // X constraints common
+            // X constraints: giữ khung trong biên ngang của canvas
             if (rect.left < 0) rect.left = 0;
             if (rect.left + currentWidth > canvasWidth) {
                 rect.left = Math.max(0, canvasWidth - currentWidth);
             }
             
-            if (isSinglePage) {
-                // Free move within bounds
-                if (rect.top < 0) rect.top = 0;
-                if (rect.top + rect.height > canvasHeight) {
-                    rect.top = Math.max(0, canvasHeight - rect.height);
-                }
-            } else if (isFirstPage) {
-                // Allow moving top; bottom sticks to page bottom
-                if (rect.top < 0) rect.top = 0;
-                if (rect.top > canvasHeight - minHeight) rect.top = canvasHeight - minHeight;
-                rect.height = canvasHeight - rect.top;
-            } else if (isLastPage) {
-                // Top fixed; only bottom matters (through height)
-                rect.top = 0;
-                if (rect.height < minHeight) rect.height = minHeight;
-                if (rect.height > canvasHeight) rect.height = canvasHeight;
-            } else {
-                // Middle pages: lock full height
-                rect.top = 0;
-                rect.height = canvasHeight;
+            // Y constraints: cho phép di chuyển tự do trong phạm vi canvas
+            // Cho phép khung có thể nằm ở bất kỳ vị trí nào trên page hiện tại
+            if (rect.top < 0) rect.top = 0;
+            if (rect.top + currentHeight > canvasHeight) {
+                rect.top = Math.max(0, canvasHeight - currentHeight);
             }
         });
         
@@ -1964,133 +1939,32 @@ window.PanelEditor = class PanelEditor {
                 rect.left = 0;
             }
             
-            if (isSinglePage) {
-                // Free scale within bounds
-                let newHeight = rect.height * rect.scaleY;
-                if (newHeight < minHeight) newHeight = minHeight;
-                if (rect.top + newHeight > canvasHeight) {
-                    newHeight = canvasHeight - rect.top;
-                }
-                rect.set({
-                    height: newHeight,
-                    scaleY: 1
-                });
-            } else if (isFirstPage) {
-                // Check if we're dragging top-left handle downward to extend to next page
-                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
-                const mouseY = pointer.y;
-                const isTopLeft = activeCorner === 'tl' || activeCorner === 'ml' || activeCorner === 'mt';
-                
-                // If dragging top-left downward (mouseY > canvasHeight or scaleY > 1), allow it to extend
-                // The mousemove handler will detect and switch pages
-                if (isTopLeft && (mouseY > canvasHeight || rect.scaleY > 1)) {
-                    // Allow extending downward - don't constrain, let mousemove handler switch pages
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    // Don't constrain height when dragging downward - allow it to extend to next page
-                    let newTop = rect.top + rect.height - newHeight;
-                    if (newTop < 0) {
-                        newTop = 0;
-                    }
-                    // Allow height to exceed canvasHeight temporarily for cross-page detection
-                    rect.set({
-                        top: newTop,
-                        height: newHeight, // Allow exceeding canvasHeight
-                        scaleY: 1
-                    });
-                } else {
-                    // Normal behavior: adjust top so bottom stays at canvas bottom
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    if (newHeight > canvasHeight) {
-                        newHeight = canvasHeight;
-                    }
-                    let newTop = rect.top + rect.height - newHeight;
-                    if (newTop < 0) {
-                        newTop = 0;
-                        newHeight = canvasHeight;
-                    }
-                    rect.set({
-                        top: newTop,
-                        height: newHeight,
-                        scaleY: 1
-                    });
-                }
-            } else if (isLastPage) {
-                // Allow bottom-right to be dragged upward to extend to previous page
-                // Check if we're dragging bottom-right handle upward
-                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
-                const mouseY = pointer.y;
-                const isBottomRight = activeCorner === 'br' || activeCorner === 'mr' || activeCorner === 'mb';
-                
-                // If dragging bottom-right upward (mouseY < 0 or scaleY < 1), allow it to shrink
-                // The mousemove handler will detect and switch pages
-                if (isBottomRight && (mouseY < 0 || rect.scaleY < 1)) {
-                    // Allow shrinking - don't constrain, let mousemove handler switch pages
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    // Calculate new top position - allow it to go above 0 temporarily
-                    let newTop = rect.top + rect.height - newHeight;
-                    // Don't constrain top when dragging upward - allow it to extend to previous page
-                    // The mousemove handler will switch pages when mouseY < 0
-                    rect.set({
-                        top: newTop, // Allow negative temporarily for cross-page detection
-                        height: newHeight,
-                        scaleY: 1
-                    });
-                } else {
-                    // Normal behavior: only bottom changes, top fixed
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    if (newHeight > canvasHeight) {
-                        newHeight = canvasHeight;
-                    }
-                    rect.set({
-                        top: 0,
-                        height: newHeight,
-                        scaleY: 1
-                    });
-                }
-            } else {
-                // Middle pages: allow top-left to be dragged downward to extend to next page
-                // Also allow bottom-right to be dragged upward to extend to previous page
-                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
-                const mouseY = pointer.y;
-                const isTopLeft = activeCorner === 'tl' || activeCorner === 'ml' || activeCorner === 'mt';
-                const isBottomRight = activeCorner === 'br' || activeCorner === 'mr' || activeCorner === 'mb';
-                
-                // If dragging top-left downward (mouseY > canvasHeight or scaleY > 1), allow it to extend
-                // The mousemove handler will detect and switch pages
-                if (isTopLeft && (mouseY > canvasHeight || rect.scaleY > 1)) {
-                    // Allow extending downward - don't constrain, let mousemove handler switch pages
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    // Don't constrain height when dragging downward - allow it to extend to next page
-                    rect.set({
-                        top: 0,
-                        height: newHeight, // Allow exceeding canvasHeight
-                        scaleY: 1
-                    });
-                } else if (isBottomRight && (mouseY < 0 || rect.scaleY < 1)) {
-                    // Allow bottom-right to be dragged upward to extend to previous page
-                    let newHeight = rect.height * rect.scaleY;
-                    if (newHeight < minHeight) newHeight = minHeight;
-                    let newTop = rect.top + rect.height - newHeight;
-                    // Don't constrain top when dragging upward - allow it to extend to previous page
-                    rect.set({
-                        top: newTop, // Allow negative temporarily
-                        height: newHeight,
-                        scaleY: 1
-                    });
-                } else {
-                    // Normal behavior: lock full height
-                    rect.set({
-                        top: 0,
-                        height: canvasHeight,
-                        scaleY: 1
-                    });
-                }
+            // Cho phép resize tự do trong phạm vi canvas hiện tại
+            // Nếu resize vượt quá biên, mousemove handler sẽ phát hiện và chuyển page
+            let newHeight = rect.height * rect.scaleY;
+            if (newHeight < minHeight) newHeight = minHeight;
+            
+            // Tính toán vị trí top mới khi resize
+            let newTop = rect.top;
+            const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
+            const mouseY = pointer.y;
+            const isTopLeft = activeCorner === 'tl' || activeCorner === 'ml' || activeCorner === 'mt';
+            const isTopRight = activeCorner === 'tr' || activeCorner === 'mt';
+            const isBottomLeft = activeCorner === 'bl' || activeCorner === 'ml';
+            const isBottomRight = activeCorner === 'br' || activeCorner === 'mr' || activeCorner === 'mb';
+            
+            // Khi resize từ top, điều chỉnh top position
+            if (isTopLeft || isTopRight) {
+                newTop = rect.top + rect.height - newHeight;
             }
+            
+            // Cho phép resize vượt quá biên canvas để mousemove handler có thể phát hiện và chuyển page
+            // Chỉ giới hạn tối thiểu để đảm bảo khung không quá nhỏ
+            rect.set({
+                top: newTop,
+                height: newHeight,
+                scaleY: 1
+            });
         });
         
         // Reset scaling state when done
@@ -2265,27 +2139,70 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Persist first/last page offsets so we keep user top/bottom trims
-        if (isFirstPage) {
-            this.firstPageTopOffset = Math.max(0, Math.min(Math.round(rect.top), pageHeight - 10));
+        // Lưu vị trí crop trên page hiện tại
+        if (!this.cropPagePositions) {
+            this.cropPagePositions = {};
         }
-        if (isLastPage) {
-            this.lastPageHeightOverride = Math.min(pageHeight, Math.max(10, hLocal));
+        this.cropPagePositions[this.currentPageIndex] = {
+            top: Math.round(rect.top),
+            height: hLocal
+        };
+        
+        // Build absolute crop rectangle từ các vị trí đã lưu trên các page
+        let startY = 0;
+        let endY = 0;
+        
+        if (isSinglePage) {
+            // Single page: dùng vị trí trực tiếp
+            startY = Math.max(0, Math.round(rect.top));
+            endY = startY + hLocal;
+        } else {
+            // Multi-page: tìm page đầu và page cuối có crop
+            let firstPageWithCrop = null;
+            let lastPageWithCrop = null;
+            
+            // Tìm page đầu tiên có crop
+            for (let i = 0; i < this.pagesData.length; i++) {
+                if (this.cropPagePositions && this.cropPagePositions[i]) {
+                    firstPageWithCrop = i;
+                    break;
+                }
+            }
+            
+            // Tìm page cuối cùng có crop
+            for (let i = this.pagesData.length - 1; i >= 0; i--) {
+                if (this.cropPagePositions && this.cropPagePositions[i]) {
+                    lastPageWithCrop = i;
+                    break;
+                }
+            }
+            
+            if (firstPageWithCrop !== null && lastPageWithCrop !== null) {
+                // Tính startY từ page đầu
+                const firstPage = this.pagesData[firstPageWithCrop];
+                const firstPos = this.cropPagePositions[firstPageWithCrop];
+                startY = firstPage.y_start + firstPos.top;
+                
+                // Tính endY từ page cuối
+                const lastPage = this.pagesData[lastPageWithCrop];
+                const lastPos = this.cropPagePositions[lastPageWithCrop];
+                endY = lastPage.y_start + lastPos.top + lastPos.height;
+                
+                // Đảm bảo các page ở giữa được tính vào
+                // (chúng đã được lưu với full height trong _switchPageDuringScaling)
+            } else {
+                // Fallback: dùng vị trí hiện tại
+                const currentPage = this.pagesData[this.currentPageIndex];
+                startY = currentPage.y_start + Math.round(rect.top);
+                endY = startY + hLocal;
+            }
         }
         
-        // Build absolute crop rectangle
-        const totalHeight = this.pagesData[this.pagesData.length - 1].y_end;
-        const startY = isSinglePage ? Math.max(0, Math.round(rect.top)) : Math.max(0, this.firstPageTopOffset || 0);
-        const lastPage = this.pagesData[this.pagesData.length - 1];
-        const bottomLimit = lastPage.y_start + (this.lastPageHeightOverride ? Math.min(lastPage.height, this.lastPageHeightOverride) : lastPage.height);
-        const safeBottom = isSinglePage
-            ? Math.min(pageHeight, startY + hLocal)
-            : Math.max(startY + 10, Math.min(bottomLimit, totalHeight));
         let cropArea = {
             x: x,
             y: startY,
             w: w,
-            h: safeBottom - startY
+            h: endY - startY
         };
         
         // Lưu dải crop dùng chung cho tất cả page (toạ độ local trên page)
@@ -2483,25 +2400,17 @@ window.PanelEditor = class PanelEditor {
         const currentTop = Math.round(rect.top);
         const currentHeight = Math.round(actualHeight);
         
-        // Save shared crop strip
-        if (!this.sharedCropStrip) {
-            this.sharedCropStrip = { x: currentX, w: actualWidth };
-        } else {
-            this.sharedCropStrip = { x: currentX, w: actualWidth };
-        }
+        // Save shared crop strip (x, w) cho tất cả các page
+        this.sharedCropStrip = { x: currentX, w: actualWidth };
         
-        // Save first/last page offsets
-        const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-        const isFirstPage = !isSinglePage && oldIndex === 0;
-        const isLastPage = !isSinglePage && oldIndex === this.pagesData.length - 1;
-        
-        if (isFirstPage) {
-            this.firstPageTopOffset = Math.max(0, currentTop);
+        // Lưu vị trí crop trên page hiện tại
+        if (!this.cropPagePositions) {
+            this.cropPagePositions = {};
         }
-        if (isLastPage) {
-            const pageH = this.pagesData[oldIndex]?.height || currentHeight;
-            this.lastPageHeightOverride = Math.min(pageH, Math.max(10, currentHeight));
-        }
+        this.cropPagePositions[oldIndex] = {
+            top: currentTop,
+            height: currentHeight
+        };
         
         // Switch page
         this.currentPageIndex = targetPageIndex;
@@ -2537,65 +2446,74 @@ window.PanelEditor = class PanelEditor {
         
         // Recreate crop rectangle on new page
         const canvasHeight = this.canvas.getHeight();
-        const newIsFirstPage = !isSinglePage && this.currentPageIndex === 0;
-        const newIsLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
         
         let newY = 0;
         let newH = canvasHeight;
         
-        if (handleType === 'bottom-right') {
-            // Bottom-right dragging downward: extending to next page
-            // Start from top of new page, full height
-            newY = 0;
-            newH = canvasHeight;
-            // Update lastPageHeightOverride if this is the last page
-            if (newIsLastPage) {
-                this.lastPageHeightOverride = canvasHeight;
-            }
-        } else if (handleType === 'bottom-right-up') {
-            // Bottom-right dragging upward: extending to previous page
-            // Start from top of new page, full height (crop covers entire previous page)
-            newY = 0;
-            newH = canvasHeight;
-            // Save the bottom position from the current page (oldIndex) as the end point
-            // When we go back to oldIndex, we'll use lastPageHeightOverride
-            if (oldIndex < this.pagesData.length - 1) {
-                // If oldIndex was not the last page, we need to track it differently
-                // For now, set firstPageTopOffset if we're going to first page
-                if (newIsFirstPage) {
-                    this.firstPageTopOffset = 0;
-                }
-            }
-        } else if (handleType === 'top-left') {
-            // Top-left dragging upward: extending to previous page
-            // End at bottom of new page, full height
-            newY = 0;
-            newH = canvasHeight;
-            // Update firstPageTopOffset if this is the first page
-            if (newIsFirstPage) {
-                this.firstPageTopOffset = 0;
-            }
-        } else if (handleType === 'top-left-down') {
-            // Top-left dragging downward: extending to next page
-            // Start from top of new page, full height (crop covers entire next page)
-            newY = 0;
-            newH = canvasHeight;
-            // Save the top position from the current page (oldIndex) as the start point
-            // When we go back to oldIndex, we'll use firstPageTopOffset
-            if (oldIndex > 0) {
-                // If oldIndex was not the first page, we need to track it differently
-                // For now, set lastPageHeightOverride if we're going to last page
-                if (newIsLastPage) {
-                    this.lastPageHeightOverride = canvasHeight;
-                }
-            }
+        // Khôi phục vị trí đã lưu cho page này nếu có
+        if (this.cropPagePositions && this.cropPagePositions[this.currentPageIndex]) {
+            const savedPos = this.cropPagePositions[this.currentPageIndex];
+            newY = Math.max(0, Math.min(savedPos.top, canvasHeight - 10));
+            newH = Math.min(canvasHeight, Math.max(10, savedPos.height));
         } else {
-            // Default: use saved offsets
-            if (newIsFirstPage && this.firstPageTopOffset !== undefined) {
-                newY = Math.max(0, Math.min(this.firstPageTopOffset, canvasHeight - 10));
-                newH = canvasHeight - newY;
-            } else if (newIsLastPage && this.lastPageHeightOverride !== undefined) {
-                newH = Math.min(canvasHeight, Math.max(10, this.lastPageHeightOverride));
+            // Nếu chưa có vị trí cho page này, tạo khung mặc định
+            // Tùy theo hướng kéo để quyết định vị trí
+            if (handleType === 'bottom-right' || handleType === 'top-left-down') {
+                // Kéo xuống: bắt đầu từ top của page mới
+                newY = 0;
+                newH = canvasHeight;
+                // Lưu vị trí cho page này
+                if (!this.cropPagePositions) {
+                    this.cropPagePositions = {};
+                }
+                this.cropPagePositions[this.currentPageIndex] = {
+                    top: newY,
+                    height: newH
+                };
+            } else if (handleType === 'top-left' || handleType === 'bottom-right-up') {
+                // Kéo lên: kết thúc ở bottom của page mới
+                newY = 0;
+                newH = canvasHeight;
+                // Lưu vị trí cho page này
+                if (!this.cropPagePositions) {
+                    this.cropPagePositions = {};
+                }
+                this.cropPagePositions[this.currentPageIndex] = {
+                    top: newY,
+                    height: newH
+                };
+            } else {
+                // Mặc định: full height
+                newY = 0;
+                newH = canvasHeight;
+                // Lưu vị trí cho page này
+                if (!this.cropPagePositions) {
+                    this.cropPagePositions = {};
+                }
+                this.cropPagePositions[this.currentPageIndex] = {
+                    top: newY,
+                    height: newH
+                };
+            }
+        }
+        
+        // Nếu có các page ở giữa (giữa firstPageWithCrop và lastPageWithCrop),
+        // đảm bảo chúng có full height
+        if (this.cropPagePositions) {
+            const pagesWithCrop = Object.keys(this.cropPagePositions).map(Number).sort((a, b) => a - b);
+            if (pagesWithCrop.length >= 2) {
+                const firstPage = pagesWithCrop[0];
+                const lastPage = pagesWithCrop[pagesWithCrop.length - 1];
+                // Các page ở giữa nên có full height
+                for (let i = firstPage + 1; i < lastPage; i++) {
+                    if (!this.cropPagePositions[i]) {
+                        const pageH = this.pagesData[i]?.height || canvasHeight;
+                        this.cropPagePositions[i] = {
+                            top: 0,
+                            height: pageH
+                        };
+                    }
+                }
             }
         }
         
@@ -2629,26 +2547,27 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
-        // Lưu dải chung và override top/bottom khi rời page hiện tại
+        // Lưu thông tin khung crop khi chuyển page
+        // Lưu dải chung (x, w) và vị trí Y trên page hiện tại
         if (this.mode === 'twoPointCrop' && this.cropRectangle) {
             const rect = this.cropRectangle;
             const actualWidth = rect.width * (rect.scaleX || 1);
             const actualHeight = rect.height * (rect.scaleY || 1);
-            if (!this.sharedCropStrip) {
-                this.sharedCropStrip = { x: Math.round(rect.left), w: Math.round(actualWidth) };
-            } else {
-                this.sharedCropStrip = { x: Math.round(rect.left), w: Math.round(actualWidth) };
+            
+            // Lưu dải crop chung (x, w) cho tất cả các page
+            this.sharedCropStrip = { 
+                x: Math.round(rect.left), 
+                w: Math.round(actualWidth) 
+            };
+            
+            // Lưu vị trí Y trên page hiện tại để có thể khôi phục sau
+            if (!this.cropPagePositions) {
+                this.cropPagePositions = {};
             }
-            const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-            const isFirstPage = !isSinglePage && oldIndex === 0;
-            const isLastPage = !isSinglePage && oldIndex === this.pagesData.length - 1;
-            if (isFirstPage) {
-                this.firstPageTopOffset = Math.max(0, Math.round(rect.top));
-            }
-            if (isLastPage) {
-                const pageH = this.pagesData[oldIndex]?.height || actualHeight;
-                this.lastPageHeightOverride = Math.min(pageH, Math.max(10, Math.round(actualHeight)));
-            }
+            this.cropPagePositions[oldIndex] = {
+                top: Math.round(rect.top),
+                height: Math.round(actualHeight)
+            };
         }
         
         if (this.cropMarkers && this.cropMarkers.length > 0) {
@@ -2656,7 +2575,7 @@ window.PanelEditor = class PanelEditor {
             this.cropMarkers = [];
         }
         
-        // Remove crop rectangle when switching pages (sẽ tạo lại từ preset nếu có)
+        // Remove crop rectangle khi chuyển page (sẽ tạo lại sau)
         if (this.cropRectangle) {
             this.canvas.remove(this.cropRectangle);
             this.cropRectangle = null;
@@ -2704,18 +2623,24 @@ window.PanelEditor = class PanelEditor {
         // Sau khi load page mới, nếu đã có dải crop chung thì tạo lại khung crop
         if (this.mode === 'twoPointCrop' && this.sharedCropStrip) {
             const { x, w } = this.sharedCropStrip;
-            const isSinglePage = !this.pagesData || this.pagesData.length <= 1;
-            const isFirstPage = !isSinglePage && this.currentPageIndex === 0;
-            const isLastPage = !isSinglePage && this.currentPageIndex === this.pagesData.length - 1;
             const pageH = this.canvas.getHeight();
+            
+            // Khôi phục vị trí Y trên page hiện tại nếu đã có
             let y = 0;
             let h = pageH;
-            if (isFirstPage) {
-                y = Math.max(0, Math.min(this.firstPageTopOffset || 0, pageH - 10));
-                h = pageH - y;
-            } else if (isLastPage && this.lastPageHeightOverride) {
-                h = Math.min(pageH, Math.max(10, this.lastPageHeightOverride));
+            
+            if (this.cropPagePositions && this.cropPagePositions[this.currentPageIndex]) {
+                // Khôi phục vị trí đã lưu cho page này
+                const savedPos = this.cropPagePositions[this.currentPageIndex];
+                y = Math.max(0, Math.min(savedPos.top, pageH - 10));
+                h = Math.min(pageH, Math.max(10, savedPos.height));
+            } else {
+                // Nếu chưa có vị trí cho page này, tạo khung mặc định
+                // Cho phép người dùng vẽ hoặc điều chỉnh sau
+                y = 0;
+                h = pageH;
             }
+            
             this.createCropRectangle(x, y, w, h);
             await this.confirmTwoPointCrop();
         }
