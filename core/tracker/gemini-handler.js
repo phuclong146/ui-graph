@@ -682,19 +682,29 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         'Compare the OLD and NEW UI screenshots and find the single rectangular region that ' +
         'best covers the most important visual changes (new cards, new popup, new content or layout changes).\n' +
         '\n' +
+        '**PRIORITY ORDER (MOST IMPORTANT FIRST):**\n' +
+        '1. **Dropdown menus, popups, modals (HIGHEST PRIORITY):** If a dropdown menu, popup, modal, or overlay appears in the NEW screenshot that was NOT in the OLD screenshot:\n' +
+        '   - Return ONLY the bounding box of that dropdown/popup/modal\n' +
+        '   - Examples: dropdown menu with options, "Sort by" menu, filter dropdown, selection menu\n' +
+        '   - The box should tightly wrap the dropdown menu itself, including all visible options\n' +
+        '   - Do NOT include the button that triggered it, only the dropdown menu panel\n' +
+        '\n' +
+        '2. **Small UI elements that appeared:** If a small new UI element appeared (button, card, notification):\n' +
+        '   - Return the bounding box of that specific element\n' +
+        '   - Examples: new notification banner, new action button, new card\n' +
+        '\n' +
+        '3. **Main content area changes:** Only if NO dropdown/popup/small element is present:\n' +
+        '   - Return the region where the main content changed (e.g., new cards, lists, layout changes)\n' +
+        '   - Exclude unchanged sidebars, navigation bars, headers, footers\n' +
+        '\n' +
         '**CRITICAL REQUIREMENTS:**\n' +
         '1. **Exclude unchanged UI elements:** Identify and EXCLUDE any areas that remain visually identical between OLD and NEW screenshots:\n' +
         '   - Sidebars, navigation bars, headers, footers that look the same\n' +
         '   - Backgrounds, borders, or decorative elements that are unchanged\n' +
         '   - Any UI components that appear identical in both screenshots\n' +
         '\n' +
-        '2. **Focus on changed content area:** Only include the region where the MAIN CONTENT has changed:\n' +
-        '   - New cards, lists, or content items that appeared\n' +
-        '   - Changed layout or structure in the main content area\n' +
-        '   - New popups, modals, or overlays\n' +
-        '   - The primary content region that differs between screenshots\n' +
-        '\n' +
-        '3. **Be precise:** The bounding box should tightly wrap ONLY the changed content area, not the entire screen.\n' +
+        '2. **Be precise:** The bounding box should tightly wrap ONLY the changed content area, not the entire screen.\n' +
+        '   - If a dropdown menu appeared, return ONLY the dropdown menu box\n' +
         '   - If only the right side changed (e.g., main content area), return coordinates for that region only\n' +
         '   - If only the center changed, return coordinates for the center region only\n' +
         '   - Do NOT return a box that covers the entire screen or includes unchanged sidebars\n' +
@@ -702,13 +712,14 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         '**Task:**\n' +
         '- Work in the coordinate system of the NEW screenshot.\n' +
         '- Return exactly one rectangle that tightly bounds ONLY the changed content area.\n' +
+        '- PRIORITIZE dropdown menus, popups, and small UI elements over large content areas.\n' +
         '- Exclude all unchanged UI elements (sidebars, navigation, etc.).\n' +
         '\n' +
         '**Output format:**\n' +
         '{ "x": number, "y": number, "w": number, "h": number }\n' +
         '- (x, y) is the top-left pixel in the NEW screenshot.\n' +
         '- (w, h) are width and height in pixels.\n' +
-        '- The box should cover ONLY the changed content, excluding any unchanged sidebars or navigation.\n';
+        '- The box should cover ONLY the changed content (prefer dropdown/popup if present), excluding any unchanged sidebars or navigation.\n';
 
     const responseSchema = {
         type: "object",
