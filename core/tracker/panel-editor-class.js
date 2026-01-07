@@ -1877,28 +1877,71 @@ window.PanelEditor = class PanelEditor {
                     const isBottomRight = detectedCorner === 'br' || detectedCorner === 'mr' || detectedCorner === 'mb';
                     const isTopLeft = detectedCorner === 'tl' || detectedCorner === 'ml' || detectedCorner === 'mt';
                     
-                    // Handle bottom-right dragging: extend to next pages
-                    if (isBottomRight && mouseY > canvasHeight && this.currentPageIndex < this.pagesData.length - 1) {
-                        isSwitchingPage = true;
-                        const nextPageIndex = this.currentPageIndex + 1;
-                        this._switchPageDuringScaling(nextPageIndex, 'bottom-right').then(() => {
-                            isSwitchingPage = false;
-                        }).catch(() => {
-                            isSwitchingPage = false;
-                        });
-                        return;
+                    // Get rectangle state to detect shrinking/expanding
+                    const rectTop = rect.top;
+                    const rectHeight = rect.height * (rect.scaleY || 1);
+                    const rectBottom = rectTop + rectHeight;
+                    const isShrinking = rect.scaleY < 1;
+                    const isExpanding = rect.scaleY > 1;
+                    
+                    // Handle bottom-right dragging downward: extend to next pages
+                    // Check mouse position OR if rectangle is expanding beyond canvas
+                    if (isBottomRight && this.currentPageIndex < this.pagesData.length - 1) {
+                        if (mouseY > canvasHeight || (isExpanding && rectBottom > canvasHeight + 10)) {
+                            isSwitchingPage = true;
+                            const nextPageIndex = this.currentPageIndex + 1;
+                            this._switchPageDuringScaling(nextPageIndex, 'bottom-right').then(() => {
+                                isSwitchingPage = false;
+                            }).catch(() => {
+                                isSwitchingPage = false;
+                            });
+                            return;
+                        }
                     }
                     
-                    // Handle top-left dragging: extend to previous pages
-                    if (isTopLeft && mouseY < 0 && this.currentPageIndex > 0) {
-                        isSwitchingPage = true;
-                        const prevPageIndex = this.currentPageIndex - 1;
-                        this._switchPageDuringScaling(prevPageIndex, 'top-left').then(() => {
-                            isSwitchingPage = false;
-                        }).catch(() => {
-                            isSwitchingPage = false;
-                        });
-                        return;
+                    // Handle bottom-right dragging upward: extend to previous pages
+                    // Check mouse position OR if rectangle is shrinking (top going up)
+                    if (isBottomRight && this.currentPageIndex > 0) {
+                        if (mouseY < 0 || (isShrinking && rectTop < -10)) {
+                            isSwitchingPage = true;
+                            const prevPageIndex = this.currentPageIndex - 1;
+                            this._switchPageDuringScaling(prevPageIndex, 'bottom-right-up').then(() => {
+                                isSwitchingPage = false;
+                            }).catch(() => {
+                                isSwitchingPage = false;
+                            });
+                            return;
+                        }
+                    }
+                    
+                    // Handle top-left dragging upward: extend to previous pages
+                    // Check mouse position OR if rectangle is shrinking (top going up)
+                    if (isTopLeft && this.currentPageIndex > 0) {
+                        if (mouseY < 0 || (isShrinking && rectTop < -10)) {
+                            isSwitchingPage = true;
+                            const prevPageIndex = this.currentPageIndex - 1;
+                            this._switchPageDuringScaling(prevPageIndex, 'top-left').then(() => {
+                                isSwitchingPage = false;
+                            }).catch(() => {
+                                isSwitchingPage = false;
+                            });
+                            return;
+                        }
+                    }
+                    
+                    // Handle top-left dragging downward: extend to next pages
+                    // Check mouse position OR if rectangle is expanding beyond canvas
+                    if (isTopLeft && this.currentPageIndex < this.pagesData.length - 1) {
+                        if (mouseY > canvasHeight || (isExpanding && rectBottom > canvasHeight + 10)) {
+                            isSwitchingPage = true;
+                            const nextPageIndex = this.currentPageIndex + 1;
+                            this._switchPageDuringScaling(nextPageIndex, 'top-left-down').then(() => {
+                                isSwitchingPage = false;
+                            }).catch(() => {
+                                isSwitchingPage = false;
+                            });
+                            return;
+                        }
                     }
                 };
                 
@@ -1933,41 +1976,120 @@ window.PanelEditor = class PanelEditor {
                     scaleY: 1
                 });
             } else if (isFirstPage) {
-                // Adjust top so bottom stays at canvas bottom
-                let newHeight = rect.height * rect.scaleY;
-                if (newHeight < minHeight) newHeight = minHeight;
-                if (newHeight > canvasHeight) {
-                    newHeight = canvasHeight;
+                // Check if we're dragging top-left handle downward to extend to next page
+                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
+                const mouseY = pointer.y;
+                const isTopLeft = activeCorner === 'tl' || activeCorner === 'ml' || activeCorner === 'mt';
+                
+                // If dragging top-left downward (mouseY > canvasHeight or scaleY > 1), allow it to extend
+                // The mousemove handler will detect and switch pages
+                if (isTopLeft && (mouseY > canvasHeight || rect.scaleY > 1)) {
+                    // Allow extending downward - don't constrain, let mousemove handler switch pages
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    // Don't constrain height when dragging downward - allow it to extend to next page
+                    let newTop = rect.top + rect.height - newHeight;
+                    if (newTop < 0) {
+                        newTop = 0;
+                    }
+                    // Allow height to exceed canvasHeight temporarily for cross-page detection
+                    rect.set({
+                        top: newTop,
+                        height: newHeight, // Allow exceeding canvasHeight
+                        scaleY: 1
+                    });
+                } else {
+                    // Normal behavior: adjust top so bottom stays at canvas bottom
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    if (newHeight > canvasHeight) {
+                        newHeight = canvasHeight;
+                    }
+                    let newTop = rect.top + rect.height - newHeight;
+                    if (newTop < 0) {
+                        newTop = 0;
+                        newHeight = canvasHeight;
+                    }
+                    rect.set({
+                        top: newTop,
+                        height: newHeight,
+                        scaleY: 1
+                    });
                 }
-                let newTop = rect.top + rect.height - newHeight;
-                if (newTop < 0) {
-                    newTop = 0;
-                    newHeight = canvasHeight;
-                }
-                rect.set({
-                    top: newTop,
-                    height: newHeight,
-                    scaleY: 1
-                });
             } else if (isLastPage) {
-                // Only bottom changes, top fixed
-                let newHeight = rect.height * rect.scaleY;
-                if (newHeight < minHeight) newHeight = minHeight;
-                if (newHeight > canvasHeight) {
-                    newHeight = canvasHeight;
+                // Allow bottom-right to be dragged upward to extend to previous page
+                // Check if we're dragging bottom-right handle upward
+                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
+                const mouseY = pointer.y;
+                const isBottomRight = activeCorner === 'br' || activeCorner === 'mr' || activeCorner === 'mb';
+                
+                // If dragging bottom-right upward (mouseY < 0 or scaleY < 1), allow it to shrink
+                // The mousemove handler will detect and switch pages
+                if (isBottomRight && (mouseY < 0 || rect.scaleY < 1)) {
+                    // Allow shrinking - don't constrain, let mousemove handler switch pages
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    // Calculate new top position - allow it to go above 0 temporarily
+                    let newTop = rect.top + rect.height - newHeight;
+                    // Don't constrain top when dragging upward - allow it to extend to previous page
+                    // The mousemove handler will switch pages when mouseY < 0
+                    rect.set({
+                        top: newTop, // Allow negative temporarily for cross-page detection
+                        height: newHeight,
+                        scaleY: 1
+                    });
+                } else {
+                    // Normal behavior: only bottom changes, top fixed
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    if (newHeight > canvasHeight) {
+                        newHeight = canvasHeight;
+                    }
+                    rect.set({
+                        top: 0,
+                        height: newHeight,
+                        scaleY: 1
+                    });
                 }
-                rect.set({
-                    top: 0,
-                    height: newHeight,
-                    scaleY: 1
-                });
             } else {
-                // Middle pages: lock full height
-                rect.set({
-                    top: 0,
-                    height: canvasHeight,
-                    scaleY: 1
-                });
+                // Middle pages: allow top-left to be dragged downward to extend to next page
+                // Also allow bottom-right to be dragged upward to extend to previous page
+                const pointer = this.canvas.getPointer(this.canvas._currentTransform?.e || {});
+                const mouseY = pointer.y;
+                const isTopLeft = activeCorner === 'tl' || activeCorner === 'ml' || activeCorner === 'mt';
+                const isBottomRight = activeCorner === 'br' || activeCorner === 'mr' || activeCorner === 'mb';
+                
+                // If dragging top-left downward (mouseY > canvasHeight or scaleY > 1), allow it to extend
+                // The mousemove handler will detect and switch pages
+                if (isTopLeft && (mouseY > canvasHeight || rect.scaleY > 1)) {
+                    // Allow extending downward - don't constrain, let mousemove handler switch pages
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    // Don't constrain height when dragging downward - allow it to extend to next page
+                    rect.set({
+                        top: 0,
+                        height: newHeight, // Allow exceeding canvasHeight
+                        scaleY: 1
+                    });
+                } else if (isBottomRight && (mouseY < 0 || rect.scaleY < 1)) {
+                    // Allow bottom-right to be dragged upward to extend to previous page
+                    let newHeight = rect.height * rect.scaleY;
+                    if (newHeight < minHeight) newHeight = minHeight;
+                    let newTop = rect.top + rect.height - newHeight;
+                    // Don't constrain top when dragging upward - allow it to extend to previous page
+                    rect.set({
+                        top: newTop, // Allow negative temporarily
+                        height: newHeight,
+                        scaleY: 1
+                    });
+                } else {
+                    // Normal behavior: lock full height
+                    rect.set({
+                        top: 0,
+                        height: canvasHeight,
+                        scaleY: 1
+                    });
+                }
             }
         });
         
@@ -2422,20 +2544,50 @@ window.PanelEditor = class PanelEditor {
         let newH = canvasHeight;
         
         if (handleType === 'bottom-right') {
-            // Extending downward: start from top of new page, full height
+            // Bottom-right dragging downward: extending to next page
+            // Start from top of new page, full height
             newY = 0;
             newH = canvasHeight;
             // Update lastPageHeightOverride if this is the last page
             if (newIsLastPage) {
                 this.lastPageHeightOverride = canvasHeight;
             }
+        } else if (handleType === 'bottom-right-up') {
+            // Bottom-right dragging upward: extending to previous page
+            // Start from top of new page, full height (crop covers entire previous page)
+            newY = 0;
+            newH = canvasHeight;
+            // Save the bottom position from the current page (oldIndex) as the end point
+            // When we go back to oldIndex, we'll use lastPageHeightOverride
+            if (oldIndex < this.pagesData.length - 1) {
+                // If oldIndex was not the last page, we need to track it differently
+                // For now, set firstPageTopOffset if we're going to first page
+                if (newIsFirstPage) {
+                    this.firstPageTopOffset = 0;
+                }
+            }
         } else if (handleType === 'top-left') {
-            // Extending upward: end at bottom of new page, full height
+            // Top-left dragging upward: extending to previous page
+            // End at bottom of new page, full height
             newY = 0;
             newH = canvasHeight;
             // Update firstPageTopOffset if this is the first page
             if (newIsFirstPage) {
                 this.firstPageTopOffset = 0;
+            }
+        } else if (handleType === 'top-left-down') {
+            // Top-left dragging downward: extending to next page
+            // Start from top of new page, full height (crop covers entire next page)
+            newY = 0;
+            newH = canvasHeight;
+            // Save the top position from the current page (oldIndex) as the start point
+            // When we go back to oldIndex, we'll use firstPageTopOffset
+            if (oldIndex > 0) {
+                // If oldIndex was not the first page, we need to track it differently
+                // For now, set lastPageHeightOverride if we're going to last page
+                if (newIsLastPage) {
+                    this.lastPageHeightOverride = canvasHeight;
+                }
             }
         } else {
             // Default: use saved offsets
