@@ -682,15 +682,33 @@ export async function detectChangeBoxByGemini(oldScreenshotB64, newScreenshotB64
         'Compare the OLD and NEW UI screenshots and find the single rectangular region that ' +
         'best covers the most important visual changes (new cards, new popup, new content or layout changes).\n' +
         '\n' +
+        '**CRITICAL REQUIREMENTS:**\n' +
+        '1. **Exclude unchanged UI elements:** Identify and EXCLUDE any areas that remain visually identical between OLD and NEW screenshots:\n' +
+        '   - Sidebars, navigation bars, headers, footers that look the same\n' +
+        '   - Backgrounds, borders, or decorative elements that are unchanged\n' +
+        '   - Any UI components that appear identical in both screenshots\n' +
+        '\n' +
+        '2. **Focus on changed content area:** Only include the region where the MAIN CONTENT has changed:\n' +
+        '   - New cards, lists, or content items that appeared\n' +
+        '   - Changed layout or structure in the main content area\n' +
+        '   - New popups, modals, or overlays\n' +
+        '   - The primary content region that differs between screenshots\n' +
+        '\n' +
+        '3. **Be precise:** The bounding box should tightly wrap ONLY the changed content area, not the entire screen.\n' +
+        '   - If only the right side changed (e.g., main content area), return coordinates for that region only\n' +
+        '   - If only the center changed, return coordinates for the center region only\n' +
+        '   - Do NOT return a box that covers the entire screen or includes unchanged sidebars\n' +
+        '\n' +
         '**Task:**\n' +
         '- Work in the coordinate system of the NEW screenshot.\n' +
-        '- Return exactly one rectangle that tightly bounds the biggest changed area.\n' +
-        '- Do not include unchanged areas.\n' +
+        '- Return exactly one rectangle that tightly bounds ONLY the changed content area.\n' +
+        '- Exclude all unchanged UI elements (sidebars, navigation, etc.).\n' +
         '\n' +
         '**Output format:**\n' +
         '{ "x": number, "y": number, "w": number, "h": number }\n' +
         '- (x, y) is the top-left pixel in the NEW screenshot.\n' +
-        '- (w, h) are width and height in pixels.\n';
+        '- (w, h) are width and height in pixels.\n' +
+        '- The box should cover ONLY the changed content, excluding any unchanged sidebars or navigation.\n';
 
     const responseSchema = {
         type: "object",
