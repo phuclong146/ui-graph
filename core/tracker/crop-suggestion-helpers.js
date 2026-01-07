@@ -327,10 +327,25 @@ export const suggestCropAreaForNewPanel = async ({
     imageWidth,
     imageHeight,
     oldDomActions,
-    newDomActions
+    newDomActions,
+    afterLoginPanel = false
 }) => {
     console.log('🎯 [CROP SUGGEST] Starting crop suggestion with Gemini only...');
     console.log(`🎯 [CROP SUGGEST] Image size: ${imageWidth}x${imageHeight}`);
+    console.log(`🎯 [CROP SUGGEST] After Login Panel: ${afterLoginPanel}`);
+
+    // Skip Gemini for afterLoginPanel, return fullscreen directly
+    if (afterLoginPanel) {
+        console.log('🎯 [CROP SUGGEST] ⚡ After Login Panel detected, skipping Gemini and returning fullscreen');
+        return {
+            x: 0,
+            y: 0,
+            w: imageWidth,
+            h: imageHeight,
+            source: 'afterLoginPanel',
+            score: 1.0
+        };
+    }
 
     const gemRes = await detectChangeByGemini(oldScreenshotBase64, newScreenshotBase64);
 

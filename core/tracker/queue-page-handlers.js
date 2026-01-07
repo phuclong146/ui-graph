@@ -1370,13 +1370,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     has_image: !!oldScreenshotBase64
                 });
 
+                const isAfterLoginPanel = currentPanelItem?.name === 'After Login Panel';
                 suggestedCrop = await suggestCropAreaForNewPanel({
                     oldScreenshotBase64,
                     newScreenshotBase64: screenshot,
                     imageWidth,
                     imageHeight,
                     oldDomActions: oldDom,
-                    newDomActions: fullPageDomActions
+                    newDomActions: fullPageDomActions,
+                    afterLoginPanel: isAfterLoginPanel
                 });
 
                 if (suggestedCrop) {
