@@ -390,7 +390,7 @@ const captureByStitching = async (page, options, progressCallback = null) => {
       };
     });
 
-    const MAX_SECTIONS = 20;
+    const MAX_SECTIONS = 3;
     let numSections = Math.ceil(dimensions.scrollHeight / dimensions.viewportHeight);
     
     if (numSections > MAX_SECTIONS) {
