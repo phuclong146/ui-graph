@@ -54,6 +54,73 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get panelBeforeBase64 from step by finding step with panel_after.item_id === panelAfterId
+     * Always tries to get from step, preferring fullscreen_base64 over image_base64
+     * @param {string} panelAfterId - The panel_after.item_id to search for
+     * @returns {Promise<string|null>} - Base64 string or null if not found
+     */
+    const getPanelBeforeBase64FromStep = async (panelAfterId) => {
+        if (!panelAfterId || !tracker.stepManager || !tracker.dataItemManager) {
+            console.warn(`⚠️ Cannot get panelBeforeBase64: panelAfterId=${panelAfterId}, stepManager=${!!tracker.stepManager}, dataItemManager=${!!tracker.dataItemManager}`);
+            return null;
+        }
+
+        try {
+            const allSteps = await tracker.stepManager.getAllSteps();
+            console.log(`🔍 Looking for step with panel_after.item_id === ${panelAfterId}`);
+            console.log(`📋 Total steps: ${allSteps.length}`);
+            
+            const step = allSteps.find(s => s.panel_after?.item_id === panelAfterId);
+            if (!step) {
+                console.warn(`⚠️ No step found with panel_after.item_id === ${panelAfterId}`);
+                console.log(`📋 Available steps:`, allSteps.map(s => ({
+                    step_id: s.step_id,
+                    panel_after: s.panel_after?.item_id
+                })));
+                return null;
+            }
+
+            console.log(`✅ Found step:`, {
+                step_id: step.step_id,
+                panel_before: step.panel_before?.item_id,
+                panel_after: step.panel_after?.item_id
+            });
+
+            if (!step.panel_before?.item_id) {
+                console.warn(`⚠️ Step found but no panel_before.item_id`);
+                return null;
+            }
+
+            const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
+            if (!panelBeforeItem) {
+                console.warn(`⚠️ panelBeforeItem not found for id: ${step.panel_before.item_id}`);
+                return null;
+            }
+
+            // Try fullscreen_base64 first, then fall back to image_base64
+            if (panelBeforeItem.fullscreen_base64) {
+                const panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.fullscreen_base64);
+                console.log(`✅ Found panelBefore image from fullscreen_base64 for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
+                return panelBeforeBase64;
+            } else if (panelBeforeItem.image_base64) {
+                const panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.image_base64);
+                console.log(`✅ Found panelBefore image from image_base64 for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
+                return panelBeforeBase64;
+            } else {
+                console.warn(`⚠️ panelBeforeItem found but no fullscreen_base64 or image_base64:`, {
+                    hasItem: !!panelBeforeItem,
+                    hasFullscreenBase64: !!panelBeforeItem?.fullscreen_base64,
+                    hasImageBase64: !!panelBeforeItem?.image_base64
+                });
+                return null;
+            }
+        } catch (err) {
+            console.warn('⚠️ Failed to load panelBefore image from step:', err);
+            return null;
+        }
+    };
+
     const addActionToItem = async (itemId, itemCategory, actionId) => {
         if (itemCategory === 'PAGE') {
             const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
@@ -282,59 +349,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const editorImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
 
-            // Try to get panelBefore image from step
-            let panelBeforeBase64 = null;
-            if (tracker.stepManager) {
-                const allSteps = await tracker.stepManager.getAllSteps();
-                console.log(`🔍 Looking for step with panel_after.item_id === ${tracker.selectedPanelId}`);
-                console.log(`📋 Total steps: ${allSteps.length}`);
-                
-                const step = allSteps.find(s => s.panel_after?.item_id === tracker.selectedPanelId);
-                if (step) {
-                    console.log(`✅ Found step:`, {
-                        step_id: step.step_id,
-                        panel_before: step.panel_before?.item_id,
-                        panel_after: step.panel_after?.item_id
-                    });
-                    
-                    if (step.panel_before?.item_id) {
-                        try {
-                            const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
-                            if (panelBeforeItem) {
-                                // Try fullscreen_base64 first, then fall back to image_base64
-                                if (panelBeforeItem.fullscreen_base64) {
-                                    panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.fullscreen_base64);
-                                    console.log(`✅ Found panelBefore image from fullscreen_base64 for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                } else if (panelBeforeItem.image_base64) {
-                                    panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.image_base64);
-                                    console.log(`✅ Found panelBefore image from image_base64 for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                } else {
-                                    console.warn(`⚠️ panelBeforeItem found but no fullscreen_base64 or image_base64:`, {
-                                        hasItem: !!panelBeforeItem,
-                                        hasFullscreenBase64: !!panelBeforeItem?.fullscreen_base64,
-                                        hasImageBase64: !!panelBeforeItem?.image_base64
-                                    });
-                                }
-                            } else {
-                                console.warn(`⚠️ panelBeforeItem not found`);
-                            }
-                        } catch (err) {
-                            console.warn('⚠️ Failed to load panelBefore image:', err);
-                        }
-                    } else {
-                        console.warn(`⚠️ Step found but no panel_before.item_id`);
-                    }
-                } else {
-                    console.warn(`⚠️ No step found with panel_after.item_id === ${tracker.selectedPanelId}`);
-                    console.log(`📋 Available steps:`, allSteps.map(s => ({
-                        step_id: s.step_id,
-                        panel_after: s.panel_after?.item_id
-                    })));
-                }
-            } else {
-                console.warn(`⚠️ tracker.stepManager is not available`);
-            }
-            
+            // Get panelBefore image from step
+            const panelBeforeBase64 = await getPanelBeforeBase64FromStep(tracker.selectedPanelId);
             console.log(`🎨 panelBeforeBase64: ${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}`);
 
             console.log(`Opening editor with ${actions.length} actions from doing_item.jsonl`);
@@ -1396,102 +1412,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log(`📐 Split into ${numPages} pages`);
 
-            // Try to get panelBefore image for comparison
-            let panelBeforeBase64 = null;
+            // Get panelBefore image from step for comparison
+            // selectedItem is always PANEL at this point (checked at line 1316)
             console.log(`🔍 Getting panelBefore for crop editor, selectedPanelId: ${tracker.selectedPanelId}`);
             
-            if (tracker.dataItemManager) {
-                const selectedItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-                console.log(`📋 Selected item:`, {
-                    item_id: selectedItem?.item_id,
-                    category: selectedItem?.item_category,
-                    name: selectedItem?.name,
-                    hasImageBase64: !!selectedItem?.image_base64
-                });
-                
-                if (selectedItem) {
-                    let panelBeforeId = null;
-                    
-                    if (selectedItem.item_category === 'ACTION') {
-                        // If selected is ACTION, get its parent panel
-                        panelBeforeId = await getParentPanelOfActionHandler(tracker.selectedPanelId);
-                        console.log(`🔍 Selected is ACTION, parent panel: ${panelBeforeId}`);
-                    } else if (selectedItem.item_category === 'PANEL') {
-                        // If selected is PANEL, use it as panelBefore
-                        panelBeforeId = tracker.selectedPanelId;
-                        console.log(`🔍 Selected is PANEL, using as panelBefore: ${panelBeforeId}`);
-                    }
-                    
-                    if (panelBeforeId) {
-                        try {
-                            const panelBeforeItem = await tracker.dataItemManager.getItem(panelBeforeId);
-                            console.log(`📋 panelBeforeItem:`, {
-                                item_id: panelBeforeItem?.item_id,
-                                category: panelBeforeItem?.item_category,
-                                name: panelBeforeItem?.name,
-                                hasFullscreenBase64: !!panelBeforeItem?.fullscreen_base64,
-                                hasImageBase64: !!panelBeforeItem?.image_base64,
-                                image_base64_path: panelBeforeItem?.image_base64
-                            });
-                            
-                            if (panelBeforeItem) {
-                                // Prefer fullscreen_base64, fall back to image_base64
-                                if (panelBeforeItem.fullscreen_base64) {
-                                    panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.fullscreen_base64);
-                                    console.log(`✅ Found panelBefore image (fullscreen_base64) for comparison in crop editor (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                } else if (panelBeforeItem.image_base64) {
-                                    panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBeforeItem.image_base64);
-                                    console.log(`✅ Found panelBefore image (image_base64) for comparison in crop editor (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                } else {
-                                    // Try to find panelBefore from step if panel doesn't have image
-                                    if (tracker.stepManager && selectedItem.item_category === 'PANEL') {
-                                        console.log(`🔍 Panel has no image, trying to find panelBefore from step...`);
-                                        const allSteps = await tracker.stepManager.getAllSteps();
-                                        const step = allSteps.find(s => s.panel_after?.item_id === panelBeforeId);
-                                        if (step && step.panel_before?.item_id) {
-                                            try {
-                                                const stepPanelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
-                                                if (stepPanelBeforeItem) {
-                                                    if (stepPanelBeforeItem.fullscreen_base64) {
-                                                        panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(stepPanelBeforeItem.fullscreen_base64);
-                                                        console.log(`✅ Found panelBefore image (fullscreen_base64) from step for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                                    } else if (stepPanelBeforeItem.image_base64) {
-                                                        panelBeforeBase64 = await tracker.dataItemManager.loadBase64FromFile(stepPanelBeforeItem.image_base64);
-                                                        console.log(`✅ Found panelBefore image (image_base64) from step for comparison (${panelBeforeBase64 ? panelBeforeBase64.length : 0} chars)`);
-                                                    }
-                                                }
-                                            } catch (err) {
-                                                console.warn('⚠️ Failed to load panelBefore from step:', err);
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (!panelBeforeBase64) {
-                                        console.warn(`⚠️ panelBeforeItem found but no fullscreen_base64 or image_base64:`, {
-                                            hasItem: !!panelBeforeItem,
-                                            hasFullscreenBase64: !!panelBeforeItem?.fullscreen_base64,
-                                            hasImageBase64: !!panelBeforeItem?.image_base64,
-                                            itemCategory: panelBeforeItem?.item_category
-                                        });
-                                    }
-                                }
-                            } else {
-                                console.warn(`⚠️ panelBeforeItem not found for id: ${panelBeforeId}`);
-                            }
-                        } catch (err) {
-                            console.error('❌ Failed to load panelBefore image for crop editor:', err);
-                            console.error('Error stack:', err.stack);
-                        }
-                    } else {
-                        console.warn(`⚠️ No panelBeforeId found for selected item: ${tracker.selectedPanelId}`);
-                    }
-                } else {
-                    console.warn(`⚠️ Selected item not found: ${tracker.selectedPanelId}`);
-                }
-            } else {
-                console.warn(`⚠️ tracker.dataItemManager is not available`);
-            }
-            
+            // Always get panelBeforeBase64 from step
+            const panelBeforeBase64 = await getPanelBeforeBase64FromStep(tracker.selectedPanelId);
             console.log(`🎨 Final panelBeforeBase64 for crop editor: ${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}`);
 
             await tracker.queuePage.evaluate(async (editorClass, fullScreenshot, pages, panelBeforeBase64) => {
