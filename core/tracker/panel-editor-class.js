@@ -1747,15 +1747,23 @@ window.PanelEditor = class PanelEditor {
         const logicYEnd = logic.y + logic.h;
         
         // Kiểm tra xem cropRectangleLogic có giao với page này không
+        // Intersection chỉ có khi: logicYEnd > pageYStart VÀ logicYStart < pageYEnd
+        // Nếu logicYEnd <= pageYStart: logic kết thúc trước khi page bắt đầu → không giao
+        // Nếu logicYStart >= pageYEnd: logic bắt đầu sau khi page kết thúc → không giao
         if (logicYEnd <= pageYStart || logicYStart >= pageYEnd) {
             // Không có intersection
             return null;
         }
         
-        // Tính intersection
+        // Tính intersection - phần giao nhau giữa logic và page
         const displayYStart = Math.max(logicYStart, pageYStart);
         const displayYEnd = Math.min(logicYEnd, pageYEnd);
         const displayH = displayYEnd - displayYStart;
+        
+        // Kiểm tra height phải > 0 (có giao nhau thực sự)
+        if (displayH <= 0) {
+            return null;
+        }
         
         // cropRectangleDisplay có y là tọa độ tuyệt đối trong panel
         const display = {
@@ -2531,7 +2539,7 @@ window.PanelEditor = class PanelEditor {
         // Tính toán và hiển thị cropRectangleDisplay cho page mới
         if (this.cropRectangleLogic) {
             const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
-            if (display) {
+            if (display && display.h > 0) {
                 // Remove old rectangle and create new one
                 const oldRect = this.cropRectangle;
                 if (oldRect) {
@@ -2545,6 +2553,14 @@ window.PanelEditor = class PanelEditor {
                 // Select the new rectangle so user can continue dragging
                 this.canvas.setActiveObject(this.cropRectangle);
                 this.canvas.renderAll();
+            } else {
+                // Không có intersection với page này, đảm bảo không có rectangle
+                const oldRect = this.cropRectangle;
+                if (oldRect) {
+                    this.canvas.remove(oldRect);
+                    this.cropRectangle = null;
+                    this.canvas.renderAll();
+                }
             }
         }
         
@@ -2622,9 +2638,16 @@ window.PanelEditor = class PanelEditor {
         // Sau khi load page mới, nếu đã có cropRectangleLogic thì tính toán và hiển thị cropRectangleDisplay
         if (this.mode === 'twoPointCrop' && this.cropRectangleLogic) {
             const display = this.calculateCropRectangleDisplay(this.currentPageIndex);
-            if (display) {
+            if (display && display.h > 0) {
                 this.createCropRectangle(display.x, display.y, display.w, display.h);
                 await this.confirmTwoPointCrop();
+            } else {
+                // Không có intersection với page này, đảm bảo không có rectangle
+                if (this.cropRectangle) {
+                    this.canvas.remove(this.cropRectangle);
+                    this.cropRectangle = null;
+                    this.canvas.renderAll();
+                }
             }
         }
         
