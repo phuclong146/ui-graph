@@ -1046,20 +1046,23 @@ window.PanelEditor = class PanelEditor {
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 
-                let yStart, pageHeight;
+                let yStart, pageHeight, canvasWidth;
                 
                 if (this.mode === 'twoPointCrop' && this.pagesData && this.pagesData[this.currentPageIndex]) {
                     // Use pagesData for twoPointCrop mode
                     const page = this.pagesData[this.currentPageIndex];
                     yStart = page.y_start;
                     pageHeight = page.height;
+                    // In twoPointCrop mode, always use width 1920 to match panelAfter page dimensions
+                    canvasWidth = 1920;
                 } else {
                     // Use default page height for full mode
                     pageHeight = 1080;
                     yStart = this.currentPageIndex * pageHeight;
+                    canvasWidth = img.width;
                 }
                 
-                canvas.width = img.width;
+                canvas.width = canvasWidth;
                 canvas.height = Math.min(pageHeight, img.height - yStart);
                 const ctx = canvas.getContext('2d');
                 
@@ -1068,7 +1071,7 @@ window.PanelEditor = class PanelEditor {
                     0, yStart,
                     img.width, canvas.height,
                     0, 0,
-                    img.width, canvas.height
+                    canvasWidth, canvas.height
                 );
                 
                 const croppedBase64 = canvas.toDataURL('image/png').split(',')[1];
@@ -1080,7 +1083,12 @@ window.PanelEditor = class PanelEditor {
     }
     
     async showOverlay() {
-        if (!this.panelBeforeBase64) return;
+        if (!this.panelBeforeBase64) {
+            console.warn('⚠️ showOverlay: panelBeforeBase64 is null');
+            return;
+        }
+        
+        console.log(\`🎨 showOverlay: Using panelBeforeBase64 (length: \${this.panelBeforeBase64.length} chars)\`);
         
         // Remove existing overlay
         if (this.overlayImage) {
@@ -1090,7 +1098,12 @@ window.PanelEditor = class PanelEditor {
         
         // Crop panelBefore to current page
         const panelBeforePageBase64 = await this.cropPanelBeforeToCurrentPage();
-        if (!panelBeforePageBase64) return;
+        if (!panelBeforePageBase64) {
+            console.warn('⚠️ showOverlay: cropPanelBeforeToCurrentPage returned null');
+            return;
+        }
+        
+        console.log(\`✅ showOverlay: Cropped panelBefore page base64 (length: \${panelBeforePageBase64.length} chars)\`);
         
         // Create overlay image
         const img = new Image();
