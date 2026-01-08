@@ -397,6 +397,17 @@ export const QUEUE_BROWSER_HTML = `
         background: #555;
       }
 
+      .compare-btn {
+        background: linear-gradient(135deg, #ffa726 0%, #fb8c00 100%);
+        color: white;
+        box-shadow: 0 2px 8px rgba(255, 167, 38, 0.3);
+      }
+
+      .compare-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(255, 167, 38, 0.5);
+      }
+
       #editor-status {
         position: fixed;
         top: 10px;

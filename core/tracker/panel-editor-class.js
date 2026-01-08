@@ -1,8 +1,10 @@
 export function getPanelEditorClassCode() {
     return `
 window.PanelEditor = class PanelEditor {
-    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null) {
+    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, panelBeforeBase64 = null) {
         this.imageBase64 = imageBase64;
+        this.panelBeforeBase64 = panelBeforeBase64;
+        console.log(\`🎨 PanelEditor constructor: panelBeforeBase64 = \${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}\`);
         
         if (mode === 'cropOnly' || mode === 'confirmOnly' || mode === 'twoPointCrop') {
             this.actionItemId = geminiResultOrActionId;
@@ -47,6 +49,14 @@ window.PanelEditor = class PanelEditor {
         this.rectStart = null;
         this.prevCanvasSelection = true;
         this._globalMouseUpHandler = null;
+        
+        // Overlay comparison state
+        this.compareMode = 'AUTO'; // 'ON', 'OFF', 'AUTO'
+        this.overlayVisible = false;
+        this.overlayImage = null;
+        this.overlayAutoInterval = null;
+        this.panelBeforePageBase64 = null;
+        this.overlayAutoIntervalMs = 1000; // Configurable overlay toggle interval in milliseconds (default: 1s)
     }
 
     async init() {
@@ -102,6 +112,16 @@ window.PanelEditor = class PanelEditor {
             toolbarHTML += \`<div id="pageIndicator" style="margin-bottom: 10px; font-weight: bold; font-size: 16px; color: #00ffff; text-align: center; text-shadow: 0 0 10px rgba(0,255,255,0.5);">Page 1/\${this.pagesData ? this.pagesData.length : 1}</div>\`;
             toolbarHTML += '<button id="editorPrevPageBtn" class="editor-btn">◀ Prev</button>';
             toolbarHTML += '<button id="editorNextPageBtn" class="editor-btn">Next ▶</button>';
+            
+            // Add Compare button only if panelBeforeBase64 exists
+            console.log(\`🔍 Checking panelBeforeBase64 for Compare button in twoPointCrop: \${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}\`);
+            if (this.panelBeforeBase64) {
+                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (AUTO)</button>';
+                console.log(\`✅ Added Compare button to twoPointCrop toolbar\`);
+            } else {
+                console.warn(\`⚠️ Compare button NOT added to twoPointCrop - panelBeforeBase64 is null\`);
+            }
+            
             toolbarHTML += '<button id="editorDontCropBtn" class="editor-btn" style="background: #f44336; color: white; font-weight: bold;">📐 Don&apos;t Crop (Use Full)</button>';
             toolbarHTML += '<button id="editorSaveCropBtn" class="editor-btn save-btn" style="display:none; background: #4CAF50; color: white; font-weight: bold;">✅ Save Crop</button>';
             toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
@@ -115,7 +135,18 @@ window.PanelEditor = class PanelEditor {
                 '<button id="editorNextPageBtn" class="editor-btn">Next ▶</button>' +
                 '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>' +
                 '<button id="editorAddActionBtn" class="editor-btn add-btn">➕ Add Action</button>' +
-                '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>' +
+                '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>';
+            
+            // Add Compare button only if panelBeforeBase64 exists
+            console.log(\`🔍 Checking panelBeforeBase64 for Compare button: \${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}\`);
+            if (this.panelBeforeBase64) {
+                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (AUTO)</button>';
+                console.log(\`✅ Added Compare button to toolbar\`);
+            } else {
+                console.warn(\`⚠️ Compare button NOT added - panelBeforeBase64 is null\`);
+            }
+            
+            toolbarHTML += 
                 '<button id="editorSaveBtn" class="editor-btn save-btn">💾 Save Changes</button>' +
                 '<button id="editorResetBtn" class="editor-btn reset-btn">↺ Reset</button>' +
                 '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>' +
@@ -180,6 +211,18 @@ window.PanelEditor = class PanelEditor {
         this.setupEventHandlers();
         this.autoZoomToFit();
         this.positionUIElements();
+        
+        // Initialize compare mode if panelBeforeBase64 exists (for both 'full' and 'twoPointCrop' modes)
+        console.log(\`🔍 Initializing compare mode: panelBeforeBase64=\${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}, mode=\${this.mode}\`);
+        if (this.panelBeforeBase64 && (this.mode === 'full' || this.mode === 'twoPointCrop')) {
+            console.log(\`✅ Initializing compare mode with AUTO for mode \${this.mode}\`);
+            this.updateCompareButton();
+            if (this.compareMode === 'AUTO') {
+                this.startAutoCompare();
+            }
+        } else {
+            console.warn(\`⚠️ Compare mode NOT initialized: panelBeforeBase64=\${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}, mode=\${this.mode}\`);
+        }
     }
     
     autoZoomToFit() {
@@ -638,6 +681,13 @@ window.PanelEditor = class PanelEditor {
         } else if (this.mode === 'twoPointCrop') {
             document.getElementById('editorPrevPageBtn').onclick = () => this.switchPage('prev');
             document.getElementById('editorNextPageBtn').onclick = () => this.switchPage('next');
+            
+            // Add Compare button handler if it exists
+            const compareBtn = document.getElementById('editorCompareBtn');
+            if (compareBtn) {
+                compareBtn.onclick = () => this.toggleCompareMode();
+            }
+            
             document.getElementById('editorDontCropBtn').onclick = async () => await this.dontCropFullPage();
             document.getElementById('editorSaveCropBtn').onclick = async () => await this.saveTwoPointCrop();
             document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
@@ -650,6 +700,12 @@ window.PanelEditor = class PanelEditor {
             document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
             document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
             document.getElementById('editorRenameByAIBtn').onclick = async () => await this.renameSelectedActionByAI();
+            
+            // Add Compare button handler if it exists
+            const compareBtn = document.getElementById('editorCompareBtn');
+            if (compareBtn) {
+                compareBtn.onclick = () => this.toggleCompareMode();
+            }
             
             document.getElementById('editorSaveBtn').onclick = async () => {
                 if (this.isProcessing) {
@@ -913,12 +969,206 @@ window.PanelEditor = class PanelEditor {
     }
 
     async cancel() {
+        // Stop auto compare interval if running
+        if (this.overlayAutoInterval) {
+            clearInterval(this.overlayAutoInterval);
+            this.overlayAutoInterval = null;
+        }
+        
         if (this.mode === 'twoPointCrop' || this.mode === 'confirmOnly' || this.mode === 'cropOnly') {
             await this.destroy();
         } else {
             if (confirm('Discard all changes?')) {
                 await this.destroy();
             }
+        }
+    }
+    
+    toggleCompareMode() {
+        if (!this.panelBeforeBase64) return;
+        
+        // Cycle through modes: AUTO -> ON -> OFF -> AUTO
+        if (this.compareMode === 'AUTO') {
+            this.compareMode = 'ON';
+            this.stopAutoCompare();
+            this.showOverlay();
+        } else if (this.compareMode === 'ON') {
+            this.compareMode = 'OFF';
+            this.stopAutoCompare();
+            this.hideOverlay();
+        } else {
+            this.compareMode = 'AUTO';
+            this.startAutoCompare();
+        }
+        
+        this.updateCompareButton();
+    }
+    
+    updateCompareButton() {
+        const btn = document.getElementById('editorCompareBtn');
+        if (!btn) return;
+        
+        const labels = {
+            'ON': '🔄 Compare (ON)',
+            'OFF': '🔄 Compare (OFF)',
+            'AUTO': '🔄 Compare (AUTO)'
+        };
+        btn.textContent = labels[this.compareMode] || '🔄 Compare';
+    }
+    
+    async startAutoCompare() {
+        this.stopAutoCompare();
+        this.overlayVisible = true;
+        await this.showOverlay();
+        
+        this.overlayAutoInterval = setInterval(async () => {
+            this.overlayVisible = !this.overlayVisible;
+            if (this.overlayVisible) {
+                await this.showOverlay();
+            } else {
+                this.hideOverlay();
+            }
+        }, this.overlayAutoIntervalMs);
+    }
+    
+    stopAutoCompare() {
+        if (this.overlayAutoInterval) {
+            clearInterval(this.overlayAutoInterval);
+            this.overlayAutoInterval = null;
+        }
+    }
+    
+    async cropPanelBeforeToCurrentPage() {
+        if (!this.panelBeforeBase64) return null;
+        
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                
+                let yStart, pageHeight;
+                
+                if (this.mode === 'twoPointCrop' && this.pagesData && this.pagesData[this.currentPageIndex]) {
+                    // Use pagesData for twoPointCrop mode
+                    const page = this.pagesData[this.currentPageIndex];
+                    yStart = page.y_start;
+                    pageHeight = page.height;
+                } else {
+                    // Use default page height for full mode
+                    pageHeight = 1080;
+                    yStart = this.currentPageIndex * pageHeight;
+                }
+                
+                canvas.width = img.width;
+                canvas.height = Math.min(pageHeight, img.height - yStart);
+                const ctx = canvas.getContext('2d');
+                
+                ctx.drawImage(
+                    img,
+                    0, yStart,
+                    img.width, canvas.height,
+                    0, 0,
+                    img.width, canvas.height
+                );
+                
+                const croppedBase64 = canvas.toDataURL('image/png').split(',')[1];
+                resolve(croppedBase64);
+            };
+            img.onerror = reject;
+            img.src = 'data:image/png;base64,' + this.panelBeforeBase64;
+        });
+    }
+    
+    async showOverlay() {
+        if (!this.panelBeforeBase64) return;
+        
+        // Remove existing overlay
+        if (this.overlayImage) {
+            this.canvas.remove(this.overlayImage);
+            this.overlayImage = null;
+        }
+        
+        // Crop panelBefore to current page
+        const panelBeforePageBase64 = await this.cropPanelBeforeToCurrentPage();
+        if (!panelBeforePageBase64) return;
+        
+        // Create overlay image
+        const img = new Image();
+        img.src = 'data:image/png;base64,' + panelBeforePageBase64;
+        
+        await new Promise((resolve, reject) => {
+            img.onload = () => {
+                fabric.Image.fromURL(img.src, (fabricImg) => {
+                    // Set overlay properties
+                    fabricImg.set({
+                        left: 0,
+                        top: 0,
+                        selectable: false,
+                        evented: false,
+                        excludeFromExport: true,
+                        opacity: 0.5,
+                        originX: 'left',
+                        originY: 'top'
+                    });
+                    
+                    // Scale to match canvas size
+                    const canvasWidth = this.canvas.width;
+                    const canvasHeight = this.canvas.height;
+                    const scaleX = canvasWidth / fabricImg.width;
+                    const scaleY = canvasHeight / fabricImg.height;
+                    fabricImg.scaleX = scaleX;
+                    fabricImg.scaleY = scaleY;
+                    
+                    this.overlayImage = fabricImg;
+                    
+                    // Add overlay, but make sure it's above background but below cropRectangle and markers
+                    this.canvas.add(fabricImg);
+                    
+                    // Send overlay to back, but bring cropRectangle and markers to front if they exist
+                    this.canvas.sendToBack(fabricImg);
+                    
+                    // If cropRectangle exists, bring it to front
+                    if (this.cropRectangle) {
+                        this.canvas.bringToFront(this.cropRectangle);
+                    }
+                    
+                    // If cropMarkers exist (twoPointCrop mode), bring them to front
+                    if (this.cropMarkers && this.cropMarkers.length > 0) {
+                        this.cropMarkers.forEach(marker => {
+                            this.canvas.bringToFront(marker);
+                        });
+                    }
+                    
+                    // Bring all other objects (boxes, labels) to front
+                    this.fabricObjects.forEach((boxData) => {
+                        if (boxData.rect) {
+                            this.canvas.bringToFront(boxData.rect);
+                        }
+                        if (boxData.label) {
+                            this.canvas.bringToFront(boxData.label);
+                        }
+                    });
+                    
+                    // Bring default panel border to front
+                    if (this.defaultPanelBorderLines) {
+                        this.defaultPanelBorderLines.forEach(line => {
+                            this.canvas.bringToFront(line);
+                        });
+                    }
+                    
+                    this.canvas.renderAll();
+                    resolve();
+                });
+            };
+            img.onerror = reject;
+        });
+    }
+    
+    hideOverlay() {
+        if (this.overlayImage) {
+            this.canvas.remove(this.overlayImage);
+            this.overlayImage = null;
+            this.canvas.renderAll();
         }
     }
 
@@ -1621,7 +1871,26 @@ window.PanelEditor = class PanelEditor {
         });
         
         this.canvas.add(this.cropRectangle);
-        this.canvas.sendToBack(this.cropRectangle);
+        // Bring cropRectangle to front (above overlay but below other objects)
+        this.canvas.bringToFront(this.cropRectangle);
+        
+        // Bring all other objects (boxes, labels) to front
+        this.fabricObjects.forEach((boxData) => {
+            if (boxData.rect) {
+                this.canvas.bringToFront(boxData.rect);
+            }
+            if (boxData.label) {
+                this.canvas.bringToFront(boxData.label);
+            }
+        });
+        
+        // Bring default panel border to front
+        if (this.defaultPanelBorderLines) {
+            this.defaultPanelBorderLines.forEach(line => {
+                this.canvas.bringToFront(line);
+            });
+        }
+        
         this.canvas.renderAll();
     }
     
@@ -2095,6 +2364,14 @@ window.PanelEditor = class PanelEditor {
         this.drawDefaultPanelBorder();
         this.drawAllBoxes();
         this.canvas.selection = true;
+        
+        // Refresh overlay if visible
+        if (this.overlayVisible && this.panelBeforeBase64) {
+            await this.showOverlay();
+        } else {
+            this.hideOverlay();
+        }
+        
         this.canvas.renderAll();
         
         this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.numPages}\`, 'success');
@@ -2154,6 +2431,13 @@ window.PanelEditor = class PanelEditor {
             saveBtn.style.display = 'inline-block';
         }
         
+        // Refresh overlay if visible
+        if (this.overlayVisible && this.panelBeforeBase64) {
+            await this.showOverlay();
+        } else {
+            this.hideOverlay();
+        }
+        
         console.log('Before enableTwoPointCropMode - cropPoints:', this.cropPoints);
         this.enableTwoPointCropMode();
         console.log('After enableTwoPointCropMode - cropPoints:', this.cropPoints);
@@ -2168,6 +2452,10 @@ window.PanelEditor = class PanelEditor {
     }
     
     async destroy() {
+        // Stop auto compare interval if running
+        this.stopAutoCompare();
+        this.hideOverlay();
+        
         if (this._keydownHandler) {
             document.removeEventListener('keydown', this._keydownHandler);
             this._keydownHandler = null;
@@ -2208,6 +2496,10 @@ window.PanelEditor = class PanelEditor {
     }
 
     async destroy() {
+        // Stop auto compare interval if running
+        this.stopAutoCompare();
+        this.hideOverlay();
+        
         if (this._keydownHandler) {
             document.removeEventListener('keydown', this._keydownHandler);
             this._keydownHandler = null;
