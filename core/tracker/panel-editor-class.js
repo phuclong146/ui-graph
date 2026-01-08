@@ -1632,6 +1632,72 @@ window.PanelEditor = class PanelEditor {
             this.canvas.renderAll();
         }
     }
+    
+    setupMarkerDragHandlers() {
+        // Remove existing handlers first
+        if (this._markerMoveHandler) {
+            this.canvas.off('object:moving', this._markerMoveHandler);
+        }
+        if (this._markerModifiedHandler) {
+            this.canvas.off('object:modified', this._markerModifiedHandler);
+        }
+        
+        // Only setup handlers if we have 2 points
+        if (this.cropPoints.length !== 2) {
+            return;
+        }
+        
+        this._markerMoveHandler = (e) => {
+            const obj = e.target;
+            if (obj.cropMarkerIndex !== undefined && obj.cropMarkerIndex !== null) {
+                const canvasWidth = this.canvas.width;
+                const canvasHeight = this.canvas.height;
+                
+                // Keep marker within canvas bounds
+                obj.setCoords();
+                const bound = obj.getBoundingRect();
+                
+                if (bound.left < 0) {
+                    obj.left += Math.abs(bound.left);
+                }
+                if (bound.top < 0) {
+                    obj.top += Math.abs(bound.top);
+                }
+                if (bound.left + bound.width > canvasWidth) {
+                    obj.left -= (bound.left + bound.width - canvasWidth);
+                }
+                if (bound.top + bound.height > canvasHeight) {
+                    obj.top -= (bound.top + bound.height - canvasHeight);
+                }
+                
+                obj.setCoords();
+                this.canvas.renderAll();
+            }
+        };
+        
+        this._markerModifiedHandler = (e) => {
+            const obj = e.target;
+            if (obj.cropMarkerIndex !== undefined && obj.cropMarkerIndex !== null) {
+                const markerIndex = obj.cropMarkerIndex;
+                const newX = Math.round(obj.left + 8); // center of marker
+                const newY = Math.round(obj.top + 8);
+                
+                // Update the crop point
+                if (this.cropPoints[markerIndex]) {
+                    this.cropPoints[markerIndex].x = newX;
+                    this.cropPoints[markerIndex].y = newY;
+                    
+                    // Recalculate crop area and redraw rectangle
+                    if (this.cropPoints.length === 2) {
+                        this.confirmTwoPointCrop();
+                    }
+                }
+            }
+        };
+        
+        this.canvas.on('object:moving', this._markerMoveHandler);
+        this.canvas.on('object:modified', this._markerModifiedHandler);
+    }
 
     enableTwoPointCropMode() {
         console.log('✅ Two-Point Crop Mode enabled, cropPoints:', this.cropPoints);
@@ -1645,7 +1711,18 @@ window.PanelEditor = class PanelEditor {
         }
         this.cropMarkers = [];
         
+        // Remove existing marker handlers
+        if (this._markerMoveHandler) {
+            this.canvas.off('object:moving', this._markerMoveHandler);
+        }
+        if (this._markerModifiedHandler) {
+            this.canvas.off('object:modified', this._markerModifiedHandler);
+        }
+        
         this.removeCropRectangle();
+        
+        // Create markers - allow dragging if we have 2 points
+        const canDrag = this.cropPoints.length === 2;
         
         this.cropPoints.forEach((point, index) => {
             if (point.pageIndex === this.currentPageIndex) {
@@ -1656,13 +1733,24 @@ window.PanelEditor = class PanelEditor {
                     fill: index === 0 ? 'lime' : 'red',
                     stroke: '#000',
                     strokeWidth: 2,
-                    selectable: false,
-                    evented: false
+                    selectable: canDrag,
+                    evented: canDrag,
+                    hasControls: false,
+                    hasBorders: false,
+                    lockRotation: true,
+                    lockScalingX: true,
+                    lockScalingY: true,
+                    cropMarkerIndex: index
                 });
                 this.canvas.add(marker);
                 this.cropMarkers.push(marker);
             }
         });
+        
+        // Add drag handlers for markers when we have 2 points
+        if (canDrag) {
+            this.setupMarkerDragHandlers();
+        }
         
         if (this.calculatedCropArea && this.cropPoints.length === 2) {
             this.drawCropRectangle();
@@ -1674,6 +1762,8 @@ window.PanelEditor = class PanelEditor {
         
         const statusMsg = this.cropPoints.length === 1 
             ? \`📍 Point 1 set on Page \${this.cropPoints[0].pageIndex + 1}. Click BottomRight corner.\`
+            : this.cropPoints.length === 2
+            ? '📍 Drag points to adjust crop area'
             : '📍 Click TopLeft corner (or switch page first)';
         this.showStatus(statusMsg, 'info');
         
@@ -1712,6 +1802,11 @@ window.PanelEditor = class PanelEditor {
         document.addEventListener('keydown', this._twoPointUndoHandler);
         
         const clickHandler = (e) => {
+            // Don't handle clicks if clicking on a marker (let marker drag handle it)
+            if (e.target && e.target.cropMarkerIndex !== undefined) {
+                return;
+            }
+            
             const pointer = this.canvas.getPointer(e.e);
             const x = Math.round(pointer.x);
             const y = Math.round(pointer.y);
@@ -1730,7 +1825,13 @@ window.PanelEditor = class PanelEditor {
                     stroke: '#000',
                     strokeWidth: 2,
                     selectable: false,
-                    evented: false
+                    evented: false,
+                    hasControls: false,
+                    hasBorders: false,
+                    lockRotation: true,
+                    lockScalingX: true,
+                    lockScalingY: true,
+                    cropMarkerIndex: 0
                 });
                 this.canvas.add(marker);
                 this.cropMarkers.push(marker);
@@ -1749,19 +1850,39 @@ window.PanelEditor = class PanelEditor {
                     fill: 'red',
                     stroke: '#000',
                     strokeWidth: 2,
-                    selectable: false,
-                    evented: false
+                    selectable: true,
+                    evented: true,
+                    hasControls: false,
+                    hasBorders: false,
+                    lockRotation: true,
+                    lockScalingX: true,
+                    lockScalingY: true,
+                    cropMarkerIndex: 1
                 });
                 this.canvas.add(marker);
                 this.cropMarkers.push(marker);
+                
+                // Enable dragging for the first marker as well
+                if (this.cropMarkers[0]) {
+                    this.cropMarkers[0].set({
+                        selectable: true,
+                        evented: true
+                    });
+                }
+                
+                // Setup drag handlers for markers
+                this.setupMarkerDragHandlers();
                 
                 this.canvas.off('mouse:down', clickHandler);
                 this.confirmTwoPointCrop();
             }
         };
         
-        this.canvas.on('mouse:down', clickHandler);
-        this._twoPointHandler = clickHandler;
+        // Only add click handler if we don't have 2 points yet
+        if (this.cropPoints.length < 2) {
+            this.canvas.on('mouse:down', clickHandler);
+            this._twoPointHandler = clickHandler;
+        }
     }
     
     async confirmTwoPointCrop() {
