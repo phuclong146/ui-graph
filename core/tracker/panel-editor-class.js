@@ -14,6 +14,7 @@ window.PanelEditor = class PanelEditor {
                 this.currentPageIndex = 0;
                 this.cropPoints = [];
                 this.cropMarkers = [];
+                this.cropRectangle = null;
                 this.fullScreenshotBase64 = null;
                 this.currentPageBase64 = null;
             }
@@ -1574,6 +1575,64 @@ window.PanelEditor = class PanelEditor {
         });
     }
 
+    drawCropRectangle() {
+        if (!this.calculatedCropArea || !this.pagesData) return;
+        
+        if (this.cropRectangle) {
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
+        }
+        
+        const page = this.pagesData[this.currentPageIndex];
+        if (!page) return;
+        
+        const pageYStart = page.y_start;
+        const pageYEnd = pageYStart + page.height;
+        
+        const cropYStart = this.calculatedCropArea.y;
+        const cropYEnd = cropYStart + this.calculatedCropArea.h;
+        
+        if (cropYEnd < pageYStart || cropYStart > pageYEnd) {
+            return;
+        }
+        
+        const rectYStart = Math.max(0, cropYStart - pageYStart);
+        const rectYEnd = Math.min(page.height, cropYEnd - pageYStart);
+        const rectHeight = rectYEnd - rectYStart;
+        
+        if (rectHeight <= 0) return;
+        
+        const rectX = this.calculatedCropArea.x;
+        const rectWidth = this.calculatedCropArea.w;
+        
+        this.cropRectangle = new fabric.Rect({
+            left: rectX,
+            top: rectYStart,
+            width: rectWidth,
+            height: rectHeight,
+            fill: 'transparent',
+            stroke: '#00ff00',
+            strokeWidth: 3,
+            strokeDashArray: [5, 5],
+            strokeUniform: true,
+            selectable: false,
+            evented: false,
+            excludeFromExport: true
+        });
+        
+        this.canvas.add(this.cropRectangle);
+        this.canvas.sendToBack(this.cropRectangle);
+        this.canvas.renderAll();
+    }
+    
+    removeCropRectangle() {
+        if (this.cropRectangle) {
+            this.canvas.remove(this.cropRectangle);
+            this.cropRectangle = null;
+            this.canvas.renderAll();
+        }
+    }
+
     enableTwoPointCropMode() {
         console.log('✅ Two-Point Crop Mode enabled, cropPoints:', this.cropPoints);
         
@@ -1585,6 +1644,8 @@ window.PanelEditor = class PanelEditor {
             this.cropMarkers.forEach(m => this.canvas.remove(m));
         }
         this.cropMarkers = [];
+        
+        this.removeCropRectangle();
         
         this.cropPoints.forEach((point, index) => {
             if (point.pageIndex === this.currentPageIndex) {
@@ -1602,6 +1663,11 @@ window.PanelEditor = class PanelEditor {
                 this.cropMarkers.push(marker);
             }
         });
+        
+        if (this.calculatedCropArea && this.cropPoints.length === 2) {
+            this.drawCropRectangle();
+        }
+        
         this.canvas.renderAll();
         
         this.canvas.selection = false;
@@ -1631,6 +1697,7 @@ window.PanelEditor = class PanelEditor {
                     saveBtn.style.display = 'none';
                 }
                 this.calculatedCropArea = null;
+                this.removeCropRectangle();
                 
                 if (this.cropPoints.length === 0) {
                     this.showStatus('↶ Undo: Point removed. Click TopLeft corner', 'info');
@@ -1742,6 +1809,8 @@ window.PanelEditor = class PanelEditor {
         if (saveBtn) {
             saveBtn.style.display = 'inline-block';
         }
+        
+        this.drawCropRectangle();
         
         this.showStatus(\`✅ Crop area ready: \${cropArea.w}x\${cropArea.h}px. Click Save to confirm.\`, 'success');
     }
@@ -1928,11 +1997,7 @@ window.PanelEditor = class PanelEditor {
             this.cropMarkers = [];
         }
         
-        const saveBtn = document.getElementById('editorSaveCropBtn');
-        if (saveBtn) {
-            saveBtn.style.display = 'none';
-        }
-        this.calculatedCropArea = null;
+        this.removeCropRectangle();
         
         this.showStatus('⏳ Loading page...', 'info');
         
@@ -1963,14 +2028,61 @@ window.PanelEditor = class PanelEditor {
             indicator.textContent = \`Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`;
         }
         
+        const saveBtn = document.getElementById('editorSaveCropBtn');
+        if (saveBtn && this.calculatedCropArea) {
+            saveBtn.style.display = 'inline-block';
+        }
+        
         console.log('Before enableTwoPointCropMode - cropPoints:', this.cropPoints);
         this.enableTwoPointCropMode();
         console.log('After enableTwoPointCropMode - cropPoints:', this.cropPoints);
         
         if (this.cropPoints.length === 1) {
             this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length} | 📍 Point 1 set on Page \${this.cropPoints[0].pageIndex + 1}. Click BottomRight corner.\`, 'success');
+        } else if (this.cropPoints.length === 2 && this.calculatedCropArea) {
+            this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length} | ✅ Crop area ready\`, 'success');
         } else {
             this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.pagesData.length}\`, 'success');
+        }
+    }
+    
+    async destroy() {
+        if (this._keydownHandler) {
+            document.removeEventListener('keydown', this._keydownHandler);
+            this._keydownHandler = null;
+        }
+        
+        if (this._twoPointHandler) {
+            this.canvas.off('mouse:down', this._twoPointHandler);
+            this._twoPointHandler = null;
+        }
+        
+        if (this._twoPointUndoHandler) {
+            document.removeEventListener('keydown', this._twoPointUndoHandler);
+            this._twoPointUndoHandler = null;
+        }
+        
+        this.removeCropRectangle();
+        
+        if (this.canvas) {
+            this.canvas.dispose();
+        }
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
+        
+        document.body.style.zoom = '100%';
+        
+        if (window.resizeQueueBrowser) {
+            await window.resizeQueueBrowser(false);
+        }
+        
+        if (window.showTrackingBrowser) {
+            await window.showTrackingBrowser();
+        }
+        
+        if (window.resetDrawingFlag) {
+            await window.resetDrawingFlag();
         }
     }
 
