@@ -1445,6 +1445,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
                 image_base64: croppedBase64,
+                // Luu anh fullscreen goc (khong crop) rieng
+                fullscreen_base64: screenshot,
                 type: detectedPanelType,
                 metadata: {
                     global_pos: {

@@ -22,10 +22,10 @@ export class DataItemManager {
         }
     }
     
-    async saveBase64ToFile(itemId, base64Data) {
+    async saveBase64ToFile(itemId, base64Data, suffix = '') {
         if (!base64Data) return null;
         
-        const fileName = `${itemId}.txt`;
+        const fileName = `${itemId}${suffix}.txt`;
         const filePath = path.join(this.imagesFolder, fileName);
         await fsp.writeFile(filePath, base64Data, 'utf8');
         
@@ -211,6 +211,16 @@ export class DataItemManager {
                 }
             }
 
+            // Handle fullscreen_base64 (luu anh full, khong crop)
+            if ('fullscreen_base64' in updates) {
+                if (updates.fullscreen_base64 === null && oldItem.fullscreen_base64) {
+                    await this.deleteImageFile(oldItem.fullscreen_base64);
+                } else if (updates.fullscreen_base64 && !updates.fullscreen_base64.startsWith('images/')) {
+                    // Luu file rieng cho fullscreen de tranh trung voi image_base64 crop
+                    updates.fullscreen_base64 = await this.saveBase64ToFile(itemId, updates.fullscreen_base64, '_full');
+                }
+            }
+
             // Merge metadata để giữ lại global_pos và các metadata khác
             if ('metadata' in updates && updates.metadata !== null && typeof updates.metadata === 'object') {
                 const oldMetadata = oldItem.metadata || {};
@@ -244,6 +254,9 @@ export class DataItemManager {
             if (itemToDelete && itemToDelete.image_base64) {
                 await this.deleteImageFile(itemToDelete.image_base64);
             }
+            if (itemToDelete && itemToDelete.fullscreen_base64) {
+                await this.deleteImageFile(itemToDelete.fullscreen_base64);
+            }
 
             const remaining = entries.filter(entry => entry.item_id !== itemId);
             
@@ -267,6 +280,9 @@ export class DataItemManager {
             for (const item of itemsToDelete) {
                 if (item.image_base64) {
                     await this.deleteImageFile(item.image_base64);
+                }
+                if (item.fullscreen_base64) {
+                    await this.deleteImageFile(item.fullscreen_base64);
                 }
             }
 

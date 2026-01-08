@@ -263,6 +263,8 @@ export class MySQLExporter {
                 const pageIndex = localPos?.p || null;
                 
                 let imageUrl = item.image_url;
+                let fullscreenUrl = item.fullscreen_url || null;
+
                 if (!imageUrl && item.image_base64) {
                     try {
                         const base64Content = await this.loadBase64FromFile(item.image_base64);
@@ -286,6 +288,33 @@ export class MySQLExporter {
                         }
                     } catch (uploadErr) {
                         console.error(`❌ Failed to upload image for ${item.name}:`, uploadErr);
+                    }
+                }
+
+                // Upload fullscreen_base64 -> fullscreen_url (chi luu link tren DB)
+                if (!fullscreenUrl && item.fullscreen_base64) {
+                    try {
+                        const fullscreenBase64 = await this.loadBase64FromFile(item.fullscreen_base64);
+                        if (fullscreenBase64) {
+                            const picCode = `${item.item_id}_full_${Date.now()}`;
+                            const fname = `${picCode}.jpg`;
+                            const tempFilePath = saveBase64AsFile(fullscreenBase64, "./screenshots", fname);
+
+                            if (tempFilePath) {
+                                const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                                const jsonData = JSON.parse(resp);
+
+                                if (jsonData?.status === 200) {
+                                    fullscreenUrl = jsonData.message;
+                                    console.log(`✅ Uploaded fullscreen image for ${item.item_category} "${item.name}"`);
+
+                                    item.fullscreen_url = fullscreenUrl;
+                                    await this.updateItemInJsonl(item.item_id, { fullscreen_url: fullscreenUrl });
+                                }
+                            }
+                        }
+                    } catch (uploadErr) {
+                        console.error(`❌ Failed to upload fullscreen image for ${item.name}:`, uploadErr);
                     }
                 }
                 
@@ -314,13 +343,14 @@ export class MySQLExporter {
                 
                 await this.connection.execute(
                     `INSERT INTO doing_item 
-                     (code, my_ai_tool, my_item, type, name, image_url, 
+                     (code, my_ai_tool, my_item, type, name, image_url, fullscreen_url,
                       item_category, verb, content, published, session_id, coordinate, metadata, record_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         type = VALUES(type),                     
                         name = VALUES(name),
                         image_url = VALUES(image_url),
+                        fullscreen_url = VALUES(fullscreen_url),
                         verb = VALUES(verb),
                         content = VALUES(content),
                         session_id = VALUES(session_id),
@@ -336,6 +366,7 @@ export class MySQLExporter {
                         item.type ?? null,
                         item.name ?? null,
                         imageUrl,
+                        fullscreenUrl,
                         item.item_category ?? null,
                         item.verb ?? null,
                         item.content ?? null,
