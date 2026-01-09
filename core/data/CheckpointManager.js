@@ -314,6 +314,7 @@ export class CheckpointManager {
             'myparent_panel.jsonl',
             'doing_step.jsonl',
             'click.jsonl',
+            'page.jsonl',
             'info.json'
         ];
 
@@ -450,6 +451,7 @@ export class CheckpointManager {
             'myparent_panel.jsonl',
             'doing_step.jsonl',
             'click.jsonl',
+            'page.jsonl',
             'info.json'
         ];
 
@@ -683,6 +685,7 @@ export class CheckpointManager {
             'myparent_panel.jsonl',
             'doing_step.jsonl',
             'click.jsonl',
+            'page.jsonl',
             'info.json'
         ];
 
@@ -722,6 +725,7 @@ export class CheckpointManager {
             'myparent_panel.jsonl',
             'doing_step.jsonl',
             'click.jsonl',
+            'page.jsonl',
             'info.json'
         ];
 
