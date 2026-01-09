@@ -1,6 +1,7 @@
 import { getPanelEditorClassCode } from './panel-editor-class.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
+import { CheckpointManager } from '../data/CheckpointManager.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -243,11 +244,43 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         try {
             await tracker.saveResults();
-            await tracker._broadcast({
-                type: 'show_toast',
-                message: '✅ Save completed successfully! Bạn có thể tiếp tục làm việc.'
-            });
-            console.log('✅ Save completed successfully');
+            
+            // Create checkpoint after successful save
+            try {
+                if (!tracker.checkpointManager) {
+                    tracker.checkpointManager = new CheckpointManager(tracker.sessionFolder, tracker.myAiToolCode);
+                    await tracker.checkpointManager.init();
+                }
+
+                // Get record_id from info.json
+                let recordId = null;
+                try {
+                    const infoPath = path.join(tracker.sessionFolder, 'info.json');
+                    const infoContent = await fsp.readFile(infoPath, 'utf8');
+                    const info = JSON.parse(infoContent);
+                    if (info.timestamps && info.timestamps.length > 0) {
+                        recordId = info.timestamps[0];
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Could not read record_id from info.json');
+                }
+
+                const checkpoint = await tracker.checkpointManager.createCheckpoint(null, null, recordId);
+                
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: `✅ Save completed successfully! Checkpoint created: ${checkpoint.checkpointId.substring(0, 8)}...`
+                });
+                console.log('✅ Save completed successfully with checkpoint:', checkpoint.checkpointId);
+            } catch (checkpointErr) {
+                console.error('⚠️ Failed to create checkpoint:', checkpointErr);
+                // Don't fail the save if checkpoint creation fails
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '✅ Save completed successfully! (Checkpoint creation failed)'
+                });
+            }
+            
             isSaving = false; // Reset flag để có thể save lại
         } catch (err) {
             console.error('❌ Failed to save results:', err);
@@ -3420,6 +3453,72 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const getCheckpointsHandler = async () => {
+        try {
+            if (!tracker.checkpointManager) {
+                tracker.checkpointManager = new CheckpointManager(tracker.sessionFolder, tracker.myAiToolCode);
+                await tracker.checkpointManager.init();
+            }
+
+            const checkpoints = await tracker.checkpointManager.listCheckpoints();
+            return checkpoints;
+        } catch (err) {
+            console.error('Failed to get checkpoints:', err);
+            return [];
+        }
+    };
+
+    const rollbackCheckpointHandler = async (checkpointId, recordId = null) => {
+        try {
+            if (!tracker.checkpointManager) {
+                tracker.checkpointManager = new CheckpointManager(tracker.sessionFolder, tracker.myAiToolCode);
+                await tracker.checkpointManager.init();
+            }
+
+            // Get record_id if not provided
+            let actualRecordId = recordId;
+            if (!actualRecordId) {
+                try {
+                    const infoPath = path.join(tracker.sessionFolder, 'info.json');
+                    const infoContent = await fsp.readFile(infoPath, 'utf8');
+                    const info = JSON.parse(infoContent);
+                    if (info.timestamps && info.timestamps.length > 0) {
+                        actualRecordId = info.timestamps[0];
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Could not read record_id from info.json');
+                }
+            }
+
+            const result = await tracker.checkpointManager.rollbackToCheckpoint(checkpointId, actualRecordId);
+
+            // Reload session after rollback
+            if (tracker.reloadSessionAfterRollback) {
+                await tracker.reloadSessionAfterRollback();
+            }
+
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `✅ Rollback completed successfully! Checkpoint: ${checkpointId.substring(0, 8)}...`
+            });
+
+            // Refresh panel tree
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+
+            return result;
+        } catch (err) {
+            console.error('Failed to rollback checkpoint:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `❌ Rollback failed: ${err.message || 'Unknown error'}`
+            });
+            throw err;
+        }
+    };
+
     return {
         quitApp: quitAppHandler,
         saveEvents: saveEventsHandler,
@@ -3460,6 +3559,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         importCookiesFromJson: importCookiesFromJsonHandler,
         updatePanelImageAndCoordinates: updatePanelImageAndCoordinatesHandler,
         createManualPage: createManualPageHandler,
-        updateItemDetails: updateItemDetailsHandler
+        updateItemDetails: updateItemDetailsHandler,
+        getCheckpoints: getCheckpointsHandler,
+        rollbackCheckpoint: rollbackCheckpointHandler
     };
 }

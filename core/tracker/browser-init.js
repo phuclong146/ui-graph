@@ -250,6 +250,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("updatePanelImageAndCoordinates", handlers.updatePanelImageAndCoordinates);
     await tracker.queuePage.exposeFunction("createManualPage", handlers.createManualPage);
     await tracker.queuePage.exposeFunction("updateItemDetails", handlers.updateItemDetails);
+    await tracker.queuePage.exposeFunction("getCheckpoints", handlers.getCheckpoints);
+    await tracker.queuePage.exposeFunction("rollbackCheckpoint", handlers.rollbackCheckpoint);
 
     await tracker.page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     const websites = await fetchWebsiteList();

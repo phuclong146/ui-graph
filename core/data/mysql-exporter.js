@@ -65,6 +65,32 @@ export class MySQLExporter {
         return match ? match[1] : null;
     }
 
+    /**
+     * Get record_id from info.json (first timestamp in timestamps array)
+     * @param {string} sessionFolder - Optional session folder path. If not provided, uses this.sessionFolder
+     * @returns {Promise<number|null>} - Record ID (initial timestamp) or null if not found
+     */
+    async getRecordId(sessionFolder = null) {
+        const folder = sessionFolder || this.sessionFolder;
+        if (!folder) {
+            console.warn('⚠️ No session folder provided for getRecordId');
+            return null;
+        }
+
+        try {
+            const infoPath = path.join(folder, 'info.json');
+            const infoContent = await fsp.readFile(infoPath, 'utf8');
+            const info = JSON.parse(infoContent);
+            if (info.timestamps && info.timestamps.length > 0) {
+                return info.timestamps[0]; // First timestamp is the initialization timestamp
+            }
+        } catch (err) {
+            console.warn('⚠️ Could not read info.json for record_id:', err.message);
+        }
+
+        return null;
+    }
+
     async loadBase64FromFile(imagePath) {
         if (!imagePath || !imagePath.startsWith('images/')) {
             return null;
@@ -181,21 +207,8 @@ export class MySQLExporter {
 
     async exportToMySQL() {
         try {
-            // Load initial timestamp from info.json (timestamp when session tracking was initialized)
-            let initialTimestamp = null;
-            try {
-                const infoPath = path.join(this.sessionFolder, 'info.json');
-                const infoContent = await fsp.readFile(infoPath, 'utf8');
-                const info = JSON.parse(infoContent);
-                if (info.timestamps && info.timestamps.length > 0) {
-                    initialTimestamp = info.timestamps[0]; // First timestamp is the initialization timestamp
-                }
-            } catch (err) {
-                console.warn('⚠️ Could not read info.json, falling back to sessionId for record_id');
-            }
-
-            // Use initial timestamp as record_id for all tables
-            const recordId = initialTimestamp || null;
+            // Get record_id from info.json
+            const recordId = await this.getRecordId();
 
             // Mark all existing records for this ai_tool as published=false before saving new ones
             try {

@@ -174,6 +174,73 @@ export class PanelScreenTracker {
         }
     }
 
+    async reloadSessionAfterRollback() {
+        try {
+            if (!this.sessionFolder) {
+                console.warn('⚠️ No session folder to reload');
+                return;
+            }
+
+            console.log(`Reloading session after rollback from: ${this.sessionFolder}`);
+
+            // Reinitialize all managers with current session folder
+            const { PanelLogManager } = await import('../data/PanelLogManager.js');
+            const { ClickManager } = await import('../data/ClickManager.js');
+            const { DataItemManager } = await import('../data/DataItemManager.js');
+            const { ParentPanelManager } = await import('../data/ParentPanelManager.js');
+            const { StepManager } = await import('../data/StepManager.js');
+
+            this.panelLogManager = new PanelLogManager(this.sessionFolder);
+            
+            this.clickManager = new ClickManager(this.sessionFolder);
+            await this.clickManager.init();
+            
+            this.dataItemManager = new DataItemManager(this.sessionFolder);
+            await this.dataItemManager.init();
+            
+            this.parentPanelManager = new ParentPanelManager(this.sessionFolder);
+            await this.parentPanelManager.init();
+            
+            this.stepManager = new StepManager(this.sessionFolder);
+            await this.stepManager.init();
+            await this.stepManager.cleanupInvalidSteps();
+
+            // Reset checkpoint manager to reload from new data
+            if (this.checkpointManager) {
+                await this.checkpointManager.close();
+                this.checkpointManager = null;
+            }
+
+            // Reload selected panel
+            const items = await this.dataItemManager.getAllItems();
+            const panels = items.filter(item => item.item_category === 'PANEL');
+            
+            if (panels.length > 0) {
+                const rootPanel = panels[0];
+                this.selectedPanelId = rootPanel.item_id;
+            }
+
+            // Broadcast tree update
+            await this._broadcast({ 
+                type: 'tree_update', 
+                data: await this.panelLogManager.buildTreeStructure() 
+            });
+
+            // Broadcast panel selected to refresh UI
+            if (this.selectedPanelId) {
+                await this._broadcast({
+                    type: 'panel_selected',
+                    panel_id: this.selectedPanelId
+                });
+            }
+
+            console.log('✅ Session reloaded after rollback');
+        } catch (error) {
+            console.error('Reload session after rollback error:', error);
+            throw error;
+        }
+    }
+
     async startTracking(url, toolCode) {
         try {
             console.log(`Starting tracking on: ${url}`);

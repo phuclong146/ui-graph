@@ -461,6 +461,99 @@ export const QUEUE_BROWSER_HTML = `
         box-shadow: 0 0 30px rgba(0,0,0,0.7);
         border-radius: 2px;
       }
+
+      .checkpoint-item {
+        background: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 12px;
+        transition: all 0.2s ease;
+      }
+
+      .checkpoint-item:hover {
+        background: #f0f0f0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      }
+
+      .checkpoint-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+
+      .checkpoint-item-title {
+        font-weight: 600;
+        font-size: 16px;
+        color: #333;
+        margin-bottom: 4px;
+      }
+
+      .checkpoint-item-time {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 4px;
+      }
+
+      .checkpoint-item-description {
+        font-size: 13px;
+        color: #555;
+        margin-bottom: 8px;
+        font-style: italic;
+      }
+
+      .checkpoint-item-meta {
+        font-size: 11px;
+        color: #999;
+        margin-bottom: 10px;
+      }
+
+      .checkpoint-item-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .checkpoint-rollback-btn {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .checkpoint-rollback-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+      }
+
+      .checkpoint-status {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 8px;
+      }
+
+      .checkpoint-status.local {
+        background: #28a745;
+        color: white;
+      }
+
+      .checkpoint-status.db {
+        background: #007bff;
+        color: white;
+      }
+
+      .checkpoint-status.rolledback {
+        background: #6c757d;
+        color: white;
+      }
       
     </style>
   </head>
@@ -480,6 +573,7 @@ export const QUEUE_BROWSER_HTML = `
       <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
       <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
       <button id="saveBtn" style="background:#007bff;">💾 Save</button>
+      <button id="checkpointBtn" style="background:#28a745;">📋 Rollback</button>
       <button id="quitBtn" style="background:#007bff;">🚪 Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -498,6 +592,18 @@ export const QUEUE_BROWSER_HTML = `
     <div id="imageModal">
       <span class="close">&times;</span>
       <img id="modalImage" src="" alt="Full size screenshot">
+    </div>
+
+    <div id="checkpointModal" style="display:none; position:fixed; z-index:20000; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:20px; max-width:800px; max-height:80vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e0e0e0; padding-bottom:10px;">
+          <h3 style="margin:0; font-size:20px; color:#333;">📋 Rollback</h3>
+          <button id="closeCheckpointModal" style="background:none; border:none; font-size:28px; cursor:pointer; color:#666; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
+        </div>
+        <div id="checkpointList" style="min-height:200px;">
+          <div style="text-align:center; padding:40px; color:#999;">Loading checkpoints...</div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -1101,7 +1207,138 @@ export const QUEUE_BROWSER_HTML = `
         }
       });
 
+      const checkpointBtn = document.getElementById("checkpointBtn");
+      const checkpointModal = document.getElementById("checkpointModal");
+      const closeCheckpointModal = document.getElementById("closeCheckpointModal");
+      const checkpointList = document.getElementById("checkpointList");
+
+      const openCheckpointModal = async () => {
+        checkpointModal.style.display = 'flex';
+        await loadCheckpoints();
+      };
+
+      const closeCheckpointModalFn = () => {
+        checkpointModal.style.display = 'none';
+      };
+
+      const loadCheckpoints = async () => {
+        checkpointList.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">Loading checkpoints...</div>';
+        
+        try {
+          if (window.getCheckpoints) {
+            const checkpoints = await window.getCheckpoints();
+            renderCheckpoints(checkpoints);
+          } else {
+            checkpointList.innerHTML = '<div style="text-align:center; padding:40px; color:#ff4444;">Checkpoint function not available</div>';
+          }
+        } catch (err) {
+          console.error('Failed to load checkpoints:', err);
+          checkpointList.innerHTML = '<div style="text-align:center; padding:40px; color:#ff4444;">Failed to load checkpoints: ' + err.message + '</div>';
+        }
+      };
+
+      const renderCheckpoints = (checkpoints) => {
+        if (!checkpoints || checkpoints.length === 0) {
+          checkpointList.innerHTML = '<div style="text-align:center; padding:40px; color:#999;">No checkpoints found</div>';
+          return;
+        }
+
+        checkpointList.innerHTML = '';
+
+        checkpoints.forEach(checkpoint => {
+          const itemDiv = document.createElement('div');
+          itemDiv.className = 'checkpoint-item';
+
+          const timestamp = checkpoint.timestamp ? new Date(checkpoint.timestamp).toLocaleString('vi-VN') : 'Unknown time';
+          const name = checkpoint.name || 'Unnamed checkpoint';
+          const description = checkpoint.description || '';
+          const recordId = checkpoint.recordId || 'N/A';
+          const rolledbackBy = checkpoint.rolledbackBy;
+
+          let statusHtml = '';
+          if (checkpoint.localSuccess) {
+            statusHtml += '<span class="checkpoint-status local">Local</span>';
+          }
+          if (checkpoint.dbSuccess) {
+            statusHtml += '<span class="checkpoint-status db">DB</span>';
+          }
+          if (rolledbackBy) {
+            statusHtml += '<span class="checkpoint-status rolledback">Rolledback</span>';
+          }
+
+          itemDiv.innerHTML = \`
+            <div class="checkpoint-item-header">
+              <div style="flex:1;">
+                <div class="checkpoint-item-title">\${name}\${statusHtml}</div>
+                <div class="checkpoint-item-time">\${timestamp}</div>
+                \${description ? '<div class="checkpoint-item-description">' + description + '</div>' : ''}
+                <div class="checkpoint-item-meta">Record ID: \${recordId}</div>
+              </div>
+            </div>
+            <div class="checkpoint-item-actions">
+              <button class="checkpoint-rollback-btn" data-checkpoint-id="\${checkpoint.checkpointId}">
+                🔄 Rollback
+              </button>
+            </div>
+          \`;
+
+          const rollbackBtn = itemDiv.querySelector('.checkpoint-rollback-btn');
+          rollbackBtn.addEventListener('click', async () => {
+            await handleRollbackClick(checkpoint.checkpointId, name);
+          });
+
+          checkpointList.appendChild(itemDiv);
+        });
+      };
+
+      const handleRollbackClick = async (checkpointId, checkpointName) => {
+        const warningMsg = \`⚠️ CẢNH BÁO: Rollback sẽ thay thế toàn bộ dữ liệu hiện tại bằng dữ liệu từ checkpoint này.
+
+Checkpoint: \${checkpointName}
+
+Dữ liệu hiện tại sẽ bị mất và không thể khôi phục (trừ khi có checkpoint khác).
+
+Bạn có chắc chắn muốn rollback?\`;
+
+        if (!confirm(warningMsg)) {
+          return;
+        }
+
+        try {
+          showToast('⏳ Đang rollback...');
+          
+          if (window.rollbackCheckpoint) {
+            await window.rollbackCheckpoint(checkpointId);
+            showToast('✅ Rollback completed successfully!');
+            closeCheckpointModalFn();
+            
+            // Reload checkpoints to reflect changes
+            setTimeout(() => {
+              loadCheckpoints();
+            }, 1000);
+          } else {
+            showToast('❌ Rollback function not available');
+          }
+        } catch (err) {
+          console.error('Rollback failed:', err);
+          showToast('❌ Rollback failed: ' + (err.message || 'Unknown error'));
+        }
+      };
+
+      checkpointBtn.addEventListener("click", openCheckpointModal);
+      closeCheckpointModal.addEventListener("click", closeCheckpointModalFn);
+
+      checkpointModal.addEventListener("click", (e) => {
+        if (e.target === checkpointModal) {
+          closeCheckpointModalFn();
+        }
+      });
+
       document.addEventListener("keydown", async (e) => {
+        if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
+          closeCheckpointModalFn();
+          return;
+        }
         if ((e.ctrlKey || e.metaKey) && e.key === "1") {
           e.preventDefault();
           if (isCapturing || isGeminiDetecting) {
