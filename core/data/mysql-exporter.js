@@ -3,7 +3,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { uploadPictureAndGetUrl } from '../media/uploader.js';
-import { saveBase64AsFile } from '../utils/utils.js';
+import { saveBase64AsFile, calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 
 const MYSQL_CONFIG = {
@@ -115,7 +115,18 @@ export class MySQLExporter {
             
             const itemIndex = items.findIndex(i => i.item_id === itemId);
             if (itemIndex !== -1) {
-                items[itemIndex] = { ...items[itemIndex], ...updates };
+                const oldItem = items[itemIndex];
+                
+                // Merge metadata để giữ lại các metadata khác (như global_pos, page_urls, etc.)
+                if ('metadata' in updates && updates.metadata !== null && typeof updates.metadata === 'object') {
+                    const oldMetadata = oldItem.metadata || {};
+                    updates.metadata = {
+                        ...oldMetadata,
+                        ...updates.metadata
+                    };
+                }
+                
+                items[itemIndex] = { ...oldItem, ...updates };
                 
                 const newContent = items.map(i => JSON.stringify(i)).join('\n') + '\n';
                 await fsp.writeFile(doingItemPath, newContent, 'utf8');
@@ -140,46 +151,70 @@ export class MySQLExporter {
             if (!base64Content) continue;
             
             const imageBuffer = Buffer.from(base64Content, 'base64');
+            
+            // Calculate hash of the current image to check if it has changed
+            const currentImageHash = await calculateHash(base64Content);
+            const storedImageHash = panel.metadata?.image_hash;
+            const storedPageUrls = panel.metadata?.page_urls || {};
+            
+            // Check if image has changed
+            const imageChanged = storedImageHash !== currentImageHash;
+            
             const pageHeight = Math.min( 1080, globalPos.h);
             const numPages = Math.ceil(globalPos.h / pageHeight);
             
             console.log(`📄 Cropping panel "${panel.name}" (${globalPos.h}px) into ${numPages} pages...`);
             
+            const pageUrls = {};
+            let hasUpdates = false;
+            
             for (let pageNo = 1; pageNo <= numPages; pageNo++) {
                 const yOffset = (pageNo - 1) * pageHeight;
                 const actualHeight = Math.min(pageHeight, globalPos.h - yOffset);
                 
-                const croppedBuffer = await sharp(imageBuffer)
-                    .extract({
-                        left: 0,
-                        top: yOffset,
-                        width: globalPos.w,
-                        height: actualHeight
-                    })
-                    .toBuffer();
+                // Check if this page needs upload
+                const existingUrl = storedPageUrls[pageNo];
+                const needsUpload = imageChanged || !existingUrl;
                 
-                const croppedBase64 = croppedBuffer.toString('base64');
-                const picCode = `page_${panel.item_id}_${pageNo}_${Date.now()}`;
-                const fname = `${picCode}.jpg`;
-                const tempFilePath = saveBase64AsFile(croppedBase64, "./screenshots", fname);
+                let screenshotUrl = existingUrl || null;
                 
-                let screenshotUrl = null;
-                if (tempFilePath) {
-                    try {
-                        const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                        const jsonData = JSON.parse(resp);
-                        if (jsonData?.status === 200) {
-                            screenshotUrl = jsonData.message;
-                            console.log(`  ✅ Uploaded page ${pageNo}/${numPages}: ${screenshotUrl}`);
-                        } else {
-                            console.error(`  ❌ Upload failed for page ${pageNo}: status ${jsonData?.status}, response: ${resp}`);
+                if (needsUpload) {
+                    const croppedBuffer = await sharp(imageBuffer)
+                        .extract({
+                            left: 0,
+                            top: yOffset,
+                            width: globalPos.w,
+                            height: actualHeight
+                        })
+                        .toBuffer();
+                    
+                    const croppedBase64 = croppedBuffer.toString('base64');
+                    const picCode = `page_${panel.item_id}_${pageNo}_${Date.now()}`;
+                    const fname = `${picCode}.jpg`;
+                    const tempFilePath = saveBase64AsFile(croppedBase64, "./screenshots", fname);
+                    
+                    if (tempFilePath) {
+                        try {
+                            const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                            const jsonData = JSON.parse(resp);
+                            if (jsonData?.status === 200) {
+                                screenshotUrl = jsonData.message;
+                                console.log(`  ✅ Uploaded page ${pageNo}/${numPages}: ${screenshotUrl}`);
+                                hasUpdates = true;
+                            } else {
+                                console.error(`  ❌ Upload failed for page ${pageNo}: status ${jsonData?.status}, response: ${resp}`);
+                            }
+                        } catch (uploadErr) {
+                            console.error(`  ❌ Failed to upload page ${pageNo}:`, uploadErr);
                         }
-                    } catch (uploadErr) {
-                        console.error(`  ❌ Failed to upload page ${pageNo}:`, uploadErr);
+                    } else {
+                        console.error(`  ❌ Failed to save temp file for page ${pageNo}`);
                     }
                 } else {
-                    console.error(`  ❌ Failed to save temp file for page ${pageNo}`);
+                    console.log(`  ⏭️  Skipped page ${pageNo}/${numPages} (already uploaded): ${existingUrl}`);
                 }
+                
+                pageUrls[pageNo] = screenshotUrl;
                 
                 const pageData = {
                     name: `${panel.name} Page ${pageNo}`,
@@ -198,6 +233,16 @@ export class MySQLExporter {
                 
                 await fsp.appendFile(pageJsonlPath, JSON.stringify(pageData) + '\n', 'utf8');
                 totalPages++;
+            }
+            
+            // Update panel metadata with hash and page URLs if there were changes
+            if (imageChanged || hasUpdates) {
+                const updatedMetadata = {
+                    ...panel.metadata,
+                    image_hash: currentImageHash,
+                    page_urls: pageUrls
+                };
+                await this.updateItemInJsonl(panel.item_id, { metadata: updatedMetadata });
             }
         }
         
@@ -278,25 +323,45 @@ export class MySQLExporter {
                 let imageUrl = item.image_url;
                 let fullscreenUrl = item.fullscreen_url || null;
 
-                if (!imageUrl && item.image_base64) {
+                // Upload image_base64 -> image_url (chỉ upload nếu chưa có URL hoặc ảnh đã thay đổi)
+                if (item.image_base64) {
                     try {
                         const base64Content = await this.loadBase64FromFile(item.image_base64);
                         if (base64Content) {
-                            const picCode = `${item.item_id}_${Date.now()}`;
-                            const fname = `${picCode}.jpg`;
-                            const tempFilePath = saveBase64AsFile(base64Content, "./screenshots", fname);
+                            // Tính hash của ảnh hiện tại
+                            const currentImageHash = await calculateHash(base64Content);
+                            const storedImageHash = item.metadata?.image_hash;
                             
-                            if (tempFilePath) {
-                                const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                                const jsonData = JSON.parse(resp);
+                            // Chỉ upload nếu chưa có URL hoặc hash đã thay đổi
+                            const needsUpload = !imageUrl || (storedImageHash !== currentImageHash);
+                            
+                            if (needsUpload) {
+                                const picCode = `${item.item_id}_${Date.now()}`;
+                                const fname = `${picCode}.jpg`;
+                                const tempFilePath = saveBase64AsFile(base64Content, "./screenshots", fname);
                                 
-                                if (jsonData?.status === 200) {
-                                    imageUrl = jsonData.message;
-                                    console.log(`✅ Uploaded image for ${item.item_category} "${item.name}"`);
+                                if (tempFilePath) {
+                                    const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                                    const jsonData = JSON.parse(resp);
                                     
-                                    item.image_url = imageUrl;
-                                    await this.updateItemInJsonl(item.item_id, { image_url: imageUrl });
+                                    if (jsonData?.status === 200) {
+                                        imageUrl = jsonData.message;
+                                        console.log(`✅ Uploaded image for ${item.item_category} "${item.name}"`);
+                                        
+                                        item.image_url = imageUrl;
+                                        // Cập nhật metadata với hash mới
+                                        const updatedMetadata = {
+                                            ...item.metadata,
+                                            image_hash: currentImageHash
+                                        };
+                                        await this.updateItemInJsonl(item.item_id, { 
+                                            image_url: imageUrl,
+                                            metadata: updatedMetadata 
+                                        });
+                                    }
                                 }
+                            } else {
+                                console.log(`⏭️  Skipped image upload for ${item.item_category} "${item.name}" (already uploaded)`);
                             }
                         }
                     } catch (uploadErr) {
@@ -304,26 +369,45 @@ export class MySQLExporter {
                     }
                 }
 
-                // Upload fullscreen_base64 -> fullscreen_url (chi luu link tren DB)
-                if (!fullscreenUrl && item.fullscreen_base64) {
+                // Upload fullscreen_base64 -> fullscreen_url (chỉ upload nếu chưa có URL hoặc ảnh đã thay đổi)
+                if (item.fullscreen_base64) {
                     try {
                         const fullscreenBase64 = await this.loadBase64FromFile(item.fullscreen_base64);
                         if (fullscreenBase64) {
-                            const picCode = `${item.item_id}_full_${Date.now()}`;
-                            const fname = `${picCode}.jpg`;
-                            const tempFilePath = saveBase64AsFile(fullscreenBase64, "./screenshots", fname);
+                            // Tính hash của ảnh fullscreen hiện tại
+                            const currentFullscreenHash = await calculateHash(fullscreenBase64);
+                            const storedFullscreenHash = item.metadata?.fullscreen_hash;
+                            
+                            // Chỉ upload nếu chưa có URL hoặc hash đã thay đổi
+                            const needsUpload = !fullscreenUrl || (storedFullscreenHash !== currentFullscreenHash);
+                            
+                            if (needsUpload) {
+                                const picCode = `${item.item_id}_full_${Date.now()}`;
+                                const fname = `${picCode}.jpg`;
+                                const tempFilePath = saveBase64AsFile(fullscreenBase64, "./screenshots", fname);
 
-                            if (tempFilePath) {
-                                const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                                const jsonData = JSON.parse(resp);
+                                if (tempFilePath) {
+                                    const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                                    const jsonData = JSON.parse(resp);
 
-                                if (jsonData?.status === 200) {
-                                    fullscreenUrl = jsonData.message;
-                                    console.log(`✅ Uploaded fullscreen image for ${item.item_category} "${item.name}"`);
+                                    if (jsonData?.status === 200) {
+                                        fullscreenUrl = jsonData.message;
+                                        console.log(`✅ Uploaded fullscreen image for ${item.item_category} "${item.name}"`);
 
-                                    item.fullscreen_url = fullscreenUrl;
-                                    await this.updateItemInJsonl(item.item_id, { fullscreen_url: fullscreenUrl });
+                                        item.fullscreen_url = fullscreenUrl;
+                                        // Cập nhật metadata với hash mới
+                                        const updatedMetadata = {
+                                            ...item.metadata,
+                                            fullscreen_hash: currentFullscreenHash
+                                        };
+                                        await this.updateItemInJsonl(item.item_id, { 
+                                            fullscreen_url: fullscreenUrl,
+                                            metadata: updatedMetadata 
+                                        });
+                                    }
                                 }
+                            } else {
+                                console.log(`⏭️  Skipped fullscreen image upload for ${item.item_category} "${item.name}" (already uploaded)`);
                             }
                         }
                     } catch (uploadErr) {
