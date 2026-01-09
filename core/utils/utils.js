@@ -135,3 +135,11 @@ export const isBoxInside = (a, b, threshold = 0.95) => {
 
     return "none";
 };
+
+// SHA256 hash function for file content (supports large files)
+export const calculateHash = async (content) => {
+    if (content.length === 0) return '';
+    
+    const crypto = await import('crypto');
+    return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+};

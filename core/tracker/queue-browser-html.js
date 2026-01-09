@@ -162,6 +162,24 @@ export const QUEUE_BROWSER_HTML = `
       #controls button:hover {
         background: #0056d2;
       }
+
+      #saveBtn.has-changes {
+        background: #007bff !important;
+        opacity: 1 !important;
+      }
+
+      #saveBtn.has-changes:hover {
+        background: #0056d2 !important;
+      }
+
+      #saveBtn.no-changes {
+        background: #6c757d !important;
+        opacity: 1 !important;
+      }
+
+      #saveBtn.no-changes:hover {
+        background: #5a6268 !important;
+      }
       
       #detectActionsGeminiBtn {
         padding: 3px 6px;
@@ -621,6 +639,17 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'tree_update') {
           panelTreeData = evt.data || [];
           renderPanelTree();
+          
+          // Check for changes after panel log is loaded
+          setTimeout(() => {
+            if (window.checkForChanges) {
+              window.checkForChanges().catch(err => {
+                console.error('Error checking changes after tree update:', err);
+              });
+            } else {
+              console.warn('checkForChanges function not available yet');
+            }
+          }, 500);
           return;
         }
         
@@ -829,6 +858,13 @@ export const QUEUE_BROWSER_HTML = `
           }
           return;
         }
+        
+        if (evt.type === 'save_btn_state') {
+          console.log('Received save_btn_state event:', evt.hasChanges);
+          updateSaveBtnState(evt.hasChanges);
+          return;
+        }
+        
       };
 
       const modal = document.getElementById('imageModal');
@@ -1093,6 +1129,25 @@ export const QUEUE_BROWSER_HTML = `
       let isSaving = false;
       const saveBtn = document.getElementById("saveBtn");
       
+      const updateSaveBtnState = (hasChanges) => {
+        if (!saveBtn) {
+          console.warn('saveBtn not found');
+          return;
+        }
+        
+        console.log('updateSaveBtnState:', hasChanges);
+        
+        if (hasChanges) {
+          saveBtn.classList.add('has-changes');
+          saveBtn.classList.remove('no-changes');
+          console.log('SaveBtn: has-changes class added');
+        } else {
+          saveBtn.classList.add('no-changes');
+          saveBtn.classList.remove('has-changes');
+          console.log('SaveBtn: no-changes class added');
+        }
+      };
+      
       const handleSaveClick = async () => {
         if (isSaving) {
           showToast('⚠️ Đang save, vui lòng đợi...');
@@ -1113,10 +1168,16 @@ export const QUEUE_BROWSER_HTML = `
             // Reset button để có thể save lại
             isSaving = false;
             saveBtn.disabled = false;
-            saveBtn.style.opacity = '1';
-            saveBtn.style.cursor = 'pointer';
-            saveBtn.style.pointerEvents = 'auto';
+            saveBtn.style.opacity = '';
+            saveBtn.style.cursor = '';
+            saveBtn.style.pointerEvents = '';
             saveBtn.textContent = '💾 Save';
+            
+            // Check for changes after save (should be no changes now)
+            if (window.checkForChanges) {
+              await window.checkForChanges();
+            }
+            
             console.log('✅ Save completed successfully');
           } catch (err) {
             console.error('❌ Save failed:', err);
@@ -1127,9 +1188,9 @@ export const QUEUE_BROWSER_HTML = `
             
             isSaving = false;
             saveBtn.disabled = false;
-            saveBtn.style.opacity = '1';
-            saveBtn.style.cursor = 'pointer';
-            saveBtn.style.pointerEvents = 'auto';
+            saveBtn.style.opacity = '';
+            saveBtn.style.cursor = '';
+            saveBtn.style.pointerEvents = '';
             saveBtn.textContent = '💾 Save';
           }
         } else {

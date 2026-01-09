@@ -2,6 +2,7 @@ import { getPanelEditorClassCode } from './panel-editor-class.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
+import { calculateHash } from '../utils/utils.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -215,10 +216,115 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         await tracker.close();
     };
 
+    // Change tracking functions
+    const getLastSavedState = async () => {
+        const statePath = path.join(tracker.sessionFolder, '.last_saved_state.json');
+        try {
+            const content = await fsp.readFile(statePath, 'utf8');
+            return JSON.parse(content);
+        } catch (err) {
+            return null;
+        }
+    };
+
+    const saveLastSavedState = async (hashes) => {
+        const statePath = path.join(tracker.sessionFolder, '.last_saved_state.json');
+        await fsp.writeFile(statePath, JSON.stringify(hashes, null, 2), 'utf8');
+    };
+
+    const calculateFileHashes = async () => {
+        const doingItemPath = path.join(tracker.sessionFolder, 'doing_item.jsonl');
+        const doingStepPath = path.join(tracker.sessionFolder, 'doing_step.jsonl');
+        const myparentPanelPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+
+        const hashes = {};
+
+        try {
+            const doingItemContent = await fsp.readFile(doingItemPath, 'utf8');
+            hashes.doing_item = await calculateHash(doingItemContent);
+        } catch (err) {
+            hashes.doing_item = '';
+        }
+
+        try {
+            const doingStepContent = await fsp.readFile(doingStepPath, 'utf8');
+            hashes.doing_step = await calculateHash(doingStepContent);
+        } catch (err) {
+            hashes.doing_step = '';
+        }
+
+        try {
+            const myparentPanelContent = await fsp.readFile(myparentPanelPath, 'utf8');
+            hashes.myparent_panel = await calculateHash(myparentPanelContent);
+        } catch (err) {
+            hashes.myparent_panel = '';
+        }
+
+        return hashes;
+    };
+
+    const hasChanges = async () => {
+        const currentHashes = await calculateFileHashes();
+        const lastSavedState = await getLastSavedState();
+
+        if (!lastSavedState) {
+            // First time, no saved state, consider as having changes
+            return true;
+        }
+
+        return (
+            currentHashes.doing_item !== lastSavedState.doing_item ||
+            currentHashes.doing_step !== lastSavedState.doing_step ||
+            currentHashes.myparent_panel !== lastSavedState.myparent_panel
+        );
+    };
+
+    // Debounced change checker to avoid checking too frequently
+    let changeCheckTimeout = null;
+    const scheduleChangeCheck = () => {
+        // Clear existing timeout
+        if (changeCheckTimeout) {
+            clearTimeout(changeCheckTimeout);
+        }
+        // Schedule check after 300ms (debounce)
+        changeCheckTimeout = setTimeout(async () => {
+            try {
+                const changed = await hasChanges();
+                await tracker._broadcast({
+                    type: 'save_btn_state',
+                    hasChanges: changed
+                });
+            } catch (err) {
+                console.error('Error checking for changes:', err);
+            }
+        }, 300);
+    };
+
+    const checkAndBroadcastChanges = async () => {
+        const changed = await hasChanges();
+        console.log('checkAndBroadcastChanges: hasChanges =', changed);
+        await tracker._broadcast({
+            type: 'save_btn_state',
+            hasChanges: changed
+        });
+        return changed;
+    };
+
     let isSaving = false;
     const saveEventsHandler = async () => {
         if (isSaving) {
             console.warn('⚠️ Save already in progress or completed, skipping...');
+            return;
+        }
+
+        // Check if there are changes
+        const changed = await hasChanges();
+        if (!changed) {
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: 'ℹ️ Không có thay đổi để lưu'
+            });
+            console.log('ℹ️ No changes detected, skipping save');
             return;
         }
 
@@ -244,6 +350,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         try {
             await tracker.saveResults();
+            
+            // Save current state after successful save
+            const currentHashes = await calculateFileHashes();
+            await saveLastSavedState(currentHashes);
             
             // Create checkpoint after successful save
             try {
@@ -280,6 +390,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     message: '✅ Save completed successfully! (Checkpoint creation failed)'
                 });
             }
+            
+            // Broadcast that changes are saved
+            await tracker._broadcast({
+                type: 'save_btn_state',
+                hasChanges: false
+            });
             
             isSaving = false; // Reset flag để có thể save lại
         } catch (err) {
@@ -704,6 +820,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Call drawPanelAndDetectActionsHandler automatically
             await drawPanelAndDetectActionsHandler();
 
+            // Check for changes after drawing panel
+            scheduleChangeCheck();
+
             return { mode: 'DRAW_NEW', panelId: newPanelId, panelName: newPanelName, success: true };
 
         } catch (err) {
@@ -845,6 +964,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker._broadcast({ type: 'show_toast', message: '✅ Panel created' });
 
             console.log(`✅ Saved panel "${newPanelName}" (${newPanelId})`);
+            
+            // Check for changes after saving cropped panel
+            scheduleChangeCheck();
+            
             return { panelId: newPanelId, panelName: newPanelName };
 
         } catch (err) {
@@ -979,6 +1102,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             } else {
                 console.log(`♻️ Reset PANEL ${targetItemId} to pending, deleted pages and image`);
             }
+            
+            // Check for changes after reset
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to reset panel:', err);
         }
@@ -1016,6 +1142,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             console.log(`✓ Marked item ${targetItemId} as done`);
+            
+            // Check for changes after marking as done
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to mark as done:', err);
         }
@@ -1160,6 +1289,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             console.log(`✅ Deleted ${itemsToDelete.length} items from all files`);
+            
+            // Check for changes after deletion
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to delete item:', err);
         }
@@ -1762,6 +1894,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             delete tracker.__drawPanelContext;
             console.log('✅ Draw Panel & Detect Actions completed!');
+            
+            // Check for changes after drawing panel and detecting actions
+            scheduleChangeCheck();
 
         } catch (err) {
             console.error('Failed to confirm panel crop:', err);
@@ -1989,6 +2124,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log('✅ DOM Capture completed');
+            
+            // Check for changes after capturing actions
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to capture actions:', err);
             await tracker._broadcast({
@@ -2729,6 +2867,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             console.log(`🔄 Reset step for action ${actionItemId}`);
+            
+            // Check for changes after resetting step
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to reset action step:', err);
         }
@@ -2838,6 +2979,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log(`✏️ Renamed "${item.name}" → "${finalName}"`);
+            
+            // Check for changes after renaming
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to rename:', err);
         }
@@ -2971,6 +3115,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             await tracker._broadcast({ type: 'show_toast', message: `✅ Đã rename: "${aiResult.action_name}"` });
+            
+            // Check for changes after renaming by AI
+            scheduleChangeCheck();
 
         } catch (err) {
             console.error('Failed to rename action by AI:', err);
@@ -3098,6 +3245,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log(`✅ Use CURRENT PANEL: ${actionItemId} marked done with panel ${parentPanelId}`);
+            
+            // Check for changes after using before panel
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Use CURRENT PANEL failed:', err);
         }
@@ -3399,6 +3549,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             console.log(`✅ Manual page created: Page ${nextPageNumber} (${pageId})`);
+            
+            // Check for changes after creating manual page
+            scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to create manual page:', err);
             await tracker._broadcast({
@@ -3497,6 +3650,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await tracker.reloadSessionAfterRollback();
             }
 
+            // Update last saved state after rollback (rollback restores files to a saved state)
+            const currentHashes = await calculateFileHashes();
+            await saveLastSavedState(currentHashes);
+
             await tracker._broadcast({
                 type: 'show_toast',
                 message: `✅ Rollback completed successfully! Checkpoint: ${checkpointId.substring(0, 8)}...`
@@ -3508,6 +3665,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 data: await tracker.panelLogManager.buildTreeStructure()
             });
 
+            // Check and broadcast changes after rollback
+            await checkAndBroadcastChanges();
+
             return result;
         } catch (err) {
             console.error('Failed to rollback checkpoint:', err);
@@ -3518,6 +3678,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             throw err;
         }
     };
+
+    // Initialize saved state if it doesn't exist (for existing sessions)
+    const initializeSavedStateIfNeeded = async () => {
+        const lastSavedState = await getLastSavedState();
+        if (!lastSavedState) {
+            // If no saved state exists, initialize it with current file hashes
+            // This handles the case where we load an existing session that was saved before
+            // but the .last_saved_state.json file doesn't exist
+            const currentHashes = await calculateFileHashes();
+            // Only initialize if files have content (not a completely new session)
+            if (currentHashes.doing_item || currentHashes.doing_step || currentHashes.myparent_panel) {
+                await saveLastSavedState(currentHashes);
+                console.log('ℹ️ Initialized saved state from current files');
+            }
+        }
+    };
+
+    // Initialize: set up saved state and check changes on startup
+    initializeSavedStateIfNeeded().then(() => {
+        return checkAndBroadcastChanges();
+    }).catch(err => {
+        console.error('Error initializing change checker:', err);
+    });
 
     return {
         quitApp: quitAppHandler,
@@ -3561,6 +3744,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         createManualPage: createManualPageHandler,
         updateItemDetails: updateItemDetailsHandler,
         getCheckpoints: getCheckpointsHandler,
-        rollbackCheckpoint: rollbackCheckpointHandler
+        rollbackCheckpoint: rollbackCheckpointHandler,
+        checkForChanges: checkAndBroadcastChanges
     };
 }
