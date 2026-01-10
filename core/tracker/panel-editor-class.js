@@ -989,15 +989,15 @@ window.PanelEditor = class PanelEditor {
     toggleCompareMode() {
         if (!this.panelBeforeBase64) return;
         
-        // Cycle through modes: AUTO -> ON -> OFF -> AUTO
+        // Cycle through modes: AUTO -> OFF -> ON -> AUTO
         if (this.compareMode === 'AUTO') {
-            this.compareMode = 'ON';
-            this.stopAutoCompare();
-            this.showOverlay();
-        } else if (this.compareMode === 'ON') {
             this.compareMode = 'OFF';
             this.stopAutoCompare();
             this.hideOverlay();
+        } else if (this.compareMode === 'OFF') {
+            this.compareMode = 'ON';
+            this.stopAutoCompare();
+            this.showOverlay();
         } else {
             this.compareMode = 'AUTO';
             this.startAutoCompare();
