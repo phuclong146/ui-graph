@@ -408,6 +408,14 @@ export class ParentPanelManager {
         // }
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
+        
+        // Bỏ qua xử lý nếu panelChild.type là popup hoặc newtab (không phân biệt chữ hoa/thường)
+        const childType = panelChildInfo.type?.toLowerCase();
+        if (childType === 'popup' || childType === 'newtab') {
+            console.log(`⏭️ Skip makeChild: panelChild.type is "${panelChildInfo.type}" (${panelChildId})`);
+            return;
+        }
+        
         const parentBox = panelParentInfo.metadata?.global_pos;
         const childBox = panelChildInfo.metadata?.global_pos;
         const overlap = calcOverlapBox(parentBox, childBox);
