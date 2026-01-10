@@ -35,6 +35,39 @@ export const QUEUE_BROWSER_HTML = `
         padding: 0 10px;
         font-size: 14px;
         color: #666;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+      }
+      
+      #panel-log-refresh-btn {
+        background: transparent;
+        color: #666;
+        border: none;
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: color 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      
+      #panel-log-refresh-btn:hover {
+        color: #007bff;
+      }
+      
+      #panel-log-refresh-btn:active {
+        transform: scale(0.95);
+      }
+      
+      #panel-log-refresh-btn.loading {
+        opacity: 0.6;
+        cursor: not-allowed;
+        pointer-events: none;
       }
       
       .tree-node {
@@ -597,7 +630,10 @@ export const QUEUE_BROWSER_HTML = `
   <body>
     <div id="main-container">
       <div id="panel-tree-container">
-        <h3>Panel Log</h3>
+        <h3>
+          <span>Panel Log</span>
+          <button id="panel-log-refresh-btn" title="Refresh Panel Log">🔄</button>
+        </h3>
         <div id="panel-tree"></div>
       </div>
       
@@ -2476,6 +2512,39 @@ Bạn có chắc chắn muốn rollback?\`;
           panelTreeData = await window.getPanelTree();
           renderPanelTree();
         }
+      }
+      
+      async function refreshPanelTree() {
+        const refreshBtn = document.getElementById('panel-log-refresh-btn');
+        if (!refreshBtn) return;
+        
+        refreshBtn.classList.add('loading');
+        refreshBtn.disabled = true;
+        const originalText = refreshBtn.textContent;
+        refreshBtn.textContent = '⏳';
+        
+        try {
+          if (window.getPanelTree) {
+            panelTreeData = await window.getPanelTree();
+            renderPanelTree();
+            showToast('✅ Panel Log đã được cập nhật');
+          } else {
+            showToast('⚠️ Refresh function không khả dụng');
+          }
+        } catch (err) {
+          console.error('Failed to refresh panel tree:', err);
+          showToast('❌ Lỗi khi refresh Panel Log');
+        } finally {
+          refreshBtn.classList.remove('loading');
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = originalText;
+        }
+      }
+      
+      // Thêm event listener cho nút refresh
+      const panelLogRefreshBtn = document.getElementById('panel-log-refresh-btn');
+      if (panelLogRefreshBtn) {
+        panelLogRefreshBtn.addEventListener('click', refreshPanelTree);
       }
       
       setTimeout(loadInitialTree, 1000);

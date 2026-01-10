@@ -171,6 +171,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
                     await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
                     console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                    
+                    // Cập nhật UI Panel Log sau khi makeChild hoàn thành
+                    if (tracker.panelLogManager) {
+                        await tracker._broadcast({
+                            type: 'tree_update',
+                            data: await tracker.panelLogManager.buildTreeStructure()
+                        });
+                    }
                 } else {
                     console.log(`⏭️ Skip makeChild: parent and child are the same (${panelBeforeId})`);
                 }
