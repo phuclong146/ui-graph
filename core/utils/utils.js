@@ -73,67 +73,78 @@ export const calcOverlapBox = (a, b) => {
 
     return intersection / union;
 };
-// export const isBoxInside = (a, b, threshold = 0.95) => {
-//     const ax1 = a.x;
-//     const ay1 = a.y;
-//     const ax2 = a.x + a.w;
-//     const ay2 = a.y + a.h;
 
-//     const bx1 = b.x;
-//     const by1 = b.y;
-//     const bx2 = b.x + b.w;
-//     const by2 = b.y + b.h;
-
-//     // Calculate overlap
-//     const overlapX = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1));
-//     const overlapY = Math.max(0, Math.min(ay2, by2) - Math.max(ay1, by1));
-//     const overlapArea = overlapX * overlapY;
-
-//     if (overlapArea <= 0) return "none";
-
-//     const areaA = a.w * a.h;
-//     const areaB = b.w * b.h;
-
-//     // A nằm trong B
-//     if (overlapArea / areaA >= threshold) {
-//         return "A_in_B";
-//     }
-
-//     // B nằm trong A
-//     if (overlapArea / areaB >= threshold) {
-//         return "B_in_A";
-//     }
-
-//     return "none";
-// }
+// Kích thước làm tròn cho panel (có thể chỉnh sửa dễ dàng)
+const ROUND_SIZE = 10;
 export const isBoxInside = (a, b, threshold = 0.95) => {
     // 1. Tính diện tích 2 hình trước
     const areaA = a.w * a.h;
     const areaB = b.w * b.h;
     if (areaA <= 0 || areaB <= 0) return "none";
 
-    // 2. Tính diện tích vùng giao nhau (Intersection Area)
-    const xOverlap = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
-    const yOverlap = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    // 2. Xác định panel nào lớn hơn và làm tròn:
+    //    - Panel lớn hơn: roundUP - mở rộng ra 4 hướng (x -= ROUND_SIZE, y -= ROUND_SIZE, w += 2*ROUND_SIZE, h += 2*ROUND_SIZE)
+    //    - Panel nhỏ hơn: roundDOWN - thu hẹp lại cả 4 hướng (x += ROUND_SIZE, y += ROUND_SIZE, w -= 2*ROUND_SIZE, h -= 2*ROUND_SIZE)
+    let roundedA = { ...a };
+    let roundedB = { ...b };
+
+    if (areaA >= areaB) {
+        // A lớn hơn hoặc bằng B: A roundUP, B roundDOWN
+        roundedA = {
+            x: Math.max(0, a.x - ROUND_SIZE),     // Đảm bảo x >= 0
+            y: Math.max(0, a.y - ROUND_SIZE),     // Đảm bảo y >= 0
+            w: Math.max(1, a.w + 2 * ROUND_SIZE), // Đảm bảo w > 0
+            h: Math.max(1, a.h + 2 * ROUND_SIZE)  // Đảm bảo h > 0
+        };
+        roundedB = {
+            x: Math.max(0, b.x + ROUND_SIZE),     // Đảm bảo x >= 0
+            y: Math.max(0, b.y + ROUND_SIZE),     // Đảm bảo y >= 0
+            w: Math.max(1, b.w - 2 * ROUND_SIZE), // Đảm bảo w > 0
+            h: Math.max(1, b.h - 2 * ROUND_SIZE)  // Đảm bảo h > 0
+        };
+    } else {
+        // B lớn hơn: B roundUP, A roundDOWN
+        roundedA = {
+            x: Math.max(0, a.x + ROUND_SIZE),     // Đảm bảo x >= 0
+            y: Math.max(0, a.y + ROUND_SIZE),     // Đảm bảo y >= 0
+            w: Math.max(1, a.w - 2 * ROUND_SIZE), // Đảm bảo w > 0
+            h: Math.max(1, a.h - 2 * ROUND_SIZE)  // Đảm bảo h > 0
+        };
+        roundedB = {
+            x: Math.max(0, b.x - ROUND_SIZE),     // Đảm bảo x >= 0
+            y: Math.max(0, b.y - ROUND_SIZE),     // Đảm bảo y >= 0
+            w: Math.max(1, b.w + 2 * ROUND_SIZE), // Đảm bảo w > 0
+            h: Math.max(1, b.h + 2 * ROUND_SIZE)  // Đảm bảo h > 0
+        };
+    }
+
+    // 3. Tính diện tích vùng giao nhau với các box đã làm tròn
+    const xOverlap = Math.max(0, Math.min(roundedA.x + roundedA.w, roundedB.x + roundedB.w) - Math.max(roundedA.x, roundedB.x));
+    const yOverlap = Math.max(0, Math.min(roundedA.y + roundedA.h, roundedB.y + roundedB.h) - Math.max(roundedA.y, roundedB.y));
     const overlapArea = xOverlap * yOverlap;
 
-    if (overlapArea <= 0) return "none";
+    if (overlapArea <= 0) return "NO_OVERLAP";
 
-    // 3. Kiểm tra điều kiện ngưỡng (threshold)
-    const isAInB = (overlapArea / areaA) >= threshold;
-    const isBInA = (overlapArea / areaB) >= threshold;
+    // 4. Tính diện tích sau khi làm tròn
+    const roundedAreaA = roundedA.w * roundedA.h;
+    const roundedAreaB = roundedB.w * roundedB.h;
+    if (roundedAreaA <= 0 || roundedAreaB <= 0) return "NO_OVERLAP";
 
-    // 4. Quyết định kết quả dựa trên logic diện tích
+    // 5. Kiểm tra điều kiện ngưỡng (threshold) với các box đã làm tròn
+    const isAInB = (overlapArea / roundedAreaA) >= threshold;
+    const isBInA = (overlapArea / roundedAreaB) >= threshold;
+
+    // 6. Quyết định kết quả dựa trên logic diện tích
     if (isAInB && isBInA) {
         // Nếu cả hai đều thỏa mãn, hình nào nhỏ hơn sẽ được coi là nằm trong hình kia
         // return areaA <= areaB ? "A_in_B" : "B_in_A";
-        return "ERROR";
+        return "BOTN_IN_BOTH";
     }
     
     if (isAInB) return "A_in_B";
     if (isBInA) return "B_in_A";
 
-    return "none";
+    return "NO_OVERLAP";
 };
 
 // SHA256 hash function for file content (supports large files)

@@ -402,10 +402,6 @@ export class ParentPanelManager {
             return;
         }
         const myParent = await this.findMyParent(panelParentId);
-        // if (!myParent || myParent.child_panels.length === 0) {
-        //     console.log('makeChild: Khong tim thay myParent của id=', panelParentId);
-        //     return;
-        // }
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
         
@@ -421,6 +417,7 @@ export class ParentPanelManager {
         const overlap = calcOverlapBox(parentBox, childBox);
         if (overlap === 0) {
             // Case A: Khong can loc Action, chi can set parent - child
+            console.log('makeChild: case A', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
             if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
@@ -455,8 +452,17 @@ export class ParentPanelManager {
                 await this.makeChild(panelChildId, panelParentId, processedPairs);
                 return;
             }
-            if (result === "ERROR") {
+            if (result === "BOTN_IN_BOTH") {
                 console.log('makeChild: case E', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                if (myParent && !myParent.child_panels.includes(panelChildId)) {
+                    myParent.child_panels.push(panelChildId);
+                    //update
+                    await this.updatePanelEntry(myParent.parent_panel, myParent);
+                }                
+                return;
+            }
+            if (result === "NO_OVERLAP") {
+                console.log('makeChild: case A', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
