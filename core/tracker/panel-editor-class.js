@@ -1,10 +1,12 @@
 export function getPanelEditorClassCode() {
     return `
 window.PanelEditor = class PanelEditor {
-    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, panelBeforeBase64 = null) {
+    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, panelBeforeBase64 = null, panelAfterGlobalPos = null) {
         this.imageBase64 = imageBase64;
         this.panelBeforeBase64 = panelBeforeBase64;
+        this.panelAfterGlobalPos = panelAfterGlobalPos;
         console.log(\`🎨 PanelEditor constructor: panelBeforeBase64 = \${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}\`);
+        console.log(\`🎨 PanelEditor constructor: panelAfterGlobalPos = \${panelAfterGlobalPos ? JSON.stringify(panelAfterGlobalPos) : 'NULL'}\`);
         
         if (mode === 'cropOnly' || mode === 'confirmOnly' || mode === 'twoPointCrop') {
             this.actionItemId = geminiResultOrActionId;
@@ -1046,8 +1048,63 @@ window.PanelEditor = class PanelEditor {
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 
-                let yStart, pageHeight, canvasWidth;
+                let yStart, pageHeight, canvasWidth, cropX, cropY, cropW, cropH;
                 
+                // If panelAfterGlobalPos exists, use it to crop the overlay to match panelAfter region
+                if (this.panelAfterGlobalPos && this.mode === 'full') {
+                    // Crop panelBefore at the same global_pos region as panelAfter
+                    cropX = this.panelAfterGlobalPos.x || 0;
+                    cropY = this.panelAfterGlobalPos.y || 0;
+                    cropW = this.panelAfterGlobalPos.w || img.width;
+                    cropH = this.panelAfterGlobalPos.h || img.height;
+                    
+                    console.log(\`🎨 cropPanelBeforeToCurrentPage: panelAfterGlobalPos = {x:\${cropX}, y:\${cropY}, w:\${cropW}, h:\${cropH}}, currentPageIndex = \${this.currentPageIndex}\`);
+                    
+                    // Canvas shows a page (1080px height) of the panelAfter (which is already cropped at global_pos)
+                    // So we need to crop panelBefore at the same global_pos region and extract the corresponding page
+                    const pageHeight = 1080;
+                    const pageYStart = this.currentPageIndex * pageHeight;
+                    
+                    // Calculate the Y position in the full panelBefore image for current page
+                    // Since panelAfter is cropped at global_pos, the current page corresponds to:
+                    // global_pos.y + pageYStart in the full panelBefore image
+                    const sourceYStart = cropY + pageYStart;
+                    const sourceHeight = Math.min(pageHeight, cropH - pageYStart);
+                    
+                    // If current page is outside global_pos region, return empty/transparent
+                    if (pageYStart >= cropH || sourceHeight <= 0) {
+                        console.log(\`⚠️ cropPanelBeforeToCurrentPage: Current page is outside global_pos region, returning transparent\`);
+                        canvas.width = cropW;
+                        canvas.height = pageHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = 'transparent';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/png').split(',')[1]);
+                        return;
+                    }
+                    
+                    // Crop from panelBefore at global_pos region for current page
+                    // Use cropW as width to match the panelAfter region width
+                    canvas.width = cropW;
+                    canvas.height = sourceHeight;
+                    const ctx = canvas.getContext('2d');
+                    
+                    console.log(\`✅ cropPanelBeforeToCurrentPage: Cropping from panelBefore at (x:\${cropX}, y:\${sourceYStart}), size (w:\${cropW}, h:\${sourceHeight})\`);
+                    
+                    ctx.drawImage(
+                        img,
+                        cropX, sourceYStart,    // Source: crop from panelBefore at global_pos + page offset
+                        cropW, sourceHeight,    // Source size
+                        0, 0,                   // Destination position
+                        cropW, sourceHeight     // Destination size
+                    );
+                    
+                    const croppedBase64 = canvas.toDataURL('image/png').split(',')[1];
+                    resolve(croppedBase64);
+                    return;
+                }
+                
+                // Original logic for twoPointCrop mode or when global_pos is not provided
                 if (this.mode === 'twoPointCrop' && this.pagesData && this.pagesData[this.currentPageIndex]) {
                     // Use pagesData for twoPointCrop mode
                     const page = this.pagesData[this.currentPageIndex];

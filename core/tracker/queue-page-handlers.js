@@ -750,19 +750,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const panelBeforeBase64 = await getPanelBeforeBase64FromStep(tracker.selectedPanelId);
             console.log(`🎨 panelBeforeBase64: ${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}`);
 
+            // Get panelAfter global_pos for overlay positioning
+            const panelAfterGlobalPos = panelItem.metadata?.global_pos || null;
+            console.log(`🎨 panelAfterGlobalPos: ${panelAfterGlobalPos ? JSON.stringify(panelAfterGlobalPos) : 'NULL'}`);
+
             console.log(`Opening editor with ${actions.length} actions from doing_item.jsonl`);
 
             await tracker.queuePage.evaluate(async (data) => {
                 eval(data.panelEditorClassCode);
 
-                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64);
+                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos);
                 await editor.init();
             }, {
                 geminiResult: geminiResult,
                 imageBase64: editorImage,
                 panelEditorClassCode: getPanelEditorClassCode(),
                 panelId: tracker.selectedPanelId,
-                panelBeforeBase64: panelBeforeBase64
+                panelBeforeBase64: panelBeforeBase64,
+                panelAfterGlobalPos: panelAfterGlobalPos
             });
 
         } catch (err) {
