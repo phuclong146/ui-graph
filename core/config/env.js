@@ -10,4 +10,5 @@ export const ENV = {
     UPLOAD_URL: process.env.UPLOAD_URL,
     CHROME_PATH: process.env.CHROME_PATH,
     RECORD_PANEL: process.env.RECORD_PANEL || "true",
+    SAVE_REMINDER_INTERVAL_MS: parseInt(process.env.SAVE_REMINDER_INTERVAL_MS) || 1800000, // 30 minutes default
 };

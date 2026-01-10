@@ -3,6 +3,7 @@ import { promises as fsp } from 'fs';
 import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
 import { calculateHash } from '../utils/utils.js';
+import { ENV } from '../config/env.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -218,6 +219,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     // Change tracking functions
     const getLastSavedState = async () => {
+        if (!tracker.sessionFolder) {
+            console.log('🔔 [Save Reminder] sessionFolder not set yet, skipping getLastSavedState');
+            return null;
+        }
         const statePath = path.join(tracker.sessionFolder, '.last_saved_state.json');
         try {
             const content = await fsp.readFile(statePath, 'utf8');
@@ -227,12 +232,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const saveLastSavedState = async (hashes) => {
+    const saveLastSavedState = async (hashes, lastChangeTimestamp = null) => {
+        if (!tracker.sessionFolder) {
+            console.log('🔔 [Save Reminder] sessionFolder not set yet, skipping saveLastSavedState');
+            return;
+        }
         const statePath = path.join(tracker.sessionFolder, '.last_saved_state.json');
-        await fsp.writeFile(statePath, JSON.stringify(hashes, null, 2), 'utf8');
+        const state = { ...hashes };
+        if (lastChangeTimestamp !== null) {
+            state.lastChangeTimestamp = lastChangeTimestamp;
+            console.log(`🔔 [Save Reminder] 💾 Saved state with timestamp: ${new Date(lastChangeTimestamp).toISOString()}`);
+        } else {
+            // Remove lastChangeTimestamp if explicitly set to null
+            state.lastChangeTimestamp = null;
+            console.log('🔔 [Save Reminder] 💾 Saved state - timestamp cleared (after save)');
+        }
+        await fsp.writeFile(statePath, JSON.stringify(state, null, 2), 'utf8');
     };
 
     const calculateFileHashes = async () => {
+        if (!tracker.sessionFolder) {
+            console.log('🔔 [Save Reminder] sessionFolder not set yet, returning empty hashes');
+            return { doing_item: '', doing_step: '', myparent_panel: '' };
+        }
         const doingItemPath = path.join(tracker.sessionFolder, 'doing_item.jsonl');
         const doingStepPath = path.join(tracker.sessionFolder, 'doing_step.jsonl');
         const myparentPanelPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
@@ -269,14 +291,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         if (!lastSavedState) {
             // First time, no saved state, consider as having changes
+            // Set initial change timestamp
+            const timestamp = Date.now();
+            console.log(`🔔 [Save Reminder] First time - no saved state, setting initial timestamp: ${new Date(timestamp).toISOString()}`);
+            await saveLastSavedState(currentHashes, timestamp);
             return true;
         }
 
-        return (
+        const hasChanges = (
             currentHashes.doing_item !== lastSavedState.doing_item ||
             currentHashes.doing_step !== lastSavedState.doing_step ||
             currentHashes.myparent_panel !== lastSavedState.myparent_panel
         );
+
+        // If changes detected and no timestamp exists, set it (but keep old hashes for comparison)
+        if (hasChanges && !lastSavedState.lastChangeTimestamp) {
+            const timestamp = Date.now();
+            console.log(`🔔 [Save Reminder] Changes detected - setting timestamp: ${new Date(timestamp).toISOString()}`);
+            // Only update timestamp, keep old hashes for comparison
+            const oldHashes = {
+                doing_item: lastSavedState.doing_item,
+                doing_step: lastSavedState.doing_step,
+                myparent_panel: lastSavedState.myparent_panel
+            };
+            await saveLastSavedState(oldHashes, timestamp);
+        } else if (hasChanges && lastSavedState.lastChangeTimestamp) {
+            const timeSinceChange = Date.now() - lastSavedState.lastChangeTimestamp;
+            console.log(`🔔 [Save Reminder] Changes detected - timestamp already exists (${Math.floor(timeSinceChange / 1000)}s ago)`);
+        }
+
+        return hasChanges;
     };
 
     // Debounced change checker to avoid checking too frequently
@@ -309,6 +353,209 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         });
         return changed;
     };
+
+    // Functions to check if reminder dialog should be shown
+    const isMainScreenActive = async () => {
+        // This will be called from browser context to check if modals are open
+        try {
+            const result = await tracker.queuePage.evaluate(() => {
+                const checkpointModal = document.getElementById('checkpointModal');
+                const imageModal = document.getElementById('imageModal');
+                const editorContainer = document.getElementById('editor-container');
+                const saveReminderModal = document.getElementById('saveReminderModal');
+                
+                const modalStates = {
+                    checkpointModal: checkpointModal ? checkpointModal.style.display !== 'none' : false,
+                    imageModal: imageModal ? imageModal.classList.contains('show') : false,
+                    editorContainer: !!editorContainer,
+                    saveReminderModal: saveReminderModal ? saveReminderModal.style.display !== 'none' : false
+                };
+                
+                // Return true only if no modals are open
+                const isActive = (
+                    (!checkpointModal || checkpointModal.style.display === 'none') &&
+                    (!imageModal || !imageModal.classList.contains('show')) &&
+                    !editorContainer &&
+                    (!saveReminderModal || saveReminderModal.style.display === 'none')
+                );
+                
+                return { isActive, modalStates };
+            });
+            
+            console.log(`🔔 [Save Reminder] Modal states:`, result.modalStates);
+            return result.isActive;
+        } catch (err) {
+            console.error('🔔 [Save Reminder] Error checking main screen:', err);
+            return false;
+        }
+    };
+
+    const isAnyOperationRunning = async () => {
+        // This will be called from browser context to check operation flags
+        try {
+            const result = await tracker.queuePage.evaluate(() => {
+                const flags = {
+                    isSaving: typeof isSaving !== 'undefined' && isSaving === true,
+                    isCapturing: typeof isCapturing !== 'undefined' && isCapturing === true,
+                    isGeminiDetecting: typeof isGeminiDetecting !== 'undefined' && isGeminiDetecting === true,
+                    isDrawingPanel: typeof isDrawingPanel !== 'undefined' && isDrawingPanel === true,
+                    isQuitting: typeof isQuitting !== 'undefined' && isQuitting === true
+                };
+                
+                const anyRunning = (
+                    flags.isSaving ||
+                    flags.isCapturing ||
+                    flags.isGeminiDetecting ||
+                    flags.isDrawingPanel ||
+                    flags.isQuitting
+                );
+                
+                return { anyRunning, flags };
+            });
+            
+            console.log(`🔔 [Save Reminder] Operation flags:`, result.flags);
+            return result.anyRunning;
+        } catch (err) {
+            console.error('🔔 [Save Reminder] Error checking operations:', err);
+            return false;
+        }
+    };
+
+    // Save reminder functionality
+    let reminderTimerInterval = null;
+    let isReminderDialogShowing = false;
+
+    const checkAndShowReminder = async () => {
+        try {
+            console.log('🔔 [Save Reminder] Timer check triggered');
+            
+            // Check if main screen is active
+            const mainScreenActive = await isMainScreenActive();
+            console.log(`🔔 [Save Reminder] Main screen active: ${mainScreenActive}`);
+            if (!mainScreenActive) {
+                console.log('🔔 [Save Reminder] Skipped: Not on main screen (modal/dialog open)');
+                return;
+            }
+
+            // Check if any operation is running
+            const operationRunning = await isAnyOperationRunning();
+            console.log(`🔔 [Save Reminder] Operation running: ${operationRunning}`);
+            if (operationRunning) {
+                console.log('🔔 [Save Reminder] Skipped: Operation in progress');
+                return;
+            }
+
+            // Check if there are changes
+            const changed = await hasChanges();
+            console.log(`🔔 [Save Reminder] Has changes: ${changed}`);
+            if (!changed) {
+                console.log('🔔 [Save Reminder] Skipped: No changes detected');
+                return;
+            }
+
+            // Get last change timestamp
+            const lastSavedState = await getLastSavedState();
+            if (!lastSavedState || !lastSavedState.lastChangeTimestamp) {
+                console.log('🔔 [Save Reminder] Skipped: No lastChangeTimestamp found');
+                return;
+            }
+
+            // Calculate time elapsed
+            const timeElapsed = Date.now() - lastSavedState.lastChangeTimestamp;
+            const reminderInterval = ENV.SAVE_REMINDER_INTERVAL_MS;
+            const minutesElapsed = Math.floor(timeElapsed / 60000);
+            const secondsElapsed = Math.floor((timeElapsed % 60000) / 1000);
+            
+            console.log(`🔔 [Save Reminder] Time elapsed: ${minutesElapsed}m ${secondsElapsed}s`);
+            console.log(`🔔 [Save Reminder] Reminder interval: ${reminderInterval}ms (${reminderInterval / 60000} minutes)`);
+            console.log(`🔔 [Save Reminder] Dialog showing: ${isReminderDialogShowing}`);
+
+            if (timeElapsed >= reminderInterval && !isReminderDialogShowing) {
+                console.log(`🔔 [Save Reminder] ⚠️ Showing reminder dialog (${minutesElapsed} minutes elapsed)`);
+                await showSaveReminderDialog(minutesElapsed);
+            } else if (timeElapsed < reminderInterval) {
+                console.log(`🔔 [Save Reminder] Not yet time (${(reminderInterval - timeElapsed) / 1000}s remaining)`);
+            } else if (isReminderDialogShowing) {
+                console.log('🔔 [Save Reminder] Skipped: Dialog already showing');
+            }
+        } catch (err) {
+            console.error('❌ [Save Reminder] Error checking reminder:', err);
+        }
+    };
+
+    const showSaveReminderDialog = async (minutesElapsed) => {
+        if (isReminderDialogShowing) {
+            console.log('🔔 [Save Reminder] Dialog already showing, skipping');
+            return;
+        }
+
+        console.log(`🔔 [Save Reminder] ✅ Showing dialog for ${minutesElapsed} minutes of unsaved changes`);
+        isReminderDialogShowing = true;
+        await tracker._broadcast({
+            type: 'show_save_reminder',
+            minutesElapsed: minutesElapsed
+        });
+    };
+
+    const handleSaveReminderResponse = async (response) => {
+        console.log(`🔔 [Save Reminder] User response: ${response}`);
+        isReminderDialogShowing = false;
+
+        if (response === 'save') {
+            // User chose to save
+            console.log('🔔 [Save Reminder] User chose to save - calling saveEventsHandler');
+            await saveEventsHandler();
+        } else if (response === 'later') {
+            // User chose to remind later - reset timestamp
+            // Important: We must keep the ORIGINAL saved hashes (not current hashes)
+            // so that hasChanges() will still return true (because current != saved)
+            // We only reset the timestamp to track when to remind again
+            console.log('🔔 [Save Reminder] User chose "Để sau" - resetting timestamp only');
+            const lastSavedState = await getLastSavedState();
+            const newTimestamp = Date.now();
+            
+            if (lastSavedState) {
+                // Keep the original saved hashes (don't update to current)
+                // This ensures hasChanges() will still return true
+                const originalSavedHashes = {
+                    doing_item: lastSavedState.doing_item || '',
+                    doing_step: lastSavedState.doing_step || '',
+                    myparent_panel: lastSavedState.myparent_panel || ''
+                };
+                await saveLastSavedState(originalSavedHashes, newTimestamp);
+                console.log(`🔔 [Save Reminder] ✅ Timestamp reset to: ${new Date(newTimestamp).toISOString()}`);
+                console.log(`🔔 [Save Reminder] ✅ Kept original saved hashes (changes still exist, will remind again)`);
+            } else {
+                // No previous state - this shouldn't happen, but handle it
+                const currentHashes = await calculateFileHashes();
+                await saveLastSavedState(currentHashes, newTimestamp);
+                console.log(`🔔 [Save Reminder] ✅ No previous state, saved current hashes with timestamp`);
+            }
+        }
+
+        // Hide dialog
+        await tracker._broadcast({
+            type: 'hide_save_reminder'
+        });
+        console.log('🔔 [Save Reminder] Dialog hidden');
+    };
+
+    // Start reminder timer (check every 5 minutes)
+    const startReminderTimer = () => {
+        if (reminderTimerInterval) {
+            console.log('🔔 [Save Reminder] Clearing existing timer');
+            clearInterval(reminderTimerInterval);
+        }
+        // Check every 5 minutes (300000ms)
+        console.log('🔔 [Save Reminder] ⏰ Starting reminder timer (check every 5 minutes, reminder after 30 minutes of unsaved changes)');
+        reminderTimerInterval = setInterval(() => {
+            checkAndShowReminder();
+        }, 300000);
+    };
+
+    // Initialize reminder timer
+    console.log('🔔 [Save Reminder] Initializing save reminder system...');
+    startReminderTimer();
 
     let isSaving = false;
     const saveEventsHandler = async () => {
@@ -352,8 +599,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.saveResults();
             
             // Save current state after successful save
+            console.log('🔔 [Save Reminder] Save successful - clearing lastChangeTimestamp');
             const currentHashes = await calculateFileHashes();
-            await saveLastSavedState(currentHashes);
+            await saveLastSavedState(currentHashes, null); // Clear lastChangeTimestamp on save
             
             // Create checkpoint after successful save
             try {
@@ -3681,6 +3929,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     // Initialize saved state if it doesn't exist (for existing sessions)
     const initializeSavedStateIfNeeded = async () => {
+        if (!tracker.sessionFolder) {
+            console.log('🔔 [Save Reminder] sessionFolder not set yet, skipping initialization');
+            return;
+        }
         const lastSavedState = await getLastSavedState();
         if (!lastSavedState) {
             // If no saved state exists, initialize it with current file hashes
@@ -3696,11 +3948,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     };
 
     // Initialize: set up saved state and check changes on startup
-    initializeSavedStateIfNeeded().then(() => {
-        return checkAndBroadcastChanges();
-    }).catch(err => {
-        console.error('Error initializing change checker:', err);
-    });
+    // Wait a bit to ensure sessionFolder is set
+    setTimeout(() => {
+        initializeSavedStateIfNeeded().then(() => {
+            return checkAndBroadcastChanges();
+        }).catch(err => {
+            console.error('Error initializing change checker:', err);
+        });
+    }, 1000);
 
     return {
         quitApp: quitAppHandler,
@@ -3745,6 +4000,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         updateItemDetails: updateItemDetailsHandler,
         getCheckpoints: getCheckpointsHandler,
         rollbackCheckpoint: rollbackCheckpointHandler,
-        checkForChanges: checkAndBroadcastChanges
+        checkForChanges: checkAndBroadcastChanges,
+        isMainScreenActive: isMainScreenActive,
+        isAnyOperationRunning: isAnyOperationRunning,
+        showSaveReminderDialog: showSaveReminderDialog,
+        handleSaveReminderResponse: handleSaveReminderResponse
     };
 }

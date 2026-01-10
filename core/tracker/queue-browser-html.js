@@ -572,6 +572,25 @@ export const QUEUE_BROWSER_HTML = `
         background: #6c757d;
         color: white;
       }
+
+      #saveReminderModal {
+        animation: fadeIn 0.3s ease;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      #saveReminderSaveBtn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,123,255,0.5);
+      }
+
+      #saveReminderLaterBtn:hover {
+        background: #5a6268;
+        transform: translateY(-2px);
+      }
       
     </style>
   </head>
@@ -620,6 +639,26 @@ export const QUEUE_BROWSER_HTML = `
         </div>
         <div id="checkpointList" style="min-height:200px;">
           <div style="text-align:center; padding:40px; color:#999;">Loading checkpoints...</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="saveReminderModal" style="display:none; position:fixed; z-index:20001; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:500px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">💾</div>
+          <h3 style="margin:0 0 10px 0; font-size:20px; color:#333;">Nhắc nhở lưu dữ liệu</h3>
+          <p id="saveReminderMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+            Bạn có thay đổi chưa được lưu từ <span id="saveReminderMinutes">0</span> phút trước. Bạn có muốn lưu ngay không?
+          </p>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="saveReminderSaveBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
+            Đồng ý
+          </button>
+          <button id="saveReminderLaterBtn" style="background:#6c757d; color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
+            Để sau
+          </button>
         </div>
       </div>
     </div>
@@ -862,6 +901,18 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'save_btn_state') {
           console.log('Received save_btn_state event:', evt.hasChanges);
           updateSaveBtnState(evt.hasChanges);
+          return;
+        }
+
+        if (evt.type === 'show_save_reminder') {
+          console.log('🔔 [Save Reminder - Browser] Received show_save_reminder event, minutesElapsed:', evt.minutesElapsed);
+          showSaveReminderDialog(evt.minutesElapsed);
+          return;
+        }
+
+        if (evt.type === 'hide_save_reminder') {
+          console.log('🔔 [Save Reminder - Browser] Received hide_save_reminder event');
+          hideSaveReminderDialog();
           return;
         }
         
@@ -1392,6 +1443,63 @@ Bạn có chắc chắn muốn rollback?\`;
       checkpointModal.addEventListener("click", (e) => {
         if (e.target === checkpointModal) {
           closeCheckpointModalFn();
+        }
+      });
+
+      // Save Reminder Modal handlers
+      const saveReminderModal = document.getElementById('saveReminderModal');
+      const saveReminderSaveBtn = document.getElementById('saveReminderSaveBtn');
+      const saveReminderLaterBtn = document.getElementById('saveReminderLaterBtn');
+      const saveReminderMinutes = document.getElementById('saveReminderMinutes');
+
+      const showSaveReminderDialog = (minutesElapsed) => {
+        if (!saveReminderModal) {
+          console.log('🔔 [Save Reminder - Browser] Error: saveReminderModal not found');
+          return;
+        }
+        console.log('🔔 [Save Reminder - Browser] ✅ Displaying dialog for', minutesElapsed, 'minutes');
+        saveReminderMinutes.textContent = minutesElapsed;
+        saveReminderModal.style.display = 'flex';
+      };
+
+      const hideSaveReminderDialog = () => {
+        if (!saveReminderModal) {
+          console.log('🔔 [Save Reminder - Browser] Error: saveReminderModal not found');
+          return;
+        }
+        console.log('🔔 [Save Reminder - Browser] Hiding dialog');
+        saveReminderModal.style.display = 'none';
+      };
+
+      saveReminderSaveBtn.addEventListener('click', async () => {
+        console.log('🔔 [Save Reminder - Browser] User clicked "Đồng ý" button');
+        hideSaveReminderDialog();
+        if (window.handleSaveReminderResponse) {
+          await window.handleSaveReminderResponse('save');
+        } else {
+          console.error('🔔 [Save Reminder - Browser] Error: handleSaveReminderResponse not available');
+        }
+      });
+
+      saveReminderLaterBtn.addEventListener('click', async () => {
+        console.log('🔔 [Save Reminder - Browser] User clicked "Để sau" button');
+        hideSaveReminderDialog();
+        if (window.handleSaveReminderResponse) {
+          await window.handleSaveReminderResponse('later');
+        } else {
+          console.error('🔔 [Save Reminder - Browser] Error: handleSaveReminderResponse not available');
+        }
+      });
+
+      saveReminderModal.addEventListener('click', (e) => {
+        if (e.target === saveReminderModal) {
+          // Don't close on background click - require explicit button click
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && saveReminderModal.style.display === 'flex') {
+          // Don't close on Escape - require explicit button click
         }
       });
 

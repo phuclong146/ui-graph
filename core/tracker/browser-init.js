@@ -253,6 +253,10 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("getCheckpoints", handlers.getCheckpoints);
     await tracker.queuePage.exposeFunction("rollbackCheckpoint", handlers.rollbackCheckpoint);
     await tracker.queuePage.exposeFunction("checkForChanges", handlers.checkForChanges);
+    await tracker.queuePage.exposeFunction("isMainScreenActive", handlers.isMainScreenActive);
+    await tracker.queuePage.exposeFunction("isAnyOperationRunning", handlers.isAnyOperationRunning);
+    await tracker.queuePage.exposeFunction("showSaveReminderDialog", handlers.showSaveReminderDialog);
+    await tracker.queuePage.exposeFunction("handleSaveReminderResponse", handlers.handleSaveReminderResponse);
 
     await tracker.page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     const websites = await fetchWebsiteList();
