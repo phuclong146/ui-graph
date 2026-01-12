@@ -46,6 +46,7 @@ window.PanelEditor = class PanelEditor {
         this.selectedActionIdInSidebar = null; // Track selected action in sidebar
         this.isProcessing = false;
         this.isEditingLabel = false;
+        this.editingActionId = null; // Track which action is being edited
         this.isDraggingLabel = false;
         this.dragLinkedRect = null;
         this.dragStartPointer = null;
@@ -1098,6 +1099,13 @@ window.PanelEditor = class PanelEditor {
         const editActionGroup = document.getElementById('editor-edit-action-group');
         if (!renameBtn || !editActionGroup) return;
         
+        // Keep toolbar visible when editing label
+        if (this.isEditingLabel && this.editingActionId) {
+            editActionGroup.style.display = 'flex';
+            renameBtn.disabled = true; // Disable rename button while editing
+            return;
+        }
+        
         const activeObject = this.canvas.getActiveObject();
         const hasSingleActionSelected = activeObject && activeObject.boxType === 'rect' && (!this.canvas.getActiveObjects || this.canvas.getActiveObjects().length === 1);
         
@@ -1147,11 +1155,71 @@ window.PanelEditor = class PanelEditor {
         }
         
         const boxData = this.fabricObjects.get(activeObject.id);
-        if (boxData && boxData.label) {
-            this.editLabel(boxData.label);
-        } else {
+        if (!boxData || !boxData.label) {
             this.showStatus('⚠️ Could not find action label to rename', 'error');
+            return;
         }
+        
+        const id = activeObject.id;
+        const currentName = boxData.label.text;
+        
+        // Show dialog with input field
+        const newName = prompt('Nhập tên mới cho action:', currentName);
+        
+        if (newName === null) {
+            // User cancelled
+            return;
+        }
+        
+        const normalizedText = newName.trim().replace(/\\s+/g, ' ');
+        const finalName = normalizedText || 'Unnamed';
+        
+        if (finalName === currentName) {
+            // No change
+            return;
+        }
+        
+        this.saveState();
+        
+        // Update data
+        if (typeof id === 'number') {
+            this.geminiResult[id].panel_title = finalName;
+        } else if (typeof id === 'string' && id.includes('-')) {
+            const [panelIdx, actionIdx] = id.split('-').map(Number);
+            if (this.geminiResult[panelIdx] && this.geminiResult[panelIdx].actions[actionIdx]) {
+                this.geminiResult[panelIdx].actions[actionIdx].action_name = finalName;
+            }
+        }
+        
+        // Update label on canvas
+        const label = boxData.label;
+        const labelBgColor = label.backgroundColor || 'rgba(0,0,0,0.55)';
+        const labelFill = label.fill || '#ffffff';
+        const labelFontSize = label.fontSize || 12;
+        const labelPadding = label.padding || 3;
+        
+        const newLabel = new fabric.Text(finalName, {
+            left: label.left,
+            top: label.top,
+            fontSize: labelFontSize,
+            fill: labelFill,
+            backgroundColor: labelBgColor,
+            padding: labelPadding,
+            fontWeight: 'bold',
+            selectable: false,
+            evented: true,
+            id: id + '_label',
+            linkedBox: id,
+            hoverCursor: 'pointer'
+        });
+        
+        this.canvas.remove(label);
+        this.canvas.add(newLabel);
+        boxData.label = newLabel;
+        this.canvas.renderAll();
+        
+        console.log(\`  - Renamed: "\${currentName}" -> "\${finalName}"\`);
+        this.showStatus('✅ Name updated to "' + finalName + '"', 'success');
     }
     
     async renameSelectedActionByAI() {
@@ -1855,10 +1923,15 @@ window.PanelEditor = class PanelEditor {
         itext.enterEditing();
         itext.selectAll();
         
+        // Store editing state to keep toolbar visible
         this.isEditingLabel = true;
+        this.editingActionId = id;
+        this.updateRenameByAIButton(); // Update toolbar to show it's visible during editing
         
         const finishEditing = () => {
             this.isEditingLabel = false;
+            const savedActionId = this.editingActionId;
+            this.editingActionId = null;
             
             const normalizedText = itext.text.trim().replace(/\\s+/g, ' ');
             const newText = normalizedText || 'Unnamed';
@@ -1897,7 +1970,14 @@ window.PanelEditor = class PanelEditor {
             this.canvas.remove(itext);
             this.canvas.add(newLabel);
             boxData.label = newLabel;
+            
+            // Restore selection to the rect object after editing
+            if (boxData.rect) {
+                this.canvas.setActiveObject(boxData.rect);
+            }
+            
             this.canvas.renderAll();
+            this.updateRenameByAIButton(); // Update toolbar state after editing
             this.showStatus('✅ Name updated to "' + newText + '"', 'success');
         };
         
