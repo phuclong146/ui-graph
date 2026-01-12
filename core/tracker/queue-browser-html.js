@@ -384,6 +384,8 @@ export const QUEUE_BROWSER_HTML = `
         border-radius: 12px;
         z-index: 1000;
         min-width: 160px;
+        right: 10px;
+        left: auto;
       }
 
       #editor-instructions {

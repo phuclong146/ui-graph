@@ -167,6 +167,13 @@ window.PanelEditor = class PanelEditor {
         this.container.innerHTML = toolbarHTML;
         document.body.appendChild(this.container);
         
+        // Set toolbar to right side immediately to avoid left-side flash
+        const toolbar = document.getElementById('editor-toolbar');
+        if (toolbar) {
+            toolbar.style.right = '10px';
+            toolbar.style.left = 'auto';
+        }
+        
         if (this.mode === 'twoPointCrop') {
             this.fullScreenshotBase64 = this.imageBase64;
             imageToLoad = await this.cropPageFromFull(0);
@@ -257,13 +264,13 @@ window.PanelEditor = class PanelEditor {
         const canvasRect = this.canvas.getElement().getBoundingClientRect();
         const wrapperRect = canvasWrapper.getBoundingClientRect();
         
-        const leftGap = canvasRect.left - wrapperRect.left;
+        const rightGap = wrapperRect.right - canvasRect.right;
         const toolbarWidth = toolbar.offsetWidth;
         
-        const centerLeftGap = Math.max(10, (leftGap - toolbarWidth) / 2);
+        const centerRightGap = Math.max(10, (rightGap - toolbarWidth) / 2);
         
-        toolbar.style.left = centerLeftGap + 'px';
-        toolbar.style.right = 'auto';
+        toolbar.style.right = centerRightGap + 'px';
+        toolbar.style.left = 'auto';
     }
     
     drawDefaultPanelBorder() {
