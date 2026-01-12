@@ -152,7 +152,6 @@ window.PanelEditor = class PanelEditor {
             
             // Group 3: Common - always visible
             toolbarHTML += '<div id="editor-common-group" style="display: flex; flex-direction: column; gap: 10px;">';
-            toolbarHTML += '<button id="editorViewToolsBtn" class="editor-btn">🔧 View tools</button>';
             toolbarHTML += '<button id="editorSaveBtn" class="editor-btn save-btn">💾 Save Changes</button>';
             toolbarHTML += '<button id="editorResetBtn" class="editor-btn reset-btn">↺ Reset</button>';
             toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
@@ -909,10 +908,6 @@ window.PanelEditor = class PanelEditor {
             document.getElementById('editorDeleteActionBtn').onclick = () => this.deleteSelectedAction();
             
             // Group 3: Common controls
-            document.getElementById('editorViewToolsBtn').onclick = () => {
-                // TODO: Implement view tools functionality
-                console.log('View tools clicked - functionality to be implemented');
-            };
             document.getElementById('editorSaveBtn').onclick = async () => {
                 if (this.isProcessing) {
                     this.showStatus('⚠️ Đang save, vui lòng đợi...', 'warning');
