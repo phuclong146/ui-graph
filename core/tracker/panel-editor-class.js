@@ -43,6 +43,7 @@ window.PanelEditor = class PanelEditor {
         this.drawingStartX = 0;
         this.drawingStartY = 0;
         this.selectedPanelIndex = null;
+        this.selectedActionIdInSidebar = null; // Track selected action in sidebar
         this.isProcessing = false;
         this.isEditingLabel = false;
         this.isDraggingLabel = false;
@@ -131,34 +132,29 @@ window.PanelEditor = class PanelEditor {
             toolbarHTML += '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>';
             toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
         } else {
-            toolbarHTML += 
-                \`<div id="pageIndicator" style="margin-bottom: 10px; font-weight: bold; font-size: 16px; color: #00ffff; text-align: center; text-shadow: 0 0 10px rgba(0,255,255,0.5);">Page 1/\${this.numPages || 1}</div>\` +
-                '<button id="editorPrevPageBtn" class="editor-btn">◀ Prev</button>' +
-                '<button id="editorNextPageBtn" class="editor-btn">Next ▶</button>' +
-                '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>' +
-                '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>';
+            // Group 2: Edit Action - only visible when action is selected
+            toolbarHTML += '<div id="editor-edit-action-group" style="display: none; flex-direction: column; gap: 10px; align-items: stretch;">';
+            toolbarHTML += '<button id="editorRenameBtn" class="editor-btn">✏️ Rename</button>';
+            toolbarHTML += '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>';
+            toolbarHTML += '<button id="editorResetActionBtn" class="editor-btn">↺ Reset action</button>';
+            toolbarHTML += '<button id="editorDeleteActionBtn" class="editor-btn" style="background: #f44336; color: white;">🗑️ Delete</button>';
+            toolbarHTML += '<div id="editor-instructions" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: #aaa; font-size: 11px; line-height: 1.6;">';
+            toolbarHTML += 'Drag actions to move<br>';
+            toolbarHTML += 'Drag corners to resize<br>';
+            toolbarHTML += 'Shift+Click to select multiple<br>';
+            toolbarHTML += 'Ctrl+Z to undo<br>';
+            toolbarHTML += 'Double-click to edit name<br>';
+            toolbarHTML += 'Delete to remove (single or multiple)';
+            toolbarHTML += '</div>';
+            toolbarHTML += '</div>';
             
-            // Add Compare button only if panelBeforeBase64 exists
-            console.log(\`🔍 Checking panelBeforeBase64 for Compare button: \${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}\`);
-            if (this.panelBeforeBase64) {
-                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (AUTO)</button>';
-                console.log(\`✅ Added Compare button to toolbar\`);
-            } else {
-                console.warn(\`⚠️ Compare button NOT added - panelBeforeBase64 is null\`);
-            }
-            
-            toolbarHTML += 
-                '<button id="editorSaveBtn" class="editor-btn save-btn">💾 Save Changes</button>' +
-                '<button id="editorResetBtn" class="editor-btn reset-btn">↺ Reset</button>' +
-                '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>' +
-                '<div id="editor-instructions">' +
-                'Drag actions to move<br>' +
-                'Drag corners to resize<br>' +
-                'Shift+Click to select multiple<br>' +
-                'Ctrl+Z to undo<br>' +
-                'Double-click to edit name<br>' +
-                'Delete to remove (single or multiple)' +
-                '</div>';
+            // Group 3: Common - always visible
+            toolbarHTML += '<div id="editor-common-group" style="display: flex; flex-direction: column; gap: 10px;">';
+            toolbarHTML += '<button id="editorViewToolsBtn" class="editor-btn">🔧 View tools</button>';
+            toolbarHTML += '<button id="editorSaveBtn" class="editor-btn save-btn">💾 Save Changes</button>';
+            toolbarHTML += '<button id="editorResetBtn" class="editor-btn reset-btn">↺ Reset</button>';
+            toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
+            toolbarHTML += '</div>';
         }
         
         // Add action sidebar for edit mode
@@ -180,11 +176,11 @@ window.PanelEditor = class PanelEditor {
                     overflow: hidden;
                 ">
                     <div style="padding: 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                        <button id="editorAddActionBtn" class="editor-btn add-btn" style="width: 100%; margin-bottom: 10px;">➕ Add Action</button>
                         <button id="editorViewAllActionBtn" class="editor-btn" style="
                             width: 100%;
                             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                             color: white;
-                            margin-bottom: 10px;
                         ">👁️ View all action</button>
                     </div>
                     <div id="editor-action-list" style="
@@ -192,14 +188,34 @@ window.PanelEditor = class PanelEditor {
                         overflow-y: auto;
                         padding: 10px;
                     "></div>
-                    <div style="padding: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-                        <button id="editorAddActionBtn" class="editor-btn add-btn" style="width: 100%;">➕ Add Action</button>
-                    </div>
                 </div>
             \`;
         }
         
-        toolbarHTML += '</div><div id="editor-canvas-wrapper"><canvas id="editor-canvas"></canvas></div>';
+        toolbarHTML += '</div>';
+        
+        // Group 1: Panel controls - positioned centered above panel display area (outside toolbar)
+        // Positioned at top, status message will be below
+        if (this.mode === 'full') {
+            toolbarHTML += '<div id="editor-panel-group" style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; z-index: 1001; background: rgba(26, 26, 26, 0.95); backdrop-filter: blur(10px); padding: 8px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.5);">';
+            toolbarHTML += '<button id="editorPrevPageBtn" class="editor-btn">◀ Prev</button>';
+            toolbarHTML += \`<div id="pageIndicator" style="font-weight: bold; font-size: 14px; color: #00ffff; text-shadow: 0 0 10px rgba(0,255,255,0.5); min-width: 80px; text-align: center;">Page 1/\${this.numPages || 1}</div>\`;
+            toolbarHTML += '<button id="editorNextPageBtn" class="editor-btn">Next ▶</button>';
+            
+            // Add Compare button only if panelBeforeBase64 exists
+            console.log(\`🔍 Checking panelBeforeBase64 for Compare button: \${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}\`);
+            if (this.panelBeforeBase64) {
+                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (AUTO)</button>';
+                console.log(\`✅ Added Compare button to toolbar\`);
+            } else {
+                console.warn(\`⚠️ Compare button NOT added - panelBeforeBase64 is null\`);
+            }
+            
+            toolbarHTML += '<button id="editorCropBtn" class="editor-btn crop-btn" disabled style="opacity: 0.5; cursor: not-allowed;">✂️ Crop</button>';
+            toolbarHTML += '</div>';
+        }
+        
+        toolbarHTML += '<div id="editor-canvas-wrapper"><canvas id="editor-canvas"></canvas></div>';
         
         // Insert sidebar before toolbar if in edit mode
         if (this.mode === 'full') {
@@ -374,17 +390,43 @@ window.PanelEditor = class PanelEditor {
         
         actionListContainer.innerHTML = html;
         
-        // Add click handlers to select actions
+        // Add click handlers to select actions with toggle behavior
         actionListContainer.querySelectorAll('.action-list-item').forEach(item => {
             item.addEventListener('click', () => {
                 const actionId = item.getAttribute('data-action-id');
                 const boxData = this.fabricObjects.get(actionId);
-                if (boxData && boxData.rect) {
-                    this.canvas.setActiveObject(boxData.rect);
+                
+                // Toggle selection: if same action clicked, deselect; otherwise select
+                if (this.selectedActionIdInSidebar === actionId) {
+                    // Deselect
+                    this.selectedActionIdInSidebar = null;
+                    this.canvas.discardActiveObject();
                     this.canvas.renderAll();
+                    this.updateRenameByAIButton();
+                    // Remove selected style
+                    item.style.background = 'rgba(255, 255, 255, 0.05)';
+                    item.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                } else {
+                    // Select new action
+                    this.selectedActionIdInSidebar = actionId;
+                    if (boxData && boxData.rect) {
+                        this.canvas.setActiveObject(boxData.rect);
+                        this.canvas.renderAll();
+                        this.updateRenameByAIButton();
+                    }
+                    // Update visual selection in sidebar
+                    actionListContainer.querySelectorAll('.action-list-item').forEach(otherItem => {
+                        otherItem.style.background = 'rgba(255, 255, 255, 0.05)';
+                        otherItem.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                    });
+                    item.style.background = 'rgba(102, 126, 234, 0.3)';
+                    item.style.border = '1px solid rgba(102, 126, 234, 0.6)';
                 }
             });
         });
+        
+        // Restore selection state if exists
+        this.updateSidebarSelection();
     }
     
     drawDefaultPanelBorder() {
@@ -818,20 +860,9 @@ window.PanelEditor = class PanelEditor {
             document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
             document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
         } else {
+            // Group 1: Panel controls
             document.getElementById('editorPrevPageBtn').onclick = () => this.switchEditPage('prev');
             document.getElementById('editorNextPageBtn').onclick = () => this.switchEditPage('next');
-            document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
-            document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
-            document.getElementById('editorRenameByAIBtn').onclick = async () => await this.renameSelectedActionByAI();
-            
-            // Add View all action button handler (empty for now as requested)
-            const viewAllActionBtn = document.getElementById('editorViewAllActionBtn');
-            if (viewAllActionBtn) {
-                viewAllActionBtn.onclick = () => {
-                    // TODO: Implement view all action functionality
-                    console.log('View all action clicked - functionality to be implemented');
-                };
-            }
             
             // Add Compare button handler if it exists
             const compareBtn = document.getElementById('editorCompareBtn');
@@ -839,6 +870,22 @@ window.PanelEditor = class PanelEditor {
                 compareBtn.onclick = () => this.toggleCompareMode();
             }
             
+            // Crop button is disabled, no handler needed
+            
+            // Group 2: Edit Action controls
+            document.getElementById('editorRenameBtn').onclick = () => this.renameSelectedAction();
+            document.getElementById('editorRenameByAIBtn').onclick = async () => await this.renameSelectedActionByAI();
+            document.getElementById('editorResetActionBtn').onclick = () => {
+                // TODO: Implement reset action functionality
+                console.log('Reset action clicked - functionality to be implemented');
+            };
+            document.getElementById('editorDeleteActionBtn').onclick = () => this.deleteSelectedAction();
+            
+            // Group 3: Common controls
+            document.getElementById('editorViewToolsBtn').onclick = () => {
+                // TODO: Implement view tools functionality
+                console.log('View tools clicked - functionality to be implemented');
+            };
             document.getElementById('editorSaveBtn').onclick = async () => {
                 if (this.isProcessing) {
                     this.showStatus('⚠️ Đang save, vui lòng đợi...', 'warning');
@@ -846,9 +893,27 @@ window.PanelEditor = class PanelEditor {
                 }
                 await this.save();
             };
-            
             document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
             document.getElementById('editorResetBtn').onclick = () => this.reset();
+            
+            // Sidebar controls
+            document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
+            
+            // Add View all action button handler - deselects current action
+            const viewAllActionBtn = document.getElementById('editorViewAllActionBtn');
+            if (viewAllActionBtn) {
+                viewAllActionBtn.onclick = () => {
+                    // Deselect action
+                    this.selectedActionIdInSidebar = null;
+                    this.canvas.discardActiveObject();
+                    this.canvas.renderAll();
+                    this.updateRenameByAIButton();
+                    this.updateSidebarSelection();
+                    
+                    // TODO: Implement view all action functionality
+                    console.log('View all action clicked - functionality to be implemented');
+                };
+            }
             
             // Render action list after setup
             this.renderActionList();
@@ -1030,14 +1095,62 @@ window.PanelEditor = class PanelEditor {
         if (this.mode !== 'full') return;
         
         const renameBtn = document.getElementById('editorRenameByAIBtn');
-        if (!renameBtn) return;
+        const editActionGroup = document.getElementById('editor-edit-action-group');
+        if (!renameBtn || !editActionGroup) return;
         
         const activeObject = this.canvas.getActiveObject();
+        const hasSingleActionSelected = activeObject && activeObject.boxType === 'rect' && (!this.canvas.getActiveObjects || this.canvas.getActiveObjects().length === 1);
         
-        if (activeObject && activeObject.boxType === 'rect' && !this.canvas.getActiveObjects || this.canvas.getActiveObjects().length === 1) {
+        if (hasSingleActionSelected) {
             renameBtn.disabled = false;
+            editActionGroup.style.display = 'flex';
+            
+            // Update sidebar selection to match canvas selection
+            const actionId = activeObject.id;
+            if (actionId && typeof actionId === 'string' && actionId.includes('-')) {
+                this.selectedActionIdInSidebar = actionId;
+                this.updateSidebarSelection();
+            }
         } else {
             renameBtn.disabled = true;
+            editActionGroup.style.display = 'none';
+            this.selectedActionIdInSidebar = null;
+            this.updateSidebarSelection();
+        }
+    }
+    
+    updateSidebarSelection() {
+        const actionListContainer = document.getElementById('editor-action-list');
+        if (!actionListContainer) return;
+        
+        // Remove selection style from all items
+        actionListContainer.querySelectorAll('.action-list-item').forEach(item => {
+            item.style.background = 'rgba(255, 255, 255, 0.05)';
+            item.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+        });
+        
+        // Apply selection style to selected item
+        if (this.selectedActionIdInSidebar) {
+            const selectedItem = actionListContainer.querySelector(\`[data-action-id="\${this.selectedActionIdInSidebar}"]\`);
+            if (selectedItem) {
+                selectedItem.style.background = 'rgba(102, 126, 234, 0.3)';
+                selectedItem.style.border = '1px solid rgba(102, 126, 234, 0.6)';
+            }
+        }
+    }
+    
+    renameSelectedAction() {
+        const activeObject = this.canvas.getActiveObject();
+        if (!activeObject || activeObject.boxType !== 'rect') {
+            this.showStatus('⚠️ Please select an action first', 'warning');
+            return;
+        }
+        
+        const boxData = this.fabricObjects.get(activeObject.id);
+        if (boxData && boxData.label) {
+            this.editLabel(boxData.label);
+        } else {
+            this.showStatus('⚠️ Could not find action label to rename', 'error');
         }
     }
     
@@ -2531,6 +2644,10 @@ window.PanelEditor = class PanelEditor {
         } else {
             return;
         }
+        
+        // Reset selection when switching pages
+        this.selectedActionIdInSidebar = null;
+        this.canvas.discardActiveObject();
         
         this.showStatus('⏳ Loading page...', 'info');
         

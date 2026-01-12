@@ -463,7 +463,7 @@ export const QUEUE_BROWSER_HTML = `
 
       #editor-status {
         position: fixed;
-        top: 10px;
+        top: 50px;
         left: 50%;
         transform: translateX(-50%);
         background: rgba(26, 26, 26, 0.95);
