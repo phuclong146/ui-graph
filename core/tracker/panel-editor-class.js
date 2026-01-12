@@ -136,7 +136,6 @@ window.PanelEditor = class PanelEditor {
                 '<button id="editorPrevPageBtn" class="editor-btn">◀ Prev</button>' +
                 '<button id="editorNextPageBtn" class="editor-btn">Next ▶</button>' +
                 '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>' +
-                '<button id="editorAddActionBtn" class="editor-btn add-btn">➕ Add Action</button>' +
                 '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>';
             
             // Add Compare button only if panelBeforeBase64 exists
@@ -162,7 +161,50 @@ window.PanelEditor = class PanelEditor {
                 '</div>';
         }
         
+        // Add action sidebar for edit mode
+        let sidebarHTML = '';
+        if (this.mode === 'full') {
+            sidebarHTML = \`
+                <div id="editor-action-sidebar" style="
+                    position: fixed;
+                    left: 0;
+                    top: 0;
+                    width: 250px;
+                    height: 100%;
+                    background: rgba(26, 26, 26, 0.95);
+                    backdrop-filter: blur(10px);
+                    border-right: 1px solid rgba(255, 255, 255, 0.1);
+                    z-index: 1001;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                ">
+                    <div style="padding: 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
+                        <button id="editorViewAllActionBtn" class="editor-btn" style="
+                            width: 100%;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white;
+                            margin-bottom: 10px;
+                        ">👁️ View all action</button>
+                    </div>
+                    <div id="editor-action-list" style="
+                        flex: 1;
+                        overflow-y: auto;
+                        padding: 10px;
+                    "></div>
+                    <div style="padding: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                        <button id="editorAddActionBtn" class="editor-btn add-btn" style="width: 100%;">➕ Add Action</button>
+                    </div>
+                </div>
+            \`;
+        }
+        
         toolbarHTML += '</div><div id="editor-canvas-wrapper"><canvas id="editor-canvas"></canvas></div>';
+        
+        // Insert sidebar before toolbar if in edit mode
+        if (this.mode === 'full') {
+            toolbarHTML = sidebarHTML + toolbarHTML;
+        }
         
         this.container.innerHTML = toolbarHTML;
         document.body.appendChild(this.container);
@@ -261,6 +303,15 @@ window.PanelEditor = class PanelEditor {
         
         if (!canvasWrapper || !toolbar) return;
         
+        // Account for sidebar width in edit mode
+        if (this.mode === 'full') {
+            const sidebar = document.getElementById('editor-action-sidebar');
+            if (sidebar) {
+                const sidebarWidth = sidebar.offsetWidth || 250;
+                canvasWrapper.style.paddingLeft = sidebarWidth + 'px';
+            }
+        }
+        
         const canvasRect = this.canvas.getElement().getBoundingClientRect();
         const wrapperRect = canvasWrapper.getBoundingClientRect();
         
@@ -271,6 +322,69 @@ window.PanelEditor = class PanelEditor {
         
         toolbar.style.right = centerRightGap + 'px';
         toolbar.style.left = 'auto';
+    }
+    
+    renderActionList() {
+        if (this.mode !== 'full') return;
+        
+        const actionListContainer = document.getElementById('editor-action-list');
+        if (!actionListContainer) return;
+        
+        const panel = this.geminiResult[0];
+        if (!panel || !Array.isArray(panel.actions)) {
+            actionListContainer.innerHTML = '<div style="color: #aaa; padding: 10px; text-align: center; font-size: 12px;">No actions</div>';
+            return;
+        }
+        
+        const currentPage = this.currentPageIndex + 1;
+        const actionsOnCurrentPage = panel.actions.filter(action => {
+            if (!action.action_pos) return false;
+            const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / 1080) + 1;
+            return actionPage === currentPage;
+        });
+        
+        if (actionsOnCurrentPage.length === 0) {
+            actionListContainer.innerHTML = '<div style="color: #aaa; padding: 10px; text-align: center; font-size: 12px;">No actions on this page</div>';
+            return;
+        }
+        
+        let html = '';
+        actionsOnCurrentPage.forEach((action, index) => {
+            const actionIndex = panel.actions.indexOf(action);
+            const actionId = '0-' + actionIndex;
+            html += \`
+                <div class="action-list-item" data-action-id="\${actionId}" style="
+                    padding: 10px;
+                    margin-bottom: 8px;
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    color: #fff;
+                    font-size: 13px;
+                " onmouseover="this.style.background='rgba(255, 255, 255, 0.1)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'">
+                    <div style="font-weight: 600; margin-bottom: 4px;">\${action.action_name || 'Unnamed Action'}</div>
+                    <div style="font-size: 11px; color: #aaa;">
+                        \${action.action_type || 'button'} • \${action.action_verb || 'click'}
+                    </div>
+                </div>
+            \`;
+        });
+        
+        actionListContainer.innerHTML = html;
+        
+        // Add click handlers to select actions
+        actionListContainer.querySelectorAll('.action-list-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const actionId = item.getAttribute('data-action-id');
+                const boxData = this.fabricObjects.get(actionId);
+                if (boxData && boxData.rect) {
+                    this.canvas.setActiveObject(boxData.rect);
+                    this.canvas.renderAll();
+                }
+            });
+        });
     }
     
     drawDefaultPanelBorder() {
@@ -710,6 +824,15 @@ window.PanelEditor = class PanelEditor {
             document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
             document.getElementById('editorRenameByAIBtn').onclick = async () => await this.renameSelectedActionByAI();
             
+            // Add View all action button handler (empty for now as requested)
+            const viewAllActionBtn = document.getElementById('editorViewAllActionBtn');
+            if (viewAllActionBtn) {
+                viewAllActionBtn.onclick = () => {
+                    // TODO: Implement view all action functionality
+                    console.log('View all action clicked - functionality to be implemented');
+                };
+            }
+            
             // Add Compare button handler if it exists
             const compareBtn = document.getElementById('editorCompareBtn');
             if (compareBtn) {
@@ -726,6 +849,9 @@ window.PanelEditor = class PanelEditor {
             
             document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
             document.getElementById('editorResetBtn').onclick = () => this.reset();
+            
+            // Render action list after setup
+            this.renderActionList();
         }
         
         if (this.mode !== 'cropOnly') {
@@ -1587,6 +1713,7 @@ window.PanelEditor = class PanelEditor {
         this.drawBox(newAction.action_pos, panelIndex + '-' + actionIndex, 'action', actionData.name);
         console.log(\`  - Add: "\${actionData.name}" [\${actionData.type}] at (\${newAction.action_pos.x},\${newAction.action_pos.y},\${newAction.action_pos.w},\${newAction.action_pos.h})\`);
         this.showStatus('✅ Action "' + actionData.name + '" added to "' + this.geminiResult[panelIndex].panel_title + '"', 'success');
+        this.renderActionList();
     }
     
     editLabel(label) {
@@ -1730,6 +1857,8 @@ window.PanelEditor = class PanelEditor {
                 deletedNames.forEach(name => console.log(\`  - Delete: "\${name}"\`));
                 this.showStatus('✅ Deleted ' + deletedNames.length + ' actions', 'success');
             }
+        
+        this.renderActionList();
     }
     
     redrawAll() {
@@ -2450,6 +2579,7 @@ window.PanelEditor = class PanelEditor {
         }
         
         this.canvas.renderAll();
+        this.renderActionList();
         
         this.showStatus(\`📄 Page \${this.currentPageIndex + 1}/\${this.numPages}\`, 'success');
     }
