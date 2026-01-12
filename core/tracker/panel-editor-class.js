@@ -61,6 +61,7 @@ window.PanelEditor = class PanelEditor {
         this.overlayAutoInterval = null;
         this.panelBeforePageBase64 = null;
         this.overlayAutoIntervalMs = 1000; // Configurable overlay toggle interval in milliseconds (default: 1s)
+        this.initialActionPositions = new Map(); // Store initial position/size of actions when panel opens
     }
 
     async init() {
@@ -137,7 +138,7 @@ window.PanelEditor = class PanelEditor {
             toolbarHTML += '<div id="editor-edit-action-group" style="display: none; flex-direction: column; gap: 10px; align-items: stretch;">';
             toolbarHTML += '<button id="editorRenameBtn" class="editor-btn">✏️ Rename</button>';
             toolbarHTML += '<button id="editorRenameByAIBtn" class="editor-btn ai-btn" disabled>🤖 Rename by AI</button>';
-            toolbarHTML += '<button id="editorResetActionBtn" class="editor-btn">↺ Reset action</button>';
+            toolbarHTML += '<button id="editorResetActionBtn" class="editor-btn">↺ Reset location</button>';
             toolbarHTML += '<button id="editorDeleteActionBtn" class="editor-btn" style="background: #f44336; color: white;">🗑️ Delete</button>';
             toolbarHTML += '<div id="editor-instructions" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: #aaa; font-size: 11px; line-height: 1.6;">';
             toolbarHTML += 'Drag actions to move<br>';
@@ -268,6 +269,7 @@ window.PanelEditor = class PanelEditor {
         if (this.mode !== 'cropOnly' && this.mode !== 'twoPointCrop') {
             this.drawDefaultPanelBorder();
             this.drawAllBoxes();
+            this.saveInitialActionPositions(); // Save initial positions after drawing boxes
             this.fixOutOfBoundsBoxes();
             this.canvas.selection = true;
         }
@@ -580,6 +582,33 @@ window.PanelEditor = class PanelEditor {
         console.log(\`🎨 Drew boxes for \${panel.actions.filter(a => (a.action_pos?.p || Math.floor((a.action_pos?.y || 0) / 1080) + 1) === currentPage).length} actions on page \${currentPage}\`);
     }
 
+    saveInitialActionPositions() {
+        // Save initial position and size of all actions when panel opens
+        // Only save if not already saved (to avoid overwriting on page switches)
+        if (this.initialActionPositions.size > 0) {
+            return; // Already saved
+        }
+        
+        const panel = this.geminiResult[0];
+        if (!panel || !Array.isArray(panel.actions)) return;
+        
+        panel.actions.forEach((action, actionIndex) => {
+            if (action.action_pos) {
+                const actionId = '0-' + actionIndex;
+                // Deep copy the action_pos to avoid reference issues
+                this.initialActionPositions.set(actionId, {
+                    x: action.action_pos.x,
+                    y: action.action_pos.y,
+                    w: action.action_pos.w,
+                    h: action.action_pos.h,
+                    p: action.action_pos.p // Preserve page number if exists
+                });
+            }
+        });
+        
+        console.log(\`💾 Saved initial positions for \${this.initialActionPositions.size} actions\`);
+    }
+
     drawBox(pos, id, type, title) {
         const color = type === 'panel' ? '#ff4444' : '#00aaff';
         
@@ -876,10 +905,7 @@ window.PanelEditor = class PanelEditor {
             // Group 2: Edit Action controls
             document.getElementById('editorRenameBtn').onclick = () => this.renameSelectedAction();
             document.getElementById('editorRenameByAIBtn').onclick = async () => await this.renameSelectedActionByAI();
-            document.getElementById('editorResetActionBtn').onclick = () => {
-                // TODO: Implement reset action functionality
-                console.log('Reset action clicked - functionality to be implemented');
-            };
+            document.getElementById('editorResetActionBtn').onclick = () => this.resetSelectedActionLocation();
             document.getElementById('editorDeleteActionBtn').onclick = () => this.deleteSelectedAction();
             
             // Group 3: Common controls
@@ -1220,6 +1246,79 @@ window.PanelEditor = class PanelEditor {
         
         console.log(\`  - Renamed: "\${currentName}" -> "\${finalName}"\`);
         this.showStatus('✅ Name updated to "' + finalName + '"', 'success');
+    }
+    
+    resetSelectedActionLocation() {
+        const activeObject = this.canvas.getActiveObject();
+        if (!activeObject || activeObject.boxType !== 'rect') {
+            this.showStatus('⚠️ Please select an action first', 'warning');
+            return;
+        }
+        
+        const id = activeObject.id;
+        
+        // Check if this is an action (not a panel)
+        if (typeof id === 'number') {
+            this.showStatus('⚠️ Please select an action, not a panel', 'warning');
+            return;
+        }
+        
+        // Get initial position from saved map
+        const initialPos = this.initialActionPositions.get(id);
+        if (!initialPos) {
+            this.showStatus('⚠️ Could not find initial position for this action', 'error');
+            return;
+        }
+        
+        // Get box data
+        const boxData = this.fabricObjects.get(id);
+        if (!boxData || !boxData.rect) {
+            this.showStatus('⚠️ Could not find action box', 'error');
+            return;
+        }
+        
+        this.saveState();
+        
+        // Restore position and size on canvas
+        // Reset scaleX and scaleY to 1 to ensure proper size reset
+        boxData.rect.set({
+            left: initialPos.x,
+            top: initialPos.y,
+            width: initialPos.w,
+            height: initialPos.h,
+            scaleX: 1,
+            scaleY: 1
+        });
+        
+        // Update coordinates after setting properties
+        boxData.rect.setCoords();
+        
+        // Update label position
+        if (boxData.label) {
+            boxData.label.set({
+                left: initialPos.x + 8,
+                top: initialPos.y - 20
+            });
+            boxData.label.setCoords();
+        }
+        
+        // Update data in geminiResult
+        if (typeof id === 'string' && id.includes('-')) {
+            const [panelIdx, actionIdx] = id.split('-').map(Number);
+            if (this.geminiResult[panelIdx] && this.geminiResult[panelIdx].actions[actionIdx]) {
+                this.geminiResult[panelIdx].actions[actionIdx].action_pos = {
+                    x: initialPos.x,
+                    y: initialPos.y,
+                    w: initialPos.w,
+                    h: initialPos.h,
+                    p: initialPos.p // Preserve page number if exists
+                };
+            }
+        }
+        
+        this.canvas.renderAll();
+        this.showStatus('✅ Action location reset to original position', 'success');
+        console.log(\`  - Reset location: action \${id} to (\${initialPos.x}, \${initialPos.y}, \${initialPos.w}, \${initialPos.h})\`);
     }
     
     async renameSelectedActionByAI() {
