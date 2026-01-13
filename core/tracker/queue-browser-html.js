@@ -2455,12 +2455,13 @@ Bạn có chắc chắn muốn rollback?\`;
         actionImageContainer.className = 'action-image-container';
         actionImageContainer.style.cssText = 'display: flex; align-items: center; gap: 15px;';
         
-        if (evt.action_info && evt.action_info.position && screenshotBase64) {
-          // Create placeholder img element
+        // Prefer action_info.image_base64 (cropped from panel fullscreen_base64)
+        if (evt.action_info && evt.action_info.image_base64) {
           const actionImg = document.createElement('img');
           actionImg.style.cssText = 'max-width: 200px; max-height: 60px; border: 1px dashed #333; border-radius: 4px; padding: 4px; cursor: pointer; object-fit: contain;';
-          actionImg.title = 'Ảnh nút action - Cắt từ page';
-          actionImg.style.display = 'none'; // Hide until cropped
+          actionImg.title = 'Ảnh nút action - Cắt từ panel fullscreen';
+          actionImg.src = 'data:image/png;base64,' + evt.action_info.image_base64;
+          actionImg.style.display = 'block';
           
           actionImg.addEventListener('click', () => {
             document.getElementById('modalImage').src = actionImg.src;
@@ -2468,39 +2469,7 @@ Bạn có chắc chắn muốn rollback?\`;
           });
           
           const imageLabel = document.createElement('div');
-          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ page</div>';
-          
-          // Create a canvas to crop the action image
-          const sourceImg = new Image();
-          sourceImg.onload = function() {
-            try {
-              const canvas = document.createElement('canvas');
-              const ctx = canvas.getContext('2d');
-              const pos = evt.action_info.position;
-              
-              // Set canvas size to action dimensions
-              canvas.width = pos.w;
-              canvas.height = pos.h;
-              
-              // Draw the cropped portion
-              ctx.drawImage(sourceImg, pos.x, pos.y, pos.w, pos.h, 0, 0, pos.w, pos.h);
-              
-              // Update the img element with cropped image
-              actionImg.src = canvas.toDataURL('image/png');
-              actionImg.style.display = 'block';
-            } catch (err) {
-              console.error('Failed to crop action image:', err);
-              // Fallback: show full image
-              actionImg.src = 'data:image/png;base64,' + screenshotBase64;
-              actionImg.style.display = 'block';
-            }
-          };
-          sourceImg.onerror = function() {
-            // Fallback: show full image
-            actionImg.src = 'data:image/png;base64,' + screenshotBase64;
-            actionImg.style.display = 'block';
-          };
-          sourceImg.src = 'data:image/png;base64,' + screenshotBase64;
+          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ panel fullscreen</div>';
           
           actionImageContainer.appendChild(actionImg);
           actionImageContainer.appendChild(imageLabel);
@@ -2511,7 +2480,7 @@ Bạn có chắc chắn muốn rollback?\`;
           actionImageContainer.appendChild(noImageMsg);
           
           const imageLabel = document.createElement('div');
-          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ page</div>';
+          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ fullscreen</div>';
           actionImageContainer.appendChild(imageLabel);
         }
         
@@ -2741,7 +2710,8 @@ Bạn có chắc chắn muốn rollback?\`;
         
         if (evt.screenshot) {
           // If screenshot becomes available later, update Step 2 in actionDiv
-          if (evt.item_category === 'ACTION' && evt.action_info && evt.action_info.position) {
+          // Only update if action_info.image_base64 is not already available
+          if (evt.item_category === 'ACTION' && evt.action_info && evt.action_info.position && !evt.action_info.image_base64) {
             const existingActionDiv = container.querySelector('.event[data-event-type="action_details"]');
             if (existingActionDiv) {
               const existingStep2 = existingActionDiv.querySelector('[data-step="2"]');

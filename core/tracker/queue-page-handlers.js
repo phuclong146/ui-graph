@@ -4,6 +4,7 @@ import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
 import { calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
+import { cropBase64Image } from '../media/screenshot.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -2935,8 +2936,35 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         w: item.metadata.global_pos.w,
                         h: item.metadata.global_pos.h
                     },
-                    step_info: null
+                    step_info: null,
+                    image_base64: null
                 };
+
+                // Get parent panel of action
+                const parentPanelId = await getParentPanelOfActionHandler(itemId);
+                if (parentPanelId) {
+                    try {
+                        const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
+                        if (parentPanelItem) {
+                            // Try fullscreen_base64 first, then fall back to image_base64
+                            let panelImageBase64 = null;
+                            if (parentPanelItem.fullscreen_base64) {
+                                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(parentPanelItem.fullscreen_base64);
+                            } else if (parentPanelItem.image_base64) {
+                                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(parentPanelItem.image_base64);
+                            }
+
+                            if (panelImageBase64 && item.metadata?.global_pos) {
+                                // Crop action image from panel image using global_pos
+                                const actionImage = await cropBase64Image(panelImageBase64, item.metadata.global_pos);
+                                actionInfo.image_base64 = actionImage;
+                                console.log(`✅ Cropped action image from panel ${parentPanelId} fullscreen_base64`);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to get action image from panel:', err);
+                    }
+                }
 
                 const step = await tracker.stepManager.getStepForAction(itemId);
                 if (step) {
