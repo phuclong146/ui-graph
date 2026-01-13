@@ -692,41 +692,51 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       .select-panel-item {
-        padding: 10px 12px;
-        margin: 4px 0;
+        padding: 10px;
+        margin-bottom: 8px;
         background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
         border-radius: 6px;
         cursor: pointer;
-        color: #aaa;
-        font-size: 13px;
+        color: #fff;
+        font-size: 11px;
         transition: all 0.2s ease;
-        border: 1px solid transparent;
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
 
       .select-panel-item:hover {
         background: rgba(255,255,255,0.1);
-        color: #fff;
       }
 
       .select-panel-item.selected {
-        background: rgba(0,123,255,0.2);
-        border-color: #007bff;
-        color: #fff;
+        background: rgba(102, 126, 234, 0.3);
+        border-color: rgba(102, 126, 234, 0.6);
+      }
+
+      .select-panel-item-content {
+        flex: 1;
       }
 
       .select-panel-item-name {
         font-weight: 600;
         margin-bottom: 4px;
+        color: #fff;
       }
 
       .select-panel-item-status {
         font-size: 11px;
-        opacity: 0.7;
+        color: #aaa;
       }
 
       #select-panel-save:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(58,71,213,0.5);
+      }
+
+      #select-panel-cancel:hover {
+        background: #555 !important;
       }
 
       #select-panel-pagination button {
@@ -819,12 +829,14 @@ export const QUEUE_BROWSER_HTML = `
     </div>
 
     <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
-      <div id="select-panel-sidebar" style="width:300px; background:rgba(26, 26, 26, 0.95); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
-        <button id="select-panel-draw-new" style="margin:15px; padding:12px 16px; background:linear-gradient(135deg, #ffb3d9 0%, #ff99cc 100%); color:#333; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; text-align:center; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,179,217,0.3);">
-          DRAW NEW PANEL
-        </button>
+      <div id="select-panel-sidebar" style="width:200px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.1);">
+          <button id="select-panel-draw-new" style="width:100%; padding:10px 16px; background:linear-gradient(135deg, #ffb3d9 0%, #ff99cc 100%); color:#333; border:none; border-radius:8px; cursor:pointer; font-size:11px; font-weight:600; text-align:center; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,179,217,0.3);">
+            ➕ DRAW NEW PANEL
+          </button>
+        </div>
         <div id="select-panel-list" style="flex:1; overflow-y:auto; padding:10px;">
-          <div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">Loading panels...</div>
+          <div style="text-align:center; padding:20px; color:#aaa; font-size:12px;">Loading panels...</div>
         </div>
       </div>
       <div id="select-panel-preview" style="flex:1; position:relative; display:flex; justify-content:center; align-items:center; overflow:auto; padding:20px;">
@@ -837,12 +849,12 @@ export const QUEUE_BROWSER_HTML = `
         <div id="select-panel-page-indicator" style="font-weight:bold; font-size:14px; color:#00ffff; text-shadow:0 0 10px rgba(0,255,255,0.5); min-width:80px; text-align:center;">Page 1/1</div>
         <button id="select-panel-next-page" style="padding:8px 16px; background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.3); border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s ease;">Next ▶</button>
       </div>
-      <div id="select-panel-toolbar" style="position:absolute; top:20px; right:20px; display:flex; gap:10px; z-index:1000;">
-        <button id="select-panel-save" style="padding:12px 24px; background:linear-gradient(135deg, #00d2ff 0%, #3a47d5 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(58,71,213,0.3);">
-          💾 SAVE
+      <div id="select-panel-toolbar" style="position:absolute; top:50%; right:10px; transform:translateY(-50%); padding:15px 10px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); display:flex; flex-direction:column; gap:10px; align-items:stretch; box-shadow:0 2px 10px rgba(0,0,0,0.5); border-radius:12px; z-index:1000; min-width:160px;">
+        <button id="select-panel-save" class="editor-btn save-btn" style="border:none; border-radius:8px; padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s ease;">
+          💾 Save Changes
         </button>
-        <button id="select-panel-cancel" style="padding:12px 24px; background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.3); border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
-          ❌ CANCEL
+        <button id="select-panel-cancel" class="editor-btn cancel-btn" style="border:none; border-radius:8px; padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s ease;">
+          ❌ Cancel
         </button>
       </div>
     </div>
@@ -3231,7 +3243,7 @@ Bạn có chắc chắn muốn rollback?\`;
           // Show modal by setting display to flex
           container.style.display = 'flex';
           container.classList.add('show');
-          listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">Loading panels...</div>';
+          listContainer.innerHTML = '<div style="text-align:center; padding:10px; color:#aaa; font-size:12px;">Loading panels...</div>';
           
           // Setup pagination buttons immediately - before loading panels
           const prevPageBtn = document.getElementById('select-panel-prev-page');
@@ -3271,7 +3283,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
           
           if (panels.length === 0) {
-            listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">No panels found</div>';
+            listContainer.innerHTML = '<div style="text-align:center; padding:10px; color:#aaa; font-size:12px;">No panels found</div>';
             return;
           }
           
@@ -3287,9 +3299,21 @@ Bạn có chắc chắn muốn rollback?\`;
               selectPanelModalSelectedPanelId = panel.item_id;
             }
             
+            // Determine dot color based on status
+            const dotColor = panel.status === 'completed' ? '#4caf50' : '#4caf50'; // Green for panels
+            const statusText = panel.status === 'completed' ? 'completed' : 'pending';
+            
             panelItem.innerHTML = \`
-              <div class="select-panel-item-name">\${panel.name || 'Unnamed Panel'}</div>
-              <div class="select-panel-item-status">Status: \${panel.status || 'pending'}</div>
+              <div class="select-panel-item-dot" style="width:16px; height:16px; min-width:16px; flex-shrink:0;">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:100%;">
+                  <circle cx="12" cy="12" r="10" fill="\${dotColor}"/>
+                  \${panel.status === 'completed' ? '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' : ''}
+                </svg>
+              </div>
+              <div class="select-panel-item-content">
+                <div class="select-panel-item-name">\${panel.name || 'Unnamed Panel'}</div>
+                <div class="select-panel-item-status">Status: \${statusText}</div>
+              </div>
             \`;
             
             panelItem.addEventListener('click', async () => {
@@ -3479,16 +3503,17 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Get available space (account for sidebar, padding, pagination, toolbar)
         const sidebar = document.getElementById('select-panel-sidebar');
-        const sidebarWidth = sidebar ? sidebar.offsetWidth : 300;
+        const sidebarWidth = sidebar ? sidebar.offsetWidth : 200;
         const toolbar = document.getElementById('select-panel-toolbar');
+        const toolbarWidth = toolbar ? toolbar.offsetWidth : 180;
         const toolbarHeight = toolbar ? toolbar.offsetHeight : 0;
         const pagination = document.getElementById('select-panel-pagination');
         const paginationHeight = pagination && pagination.style.display !== 'none' ? pagination.offsetHeight : 0;
         
         const windowHeight = window.innerHeight;
         const windowWidth = window.innerWidth;
-        const availableHeight = windowHeight - toolbarHeight - paginationHeight - 60; // Account for padding
-        const availableWidth = windowWidth - sidebarWidth - 60; // Account for padding
+        const availableHeight = windowHeight - paginationHeight - 60; // Account for padding
+        const availableWidth = windowWidth - sidebarWidth - toolbarWidth - 60; // Account for padding and toolbar
         
         const canvasHeight = selectPanelModalFabricCanvas.getHeight();
         const canvasWidth = selectPanelModalFabricCanvas.getWidth();
