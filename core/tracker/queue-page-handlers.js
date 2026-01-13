@@ -3714,6 +3714,137 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const useSelectPanelHandler = async (actionItemId, selectedPanelId) => {
+        try {
+            if (!tracker.stepManager || !tracker.dataItemManager || !tracker.parentPanelManager) {
+                console.error('Managers not initialized');
+                return;
+            }
+
+            const recordingInfo = await tracker.stopPanelRecording();
+
+            if (recordingInfo && recordingInfo.panelId) {
+                const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
+                const { ENV } = await import('../config/env.js');
+                const videoUrl = await uploadVideoAndGetUrl(
+                    recordingInfo.videoPath,
+                    recordingInfo.panelId,
+                    ENV.API_TOKEN
+                );
+
+                if (videoUrl) {
+                    console.log(`📹 Video URL: ${videoUrl}`);
+                    const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+                    if (actionItem) {
+                        await tracker.dataItemManager.updateItem(actionItemId, {
+                            metadata: {
+                                ...actionItem.metadata,
+                                session_url: videoUrl,
+                                session_start: recordingInfo.sessionStart,
+                                session_end: recordingInfo.sessionEnd
+                            }
+                        });
+                        await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
+                    }
+                } else {
+                    console.error('❌ Video upload failed for USE_SELECT_PANEL action');
+                }
+            }
+
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+
+            if (!parentPanelId) {
+                console.error('Cannot find parent panel for action');
+                return;
+            }
+
+            if (!selectedPanelId) {
+                console.error('Selected panel ID is required');
+                return;
+            }
+
+            await tracker.stepManager.createStep(parentPanelId, actionItemId, selectedPanelId);
+
+            await tracker.dataItemManager.updateItem(actionItemId, { status: 'completed' });
+
+            // Verify the update was successful before building tree
+            const updatedAction = await tracker.dataItemManager.getItem(actionItemId);
+            if (updatedAction && updatedAction.status === 'completed') {
+                await tracker._broadcast({
+                    type: 'tree_update',
+                    data: await tracker.panelLogManager.buildTreeStructure()
+                });
+
+                await checkAndUpdatePanelStatusHandler(parentPanelId);
+
+                await selectPanelHandler(actionItemId);
+            } else {
+                console.error('❌ Failed to verify action status update');
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to mark as done' });
+            }
+
+            console.log(`✅ Use SELECT PANEL: ${actionItemId} marked done with panel ${selectedPanelId}`);
+            
+            // Check for changes after using select panel
+            scheduleChangeCheck();
+        } catch (err) {
+            console.error('Use SELECT PANEL failed:', err);
+            throw err;
+        }
+    };
+
+    const getAllPanelsHandler = async () => {
+        try {
+            if (!tracker.dataItemManager) {
+                console.error('DataItemManager not initialized');
+                return [];
+            }
+
+            const allItems = await tracker.dataItemManager.getAllItems();
+            const panels = allItems
+                .filter(item => item.item_category === 'PANEL')
+                .map(panel => ({
+                    item_id: panel.item_id,
+                    name: panel.name,
+                    status: panel.status,
+                    metadata: panel.metadata || null
+                }));
+
+            return panels;
+        } catch (err) {
+            console.error('Failed to get all panels:', err);
+            return [];
+        }
+    };
+
+    const getPanelImageHandler = async (panelId) => {
+        try {
+            if (!tracker.dataItemManager) {
+                console.error('DataItemManager not initialized');
+                return null;
+            }
+
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem || panelItem.item_category !== 'PANEL') {
+                console.error('Panel not found or not a PANEL');
+                return null;
+            }
+
+            // Try fullscreen_base64 first, then fall back to image_base64
+            let panelImageBase64 = null;
+            if (panelItem.fullscreen_base64) {
+                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.fullscreen_base64);
+            } else if (panelItem.image_base64) {
+                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+            }
+
+            return panelImageBase64;
+        } catch (err) {
+            console.error('Failed to get panel image:', err);
+            return null;
+        }
+    };
+
     const triggerDrawPanelNewHandler = async () => {
         await tracker._broadcast({ type: 'trigger_draw_panel', mode: 'DRAW_NEW' });
     };
@@ -4200,6 +4331,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         getPanelEditorClass: getPanelEditorClassHandler,
         getParentPanelOfAction: getParentPanelOfActionHandler,
         useBeforePanel: useBeforePanelHandler,
+        useSelectPanel: useSelectPanelHandler,
+        getAllPanels: getAllPanelsHandler,
+        getPanelImage: getPanelImageHandler,
         triggerDrawPanelNew: triggerDrawPanelNewHandler,
         triggerUseBeforePanel: triggerUseBeforePanelHandler,
         broadcastToast: broadcastToastHandler,

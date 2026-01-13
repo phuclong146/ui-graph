@@ -673,6 +673,75 @@ export const QUEUE_BROWSER_HTML = `
         background: #5a6268;
         transform: translateY(-2px);
       }
+
+      #select-panel-container {
+        display: none;
+      }
+
+      #select-panel-container.show {
+        display: flex;
+      }
+
+      #select-panel-sidebar {
+        overflow-y: auto;
+      }
+
+      #select-panel-draw-new:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(255,179,217,0.5);
+      }
+
+      .select-panel-item {
+        padding: 10px 12px;
+        margin: 4px 0;
+        background: rgba(255,255,255,0.05);
+        border-radius: 6px;
+        cursor: pointer;
+        color: #aaa;
+        font-size: 13px;
+        transition: all 0.2s ease;
+        border: 1px solid transparent;
+      }
+
+      .select-panel-item:hover {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+      }
+
+      .select-panel-item.selected {
+        background: rgba(0,123,255,0.2);
+        border-color: #007bff;
+        color: #fff;
+      }
+
+      .select-panel-item-name {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .select-panel-item-status {
+        font-size: 11px;
+        opacity: 0.7;
+      }
+
+      #select-panel-save:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(58,71,213,0.5);
+      }
+
+      #select-panel-pagination button {
+        transition: all 0.2s ease;
+      }
+
+      #select-panel-pagination button:hover:not(:disabled) {
+        background: rgba(255,255,255,0.2) !important;
+        transform: translateY(-1px);
+      }
+
+      #select-panel-pagination button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
       
     </style>
   </head>
@@ -746,6 +815,35 @@ export const QUEUE_BROWSER_HTML = `
             Để sau
           </button>
         </div>
+      </div>
+    </div>
+
+    <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
+      <div id="select-panel-sidebar" style="width:300px; background:rgba(26, 26, 26, 0.95); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
+        <button id="select-panel-draw-new" style="margin:15px; padding:12px 16px; background:linear-gradient(135deg, #ffb3d9 0%, #ff99cc 100%); color:#333; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; text-align:center; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,179,217,0.3);">
+          DRAW NEW PANEL
+        </button>
+        <div id="select-panel-list" style="flex:1; overflow-y:auto; padding:10px;">
+          <div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">Loading panels...</div>
+        </div>
+      </div>
+      <div id="select-panel-preview" style="flex:1; position:relative; display:flex; justify-content:center; align-items:center; overflow:auto; padding:20px;">
+        <div id="select-panel-canvas-wrapper" style="display:flex; justify-content:center; align-items:center; width:100%; height:100%;">
+          <canvas id="select-panel-canvas" style="box-shadow:0 0 30px rgba(0,0,0,0.7); border-radius:2px; max-width:100%; max-height:100%;"></canvas>
+        </div>
+      </div>
+      <div id="select-panel-pagination" style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:none; align-items:center; gap:15px; z-index:1000; background:rgba(26, 26, 26, 0.9); padding:10px 20px; border-radius:8px; border:1px solid rgba(255,255,255,0.2);">
+        <button id="select-panel-prev-page" style="padding:8px 16px; background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.3); border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s ease;">◀ Prev</button>
+        <div id="select-panel-page-indicator" style="font-weight:bold; font-size:14px; color:#00ffff; text-shadow:0 0 10px rgba(0,255,255,0.5); min-width:80px; text-align:center;">Page 1/1</div>
+        <button id="select-panel-next-page" style="padding:8px 16px; background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.3); border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:all 0.2s ease;">Next ▶</button>
+      </div>
+      <div id="select-panel-toolbar" style="position:absolute; top:20px; right:20px; display:flex; gap:10px; z-index:1000;">
+        <button id="select-panel-save" style="padding:12px 24px; background:linear-gradient(135deg, #00d2ff 0%, #3a47d5 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(58,71,213,0.3);">
+          💾 SAVE
+        </button>
+        <button id="select-panel-cancel" style="padding:12px 24px; background:rgba(255,255,255,0.1); color:white; border:1px solid rgba(255,255,255,0.3); border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
+          ❌ CANCEL
+        </button>
       </div>
     </div>
 
@@ -2051,6 +2149,28 @@ Bạn có chắc chắn muốn rollback?\`;
             }
           });
           menu.appendChild(renameByAIOption);
+          
+          const selectPanelOption = document.createElement('div');
+          selectPanelOption.textContent = '📋 SELECT PANEL';
+          selectPanelOption.style.cssText = \`
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-top: 1px solid #eee;
+          \`;
+          selectPanelOption.addEventListener('mouseenter', () => {
+            selectPanelOption.style.background = '#f0f0f0';
+          });
+          selectPanelOption.addEventListener('mouseleave', () => {
+            selectPanelOption.style.background = 'transparent';
+          });
+          selectPanelOption.addEventListener('click', async () => {
+            menu.remove();
+            if (window.openSelectPanelModal) {
+              await window.openSelectPanelModal(panelId);
+            }
+          });
+          menu.appendChild(selectPanelOption);
         }
         
         const deleteOption = document.createElement('div');
@@ -2536,21 +2656,11 @@ Bạn có chắc chắn muốn rollback?\`;
             }
           }
           
-          isDrawingPanel = true;
-          try {
-            if (window.useBeforePanel) {
-              await window.useBeforePanel(selectedPanelId);
-              showToast('✅ Marked as done với current panel');
-              if (window.broadcastToast) await window.broadcastToast('✅ Marked as done với current panel');
-              if (window.selectPanel) {
-                await window.selectPanel(selectedPanelId);
-              }
-            }
-          } catch (err) {
-            console.error('Use current panel error:', err);
-            showToast('❌ Lỗi khi sử dụng current panel');
-          } finally {
-            isDrawingPanel = false;
+          // Open SELECT PANEL modal
+          if (window.openSelectPanelModal) {
+            await window.openSelectPanelModal(selectedPanelId);
+          } else {
+            showToast('❌ SELECT PANEL modal không khả dụng');
           }
         });
         
@@ -3086,6 +3196,498 @@ Bạn có chắc chắn muốn rollback?\`;
       if (panelLogRefreshBtn) {
         panelLogRefreshBtn.addEventListener('click', refreshPanelTree);
       }
+      
+      setTimeout(loadInitialTree, 1000);
+
+      // SELECT PANEL Modal Logic
+      let selectPanelModalActionId = null;
+      let selectPanelModalSelectedPanelId = null;
+      let selectPanelModalCanvas = null;
+      let selectPanelModalFabricCanvas = null;
+      let selectPanelModalFullImageBase64 = null;
+      let selectPanelModalCurrentPageIndex = 0;
+      let selectPanelModalNumPages = 1;
+
+      async function openSelectPanelModal(actionId) {
+        try {
+          selectPanelModalActionId = actionId;
+          selectPanelModalSelectedPanelId = null;
+          const container = document.getElementById('select-panel-container');
+          const listContainer = document.getElementById('select-panel-list');
+          const canvas = document.getElementById('select-panel-canvas');
+          
+          if (!container) {
+            console.error('select-panel-container not found');
+            showToast('❌ SELECT PANEL modal không tìm thấy');
+            return;
+          }
+          
+          // Clean up existing fabric canvas if any
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.dispose();
+            selectPanelModalFabricCanvas = null;
+          }
+          
+          // Show modal by setting display to flex
+          container.style.display = 'flex';
+          container.classList.add('show');
+          listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">Loading panels...</div>';
+          
+          // Setup pagination buttons immediately - before loading panels
+          const prevPageBtn = document.getElementById('select-panel-prev-page');
+          const nextPageBtn = document.getElementById('select-panel-next-page');
+          if (prevPageBtn) {
+            // Remove any existing handlers and attach new one
+            prevPageBtn.replaceWith(prevPageBtn.cloneNode(true));
+            const newPrevBtn = document.getElementById('select-panel-prev-page');
+            newPrevBtn.addEventListener('click', async () => {
+              await switchSelectPanelPage('prev');
+            });
+          }
+          if (nextPageBtn) {
+            // Remove any existing handlers and attach new one
+            nextPageBtn.replaceWith(nextPageBtn.cloneNode(true));
+            const newNextBtn = document.getElementById('select-panel-next-page');
+            newNextBtn.addEventListener('click', async () => {
+              await switchSelectPanelPage('next');
+            });
+          }
+          
+          // Reset pagination state when modal opens
+          selectPanelModalFullImageBase64 = null;
+          selectPanelModalCurrentPageIndex = 0;
+          selectPanelModalNumPages = 1;
+          
+          // Get current panel (parent panel of action)
+          let currentPanelId = null;
+          if (window.getParentPanelOfAction) {
+            currentPanelId = await window.getParentPanelOfAction(actionId);
+          }
+          
+          // Load all panels
+          let panels = [];
+          if (window.getAllPanels) {
+            panels = await window.getAllPanels();
+          }
+          
+          if (panels.length === 0) {
+            listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa; font-size:13px;">No panels found</div>';
+            return;
+          }
+          
+          // Render panel list
+          listContainer.innerHTML = '';
+          panels.forEach(panel => {
+            const panelItem = document.createElement('div');
+            panelItem.className = 'select-panel-item';
+            panelItem.setAttribute('data-panel-id', panel.item_id);
+            
+            if (panel.item_id === currentPanelId) {
+              panelItem.classList.add('selected');
+              selectPanelModalSelectedPanelId = panel.item_id;
+            }
+            
+            panelItem.innerHTML = \`
+              <div class="select-panel-item-name">\${panel.name || 'Unnamed Panel'}</div>
+              <div class="select-panel-item-status">Status: \${panel.status || 'pending'}</div>
+            \`;
+            
+            panelItem.addEventListener('click', async () => {
+              // Remove selected class from all items
+              listContainer.querySelectorAll('.select-panel-item').forEach(item => {
+                item.classList.remove('selected');
+              });
+              // Add selected class to clicked item
+              panelItem.classList.add('selected');
+              selectPanelModalSelectedPanelId = panel.item_id;
+              
+              // Load and display panel image
+              await loadPanelPreview(panel.item_id);
+            });
+            
+            listContainer.appendChild(panelItem);
+          });
+          
+          // Auto-select current panel and load preview
+          if (currentPanelId) {
+            const currentPanelItem = listContainer.querySelector(\`[data-panel-id="\${currentPanelId}"]\`);
+            if (currentPanelItem) {
+              currentPanelItem.classList.add('selected');
+              selectPanelModalSelectedPanelId = currentPanelId;
+              await loadPanelPreview(currentPanelId);
+            } else if (panels.length > 0) {
+              // If current panel not found, select first panel
+              const firstItem = listContainer.querySelector('.select-panel-item');
+              if (firstItem) {
+                firstItem.classList.add('selected');
+                selectPanelModalSelectedPanelId = firstItem.getAttribute('data-panel-id');
+                await loadPanelPreview(selectPanelModalSelectedPanelId);
+              }
+            }
+          } else if (panels.length > 0) {
+            // No current panel, select first panel
+            const firstItem = listContainer.querySelector('.select-panel-item');
+            if (firstItem) {
+              firstItem.classList.add('selected');
+              selectPanelModalSelectedPanelId = firstItem.getAttribute('data-panel-id');
+              await loadPanelPreview(selectPanelModalSelectedPanelId);
+            }
+          }
+          
+          // Helper function to close modal
+          const closeModal = () => {
+            container.style.display = 'none';
+            container.classList.remove('show');
+            if (selectPanelModalFabricCanvas) {
+              selectPanelModalFabricCanvas.dispose();
+              selectPanelModalFabricCanvas = null;
+            }
+            // Reset pagination state
+            selectPanelModalFullImageBase64 = null;
+            selectPanelModalCurrentPageIndex = 0;
+            selectPanelModalNumPages = 1;
+          };
+          
+          // Setup DRAW NEW PANEL button
+          const drawNewBtn = document.getElementById('select-panel-draw-new');
+          if (drawNewBtn) {
+            drawNewBtn.onclick = async () => {
+              closeModal();
+              if (window.drawPanel) {
+                await window.drawPanel('DRAW_NEW');
+              }
+            };
+          }
+          
+          // Setup SAVE button
+          const saveBtn = document.getElementById('select-panel-save');
+          if (saveBtn) {
+            saveBtn.onclick = async () => {
+              if (!selectPanelModalSelectedPanelId) {
+                showToast('⚠️ Vui lòng chọn panel!');
+                return;
+              }
+              
+              if (window.useSelectPanel) {
+                try {
+                  await window.useSelectPanel(selectPanelModalActionId, selectPanelModalSelectedPanelId);
+                  closeModal();
+                  showToast('✅ Panel selected successfully');
+                  
+                  // Reload action info
+                  if (window.selectPanel) {
+                    await window.selectPanel(selectPanelModalActionId);
+                  }
+                } catch (err) {
+                  console.error('Failed to use select panel:', err);
+                  showToast('❌ Lỗi khi chọn panel');
+                }
+              }
+            };
+          }
+          
+          // Setup CANCEL button
+          const cancelBtn = document.getElementById('select-panel-cancel');
+          if (cancelBtn) {
+            cancelBtn.onclick = () => {
+              closeModal();
+              document.removeEventListener('keydown', escHandler);
+            };
+          }
+          
+          // Close on ESC key
+          const escHandler = (e) => {
+            if (e.key === 'Escape' && container.style.display === 'flex') {
+              closeModal();
+              document.removeEventListener('keydown', escHandler);
+            }
+          };
+          document.addEventListener('keydown', escHandler);
+          
+          // Close on background click
+          container.addEventListener('click', (e) => {
+            if (e.target === container) {
+              closeModal();
+              document.removeEventListener('keydown', escHandler);
+            }
+          });
+          
+        } catch (err) {
+          console.error('Failed to open select panel modal:', err);
+          showToast('❌ Lỗi khi mở SELECT PANEL');
+        }
+      }
+
+      async function cropPageFromPanel(pageIndex) {
+        if (!selectPanelModalFullImageBase64) return null;
+        
+        const pageHeight = 1080;
+        const img = new Image();
+        img.src = 'data:image/png;base64,' + selectPanelModalFullImageBase64;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+        
+        const yStart = pageIndex * pageHeight;
+        const actualPageHeight = Math.min(pageHeight, img.naturalHeight - yStart);
+        
+        return new Promise((resolve, reject) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = actualPageHeight;
+          const ctx = canvas.getContext('2d');
+          
+          ctx.drawImage(
+            img,
+            0, yStart,
+            img.naturalWidth, actualPageHeight,
+            0, 0,
+            img.naturalWidth, actualPageHeight
+          );
+          
+          const croppedBase64 = canvas.toDataURL('image/png').split(',')[1];
+          resolve(croppedBase64);
+        });
+      }
+      
+      async function switchSelectPanelPage(direction) {
+        if (selectPanelModalNumPages <= 1) return;
+        
+        const oldIndex = selectPanelModalCurrentPageIndex;
+        
+        if (direction === 'next' && selectPanelModalCurrentPageIndex < selectPanelModalNumPages - 1) {
+          selectPanelModalCurrentPageIndex++;
+        } else if (direction === 'prev' && selectPanelModalCurrentPageIndex > 0) {
+          selectPanelModalCurrentPageIndex--;
+        } else {
+          return;
+        }
+        
+        // Only reload if index actually changed
+        if (oldIndex !== selectPanelModalCurrentPageIndex) {
+          await loadPanelPreviewPage(selectPanelModalCurrentPageIndex);
+        }
+      }
+      
+      function autoZoomToFitSelectPanel() {
+        if (!selectPanelModalFabricCanvas) return;
+        
+        const previewContainer = document.getElementById('select-panel-preview');
+        const canvasWrapper = document.getElementById('select-panel-canvas-wrapper');
+        if (!previewContainer || !canvasWrapper) return;
+        
+        // Get available space (account for sidebar, padding, pagination, toolbar)
+        const sidebar = document.getElementById('select-panel-sidebar');
+        const sidebarWidth = sidebar ? sidebar.offsetWidth : 300;
+        const toolbar = document.getElementById('select-panel-toolbar');
+        const toolbarHeight = toolbar ? toolbar.offsetHeight : 0;
+        const pagination = document.getElementById('select-panel-pagination');
+        const paginationHeight = pagination && pagination.style.display !== 'none' ? pagination.offsetHeight : 0;
+        
+        const windowHeight = window.innerHeight;
+        const windowWidth = window.innerWidth;
+        const availableHeight = windowHeight - toolbarHeight - paginationHeight - 60; // Account for padding
+        const availableWidth = windowWidth - sidebarWidth - 60; // Account for padding
+        
+        const canvasHeight = selectPanelModalFabricCanvas.getHeight();
+        const canvasWidth = selectPanelModalFabricCanvas.getWidth();
+        
+        const scaleHeight = availableHeight / canvasHeight;
+        const scaleWidth = availableWidth / canvasWidth;
+        const scale = Math.min(scaleHeight, scaleWidth, 1);
+        
+        // Apply zoom to wrapper
+        if (scale < 1) {
+          const zoomPercent = Math.floor(scale * 100);
+          canvasWrapper.style.zoom = \`\${zoomPercent}%\`;
+        } else {
+          canvasWrapper.style.zoom = '100%';
+        }
+      }
+      
+      async function loadPanelPreviewPage(pageIndex) {
+        try {
+          const canvas = document.getElementById('select-panel-canvas');
+          if (!canvas) return;
+          
+          if (!selectPanelModalFullImageBase64) {
+            canvas.style.display = 'none';
+            return;
+          }
+          
+          // Crop page from full image
+          const pageBase64 = await cropPageFromPanel(pageIndex);
+          if (!pageBase64) {
+            canvas.style.display = 'none';
+            return;
+          }
+          
+          // Load image to get dimensions
+          const img = new Image();
+          img.src = 'data:image/png;base64,' + pageBase64;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+          
+          // Dispose existing canvas if any
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.dispose();
+            selectPanelModalFabricCanvas = null;
+          }
+          
+          // Initialize Fabric.js canvas
+          selectPanelModalFabricCanvas = new fabric.Canvas('select-panel-canvas', {
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+            backgroundColor: '#000'
+          });
+          
+          // Set background image
+          await new Promise((resolve) => {
+            fabric.Image.fromURL(img.src, (fabricImg) => {
+              selectPanelModalFabricCanvas.setBackgroundImage(fabricImg, () => {
+                selectPanelModalFabricCanvas.renderAll();
+                resolve();
+              });
+            });
+          });
+          
+          // Always show canvas
+          canvas.style.display = 'block';
+          
+          // Force canvas to render first
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.renderAll();
+          }
+          
+          // Auto zoom to fit after layout settles
+          setTimeout(() => {
+            autoZoomToFitSelectPanel();
+          }, 50);
+          
+          // Update page indicator
+          const indicator = document.getElementById('select-panel-page-indicator');
+          if (indicator) {
+            indicator.textContent = \`Page \${pageIndex + 1}/\${selectPanelModalNumPages}\`;
+          }
+          
+          // Update prev/next button states
+          const prevBtn = document.getElementById('select-panel-prev-page');
+          const nextBtn = document.getElementById('select-panel-next-page');
+          if (prevBtn) {
+            prevBtn.disabled = pageIndex === 0;
+            prevBtn.style.opacity = pageIndex === 0 ? '0.5' : '1';
+            prevBtn.style.cursor = pageIndex === 0 ? 'not-allowed' : 'pointer';
+          }
+          if (nextBtn) {
+            nextBtn.disabled = pageIndex >= selectPanelModalNumPages - 1;
+            nextBtn.style.opacity = pageIndex >= selectPanelModalNumPages - 1 ? '0.5' : '1';
+            nextBtn.style.cursor = pageIndex >= selectPanelModalNumPages - 1 ? 'not-allowed' : 'pointer';
+          }
+          
+          // Show/hide pagination controls
+          const pagination = document.getElementById('select-panel-pagination');
+          if (pagination) {
+            pagination.style.display = selectPanelModalNumPages > 1 ? 'flex' : 'none';
+          }
+          
+          // Always show canvas
+          canvas.style.display = 'block';
+          
+          // Force canvas to render
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.renderAll();
+          }
+          
+        } catch (err) {
+          console.error('Failed to load panel preview page:', err);
+          const canvas = document.getElementById('select-panel-canvas');
+          if (canvas) {
+            canvas.style.display = 'none';
+          }
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.dispose();
+            selectPanelModalFabricCanvas = null;
+          }
+        }
+      }
+      
+      async function loadPanelPreview(panelId) {
+        try {
+          const canvas = document.getElementById('select-panel-canvas');
+          if (!canvas) return;
+          
+          // Load panel image
+          let panelImageBase64 = null;
+          if (window.getPanelImage) {
+            panelImageBase64 = await window.getPanelImage(panelId);
+          }
+          
+          if (!panelImageBase64) {
+            canvas.style.display = 'none';
+            if (selectPanelModalFabricCanvas) {
+              selectPanelModalFabricCanvas.dispose();
+              selectPanelModalFabricCanvas = null;
+            }
+            // Hide pagination
+            const pagination = document.getElementById('select-panel-pagination');
+            if (pagination) {
+              pagination.style.display = 'none';
+            }
+            return;
+          }
+          
+          // Store full image for pagination
+          selectPanelModalFullImageBase64 = panelImageBase64;
+          
+          // Get panel metadata for crop area and calculate pages
+          let panelMetadata = null;
+          if (window.getAllPanels) {
+            const panels = await window.getAllPanels();
+            const panel = panels.find(p => p.item_id === panelId);
+            if (panel) {
+              panelMetadata = panel.metadata;
+            }
+          }
+          
+          // Load image to get dimensions
+          const img = new Image();
+          img.src = 'data:image/png;base64,' + panelImageBase64;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+          
+          // Calculate number of pages (1080px per page)
+          const pageHeight = 1080;
+          selectPanelModalNumPages = Math.ceil(img.naturalHeight / pageHeight);
+          selectPanelModalCurrentPageIndex = 0;
+          
+          // Load first page
+          await loadPanelPreviewPage(0);
+          
+        } catch (err) {
+          console.error('Failed to load panel preview:', err);
+          const canvas = document.getElementById('select-panel-canvas');
+          if (canvas) {
+            canvas.style.display = 'none';
+          }
+          if (selectPanelModalFabricCanvas) {
+            selectPanelModalFabricCanvas.dispose();
+            selectPanelModalFabricCanvas = null;
+          }
+          // Hide pagination
+          const pagination = document.getElementById('select-panel-pagination');
+          if (pagination) {
+            pagination.style.display = 'none';
+          }
+        }
+      }
+
+      // Expose function to window
+      window.openSelectPanelModal = openSelectPanelModal;
       
       setTimeout(loadInitialTree, 1000);
     </script>
