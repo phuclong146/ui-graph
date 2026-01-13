@@ -692,7 +692,7 @@ export const QUEUE_BROWSER_HTML = `
       <button id="captureActionsDOMBtn" style="display:none; background:#007bff;">📸 Detect Action</button>
       <button id="drawPanelAndDetectActionsBtn" style="display:none; background:#007bff;">🎨 Draw Panel & Detect Actions</button>
       <button id="detectPagesBtn" style="display:none; background:#007bff;">📄 Detect Pages (Old)</button>
-      <button id="drawPanelBtn" style="display:none;">🖼️ Draw Panel</button>
+      <button id="drawPanelBtn" style="display:none !important;">🖼️ Draw Panel</button>
       <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
       <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
       <button id="saveBtn" style="background:#007bff;">💾 Save</button>
@@ -2293,12 +2293,12 @@ Bạn có chắc chắn muốn rollback?\`;
         const verbVal = evt.item_verb || '';
         const contentVal = evt.item_content || '';
         
-        let editHtml = '<strong>🎯 Item Details:</strong><br>';
+        let editHtml = '<strong>Item Details:</strong><br>';
         editHtml += '<div style="margin:5px 0"><span class="detail-label">• Category:</span> <span style="color:#1976d2;font-weight:600">' + evt.item_category + '</span></div>';
-        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Name:</span> <input type="text" data-field="name" value="' + nameVal + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
-        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Type:</span> <input type="text" data-field="type" value="' + typeVal + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
-        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Verb:</span> <input type="text" data-field="verb" value="' + verbVal + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
-        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Content:</span> <input type="text" data-field="content" value="' + contentVal + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
+        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Name:</span> <input type="text" data-field="name" value="' + (nameVal || '') + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
+        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Type:</span> <input type="text" data-field="type" value="' + (typeVal || '') + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
+        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Verb:</span> <input type="text" data-field="verb" value="' + (verbVal || '') + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
+        editHtml += '<div style="margin:5px 0"><span class="detail-label">• Content:</span> <input type="text" data-field="content" value="' + (contentVal || '') + '" style="width:70%;padding:2px;border:1px solid #ccc;border-radius:3px;"></div>';
         
         detailsContent.innerHTML = editHtml;
         
@@ -2339,22 +2339,306 @@ Bạn có chắc chắn muốn rollback?\`;
         container.classList.remove('edit-mode');
         const detailsContent = container.querySelector('.details-content');
         
-        let detailsHtml = '<strong>🎯 Item Details:</strong><br>';
-        detailsHtml += '<div class="detail-row"><span class="detail-label">• Category:</span> <span class="detail-value" style="color:#1976d2;font-weight:600" data-field="category">' + evt.item_category + '</span></div>';
-        detailsHtml += '<div class="detail-row"><span class="detail-label">• Name:</span> <span class="detail-value" style="color:#d32f2f;font-weight:600" data-field="name">' + (evt.item_name || '<i style="color:#999">null</i>') + '</span></div>';
-        detailsHtml += '<div class="detail-row"><span class="detail-label">• Type:</span> <span class="detail-value" data-field="type">' + (evt.item_type || '<i style="color:#999">null</i>') + '</span></div>';
-        detailsHtml += '<div class="detail-row"><span class="detail-label">• Verb:</span> <span class="detail-value" data-field="verb">' + (evt.item_verb || '<i style="color:#999">null</i>') + '</span></div>';
-        detailsHtml += '<div class="detail-row"><span class="detail-label">• Content:</span> <span class="detail-value" data-field="content">' + (evt.item_content ? '<span style="color:#388e3c">' + evt.item_content + '</span>' : '<i style="color:#999">null</i>') + '</span></div>';
+        // Rebuild the details content
+        detailsContent.innerHTML = '';
+        detailsContent.style.cssText = 'font-size: 13px; line-height: 1.8;';
         
-        detailsContent.innerHTML = detailsHtml;
+        const categoryRow = document.createElement('div');
+        categoryRow.innerHTML = '• Category: <span style="color:#1976d2;font-weight:600">' + evt.item_category + '</span>';
+        detailsContent.appendChild(categoryRow);
+        
+        const nameRow = document.createElement('div');
+        nameRow.innerHTML = '• Name: <span style="color:#d32f2f;font-weight:600">' + (evt.item_name || '<i style="color:#999">null</i>') + '</span>';
+        detailsContent.appendChild(nameRow);
+        
+        const typeRow = document.createElement('div');
+        typeRow.innerHTML = '• Type: ' + (evt.item_type || '<i style="color:#999">null</i>');
+        detailsContent.appendChild(typeRow);
+        
+        const verbRow = document.createElement('div');
+        verbRow.innerHTML = '• Verb: ' + (evt.item_verb || '<i style="color:#999">null</i>');
+        detailsContent.appendChild(verbRow);
+        
+        const contentRow = document.createElement('div');
+        contentRow.innerHTML = '• Content: ' + (evt.item_content ? '<span style="color:#388e3c">' + evt.item_content + '</span>' : '<i style="color:#999">null</i>');
+        detailsContent.appendChild(contentRow);
         
         container.querySelectorAll('button').forEach(btn => btn.remove());
         
         const editBtn = document.createElement('button');
-        editBtn.textContent = '✏️ Edit';
-        editBtn.style.cssText = 'position:absolute;top:8px;right:8px;padding:4px 8px;font-size:11px;cursor:pointer;background:#2196f3;color:white;border:none;border-radius:3px;';
+        editBtn.textContent = 'Edit';
+        editBtn.style.cssText = 'position:absolute;top:12px;right:12px;padding:4px 12px;font-size:11px;cursor:pointer;background:#2196f3;color:white;border:none;border-radius:4px;display:flex;align-items:center;gap:4px;';
+        const editIcon = document.createElement('span');
+        editIcon.textContent = '✏️';
+        editIcon.style.cssText = 'font-size:10px;';
+        editBtn.appendChild(editIcon);
+        editBtn.appendChild(document.createTextNode('Edit'));
         editBtn.onclick = () => toggleEditMode(container, evt);
         container.appendChild(editBtn);
+      }
+      
+      function createActionStep1Details(evt) {
+        const step1Div = document.createElement('div');
+        step1Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step1Title = document.createElement('div');
+        step1Title.textContent = 'Bước 1: Kiểm tra thông tin';
+        step1Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step1Div.appendChild(step1Title);
+        
+        const itemDetailsBox = document.createElement('div');
+        itemDetailsBox.style.cssText = 'background: #e8f5e9; border: 2px solid #ff69b4; border-radius: 6px; padding: 12px; position: relative;';
+        
+        const titleRow = document.createElement('div');
+        titleRow.style.cssText = 'display: flex; align-items: center; margin-bottom: 10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '⚙️';
+        titleIcon.style.cssText = 'margin-right: 6px; font-size: 14px;';
+        const titleText = document.createElement('strong');
+        titleText.textContent = 'Item Details:';
+        titleText.style.cssText = 'font-size: 13px;';
+        titleRow.appendChild(titleIcon);
+        titleRow.appendChild(titleText);
+        itemDetailsBox.appendChild(titleRow);
+        
+        const detailsContent = document.createElement('div');
+        detailsContent.className = 'details-content';
+        detailsContent.style.cssText = 'font-size: 13px; line-height: 1.8;';
+        
+        const categoryRow = document.createElement('div');
+        categoryRow.innerHTML = '• Category: <span style="color:#1976d2;font-weight:600">' + evt.item_category + '</span>';
+        detailsContent.appendChild(categoryRow);
+        
+        const nameRow = document.createElement('div');
+        nameRow.innerHTML = '• Name: <span style="color:#d32f2f;font-weight:600">' + (evt.item_name || '<i style="color:#999">null</i>') + '</span>';
+        detailsContent.appendChild(nameRow);
+        
+        const typeRow = document.createElement('div');
+        typeRow.innerHTML = '• Type: ' + (evt.item_type || '<i style="color:#999">null</i>');
+        detailsContent.appendChild(typeRow);
+        
+        const verbRow = document.createElement('div');
+        verbRow.innerHTML = '• Verb: ' + (evt.item_verb || '<i style="color:#999">null</i>');
+        detailsContent.appendChild(verbRow);
+        
+        const contentRow = document.createElement('div');
+        contentRow.innerHTML = '• Content: ' + (evt.item_content ? '<span style="color:#388e3c">' + evt.item_content + '</span>' : '<i style="color:#999">null</i>');
+        detailsContent.appendChild(contentRow);
+        
+        itemDetailsBox.appendChild(detailsContent);
+        
+        const editBtn = document.createElement('button');
+        editBtn.style.cssText = 'position:absolute;top:12px;right:12px;padding:4px 12px;font-size:11px;cursor:pointer;background:#2196f3;color:white;border:none;border-radius:4px;display:flex;align-items:center;gap:4px;';
+        const editIcon = document.createElement('span');
+        editIcon.textContent = '✏️';
+        editIcon.style.cssText = 'font-size:10px;';
+        editBtn.appendChild(editIcon);
+        editBtn.appendChild(document.createTextNode('Edit'));
+        editBtn.onclick = () => toggleEditMode(itemDetailsBox, evt);
+        itemDetailsBox.appendChild(editBtn);
+        
+        step1Div.appendChild(itemDetailsBox);
+        return step1Div;
+      }
+      
+      function createActionStep2Image(evt, screenshotBase64) {
+        const step2Div = document.createElement('div');
+        step2Div.setAttribute('data-step', '2');
+        step2Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step2Title = document.createElement('div');
+        step2Title.textContent = 'Bước 2: Click hình ảnh action trên AI Tool';
+        step2Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step2Div.appendChild(step2Title);
+        
+        const actionImageContainer = document.createElement('div');
+        actionImageContainer.className = 'action-image-container';
+        actionImageContainer.style.cssText = 'display: flex; align-items: center; gap: 15px;';
+        
+        if (evt.action_info && evt.action_info.position && screenshotBase64) {
+          // Create placeholder img element
+          const actionImg = document.createElement('img');
+          actionImg.style.cssText = 'max-width: 200px; max-height: 60px; border: 1px dashed #333; border-radius: 4px; padding: 4px; cursor: pointer; object-fit: contain;';
+          actionImg.title = 'Ảnh nút action - Cắt từ page';
+          actionImg.style.display = 'none'; // Hide until cropped
+          
+          actionImg.addEventListener('click', () => {
+            document.getElementById('modalImage').src = actionImg.src;
+            document.getElementById('imageModal').classList.add('show');
+          });
+          
+          const imageLabel = document.createElement('div');
+          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ page</div>';
+          
+          // Create a canvas to crop the action image
+          const sourceImg = new Image();
+          sourceImg.onload = function() {
+            try {
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              const pos = evt.action_info.position;
+              
+              // Set canvas size to action dimensions
+              canvas.width = pos.w;
+              canvas.height = pos.h;
+              
+              // Draw the cropped portion
+              ctx.drawImage(sourceImg, pos.x, pos.y, pos.w, pos.h, 0, 0, pos.w, pos.h);
+              
+              // Update the img element with cropped image
+              actionImg.src = canvas.toDataURL('image/png');
+              actionImg.style.display = 'block';
+            } catch (err) {
+              console.error('Failed to crop action image:', err);
+              // Fallback: show full image
+              actionImg.src = 'data:image/png;base64,' + screenshotBase64;
+              actionImg.style.display = 'block';
+            }
+          };
+          sourceImg.onerror = function() {
+            // Fallback: show full image
+            actionImg.src = 'data:image/png;base64,' + screenshotBase64;
+            actionImg.style.display = 'block';
+          };
+          sourceImg.src = 'data:image/png;base64,' + screenshotBase64;
+          
+          actionImageContainer.appendChild(actionImg);
+          actionImageContainer.appendChild(imageLabel);
+        } else {
+          const noImageMsg = document.createElement('div');
+          noImageMsg.textContent = 'Chưa có ảnh action';
+          noImageMsg.style.cssText = 'color: #999; font-style: italic; padding: 10px;';
+          actionImageContainer.appendChild(noImageMsg);
+          
+          const imageLabel = document.createElement('div');
+          imageLabel.innerHTML = '<div style="font-size: 12px;">Ảnh nút action</div><div style="font-size: 11px; color: #666;">Cắt từ page</div>';
+          actionImageContainer.appendChild(imageLabel);
+        }
+        
+        step2Div.appendChild(actionImageContainer);
+        
+        return step2Div;
+      }
+      
+      function createActionStep3Buttons(evt) {
+        const step3Div = document.createElement('div');
+        step3Div.setAttribute('data-step', '3');
+        step3Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step3Title = document.createElement('div');
+        step3Title.textContent = 'Bước 3: Sau khi xem panel trên AI Tool thì nhấn vào nút dưới để hoàn thành action';
+        step3Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step3Div.appendChild(step3Title);
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+        
+        const selectPanelBtn = document.createElement('button');
+        selectPanelBtn.textContent = 'SELECT PANEL';
+        selectPanelBtn.style.cssText = 'padding: 12px 20px; background: #ffb3d9; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; text-align: center; transition: all 0.2s ease;';
+        selectPanelBtn.addEventListener('mouseenter', () => {
+          selectPanelBtn.style.background = '#ff99cc';
+        });
+        selectPanelBtn.addEventListener('mouseleave', () => {
+          selectPanelBtn.style.background = '#ffb3d9';
+        });
+        selectPanelBtn.addEventListener('click', async () => {
+          if (isDrawingPanel) {
+            showToast('⚠️ Đang xử lý, vui lòng đợi...');
+            return;
+          }
+          
+          if (!selectedPanelId) {
+            showToast('⚠️ Vui lòng chọn action trước!');
+            return;
+          }
+          
+          if (window.checkActionHasStep) {
+            const hasStep = await window.checkActionHasStep(selectedPanelId);
+            if (hasStep) {
+              showToast('⚠️ Action đã có step! Bấm Reset để draw lại.');
+              return;
+            }
+          }
+          
+          isDrawingPanel = true;
+          try {
+            if (window.useBeforePanel) {
+              await window.useBeforePanel(selectedPanelId);
+              showToast('✅ Marked as done với current panel');
+              if (window.broadcastToast) await window.broadcastToast('✅ Marked as done với current panel');
+              if (window.selectPanel) {
+                await window.selectPanel(selectedPanelId);
+              }
+            }
+          } catch (err) {
+            console.error('Use current panel error:', err);
+            showToast('❌ Lỗi khi sử dụng current panel');
+          } finally {
+            isDrawingPanel = false;
+          }
+        });
+        
+        const drawNewPanelBtn = document.createElement('button');
+        drawNewPanelBtn.textContent = 'DRAW NEW PANEL';
+        drawNewPanelBtn.style.cssText = 'padding: 12px 20px; background: #ffb3d9; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; text-align: center; transition: all 0.2s ease;';
+        drawNewPanelBtn.addEventListener('mouseenter', () => {
+          drawNewPanelBtn.style.background = '#ff99cc';
+        });
+        drawNewPanelBtn.addEventListener('mouseleave', () => {
+          drawNewPanelBtn.style.background = '#ffb3d9';
+        });
+        drawNewPanelBtn.addEventListener('click', async () => {
+          if (isDrawingPanel) {
+            showToast('⚠️ Đang xử lý, vui lòng đợi...');
+            return;
+          }
+          
+          if (!selectedPanelId) {
+            showToast('⚠️ Vui lòng chọn action trước!');
+            return;
+          }
+          
+          if (window.checkActionHasStep) {
+            const hasStep = await window.checkActionHasStep(selectedPanelId);
+            if (hasStep) {
+              showToast('⚠️ Action đã có step! Bấm Reset để draw lại.');
+              return;
+            }
+          }
+          
+          isDrawingPanel = true;
+          
+          const originalDrawPanelText = drawPanelBtn.textContent;
+          drawPanelBtn.disabled = true;
+          drawPanelBtn.style.opacity = '0.6';
+          drawPanelBtn.style.cursor = 'not-allowed';
+          drawPanelBtn.textContent = '⏳ Creating...';
+          
+          try {
+            if (window.drawPanel) {
+              const result = await window.drawPanel('DRAW_NEW');
+              if (window.selectPanel) {
+                await window.selectPanel(selectedPanelId);
+              }
+            }
+          } catch (err) {
+            console.error('Draw panel error:', err);
+            showToast('❌ Lỗi khi tạo panel mới');
+          } finally {
+            isDrawingPanel = false;
+            drawPanelBtn.disabled = false;
+            drawPanelBtn.style.opacity = '1';
+            drawPanelBtn.style.cursor = 'pointer';
+            drawPanelBtn.textContent = originalDrawPanelText;
+          }
+        });
+        
+        buttonsContainer.appendChild(selectPanelBtn);
+        buttonsContainer.appendChild(drawNewPanelBtn);
+        step3Div.appendChild(buttonsContainer);
+        
+        return step3Div;
       }
       
       async function handlePanelSelected(evt) {
@@ -2394,7 +2678,7 @@ Bạn có chắc chắn muốn rollback?\`;
             captureActionsDOMBtn.style.display = 'none';
             drawPanelAndDetectActionsBtn.style.display = 'none';
             detectPagesBtn.style.display = 'none';
-            drawPanelBtn.style.display = 'inline-block';
+            drawPanelBtn.style.display = 'none';
             clearAllClicksBtn.style.display = 'inline-block';
             importCookiesBtn.style.display = 'none';
           }
@@ -2438,12 +2722,75 @@ Bạn có chắc chắn muốn rollback?\`;
           actionDiv.setAttribute('data-timestamp', evt.timestamp || Date.now());
           actionDiv.setAttribute('data-event-type', 'action_details');
           
-          const itemDetailsDiv = createEditableItemDetails(evt, '🎯');
-          actionDiv.appendChild(itemDetailsDiv);
+          // Step 1: Item Details
+          const step1Div = createActionStep1Details(evt);
+          actionDiv.appendChild(step1Div);
+          
+          // Step 2: Action Image (always show, even without screenshot)
+          const step2Div = createActionStep2Image(evt, evt.screenshot || null);
+          actionDiv.appendChild(step2Div);
+          
+          // Step 3: Action buttons (only if action doesn't have step_info)
+          if (evt.action_info && !evt.action_info.step_info) {
+            const step3Div = createActionStep3Buttons(evt);
+            actionDiv.appendChild(step3Div);
+          }
+          
           container.appendChild(actionDiv);
         }
         
         if (evt.screenshot) {
+          // If screenshot becomes available later, update Step 2 in actionDiv
+          if (evt.item_category === 'ACTION' && evt.action_info && evt.action_info.position) {
+            const existingActionDiv = container.querySelector('.event[data-event-type="action_details"]');
+            if (existingActionDiv) {
+              const existingStep2 = existingActionDiv.querySelector('[data-step="2"]');
+              if (existingStep2) {
+                // Update existing Step 2 with screenshot
+                const actionImageContainer = existingStep2.querySelector('.action-image-container');
+                if (actionImageContainer) {
+                  const actionImg = actionImageContainer.querySelector('img');
+                  if (actionImg && actionImg.style.display === 'none') {
+                    // Update the image with cropped version
+                    const sourceImg = new Image();
+                    sourceImg.onload = function() {
+                      try {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const pos = evt.action_info.position;
+                        
+                        canvas.width = pos.w;
+                        canvas.height = pos.h;
+                        ctx.drawImage(sourceImg, pos.x, pos.y, pos.w, pos.h, 0, 0, pos.w, pos.h);
+                        
+                        actionImg.src = canvas.toDataURL('image/png');
+                        actionImg.style.display = 'block';
+                      } catch (err) {
+                        console.error('Failed to crop action image:', err);
+                        actionImg.src = 'data:image/png;base64,' + evt.screenshot;
+                        actionImg.style.display = 'block';
+                      }
+                    };
+                    sourceImg.onerror = function() {
+                      actionImg.src = 'data:image/png;base64,' + evt.screenshot;
+                      actionImg.style.display = 'block';
+                    };
+                    sourceImg.src = 'data:image/png;base64,' + evt.screenshot;
+                  }
+                } else {
+                  // If no image container, rebuild Step 2
+                  existingStep2.remove();
+                  const step2Div = createActionStep2Image(evt, evt.screenshot);
+                  const step3Div = existingActionDiv.querySelector('[data-step="3"]');
+                  if (step3Div) {
+                    existingActionDiv.insertBefore(step2Div, step3Div);
+                  } else {
+                    existingActionDiv.appendChild(step2Div);
+                  }
+                }
+              }
+            }
+          }
           const panelDiv = document.createElement('div');
           panelDiv.className = 'event';
           panelDiv.style.position = 'relative';
@@ -2585,7 +2932,9 @@ Bạn có chắc chắn muốn rollback?\`;
             panelDiv.appendChild(editBtn);
           }
           
-          if (evt.action_info) {
+          // For ACTION items, action details are shown in actionDiv, not here
+          // Only show action_info here if it's not an ACTION category
+          if (evt.action_info && evt.item_category !== 'ACTION') {
             const actionInfoDiv = document.createElement('div');
             actionInfoDiv.className = 'screen';
             actionInfoDiv.style.background = '#f0f8ff';
@@ -2608,6 +2957,7 @@ Bạn có chắc chắn muốn rollback?\`;
             actionInfoDiv.innerHTML = infoHtml;
             panelDiv.appendChild(actionInfoDiv);
           }
+          
           
           if (evt.actions && evt.actions.length > 0) {
             const countDiv = document.createElement('div');
