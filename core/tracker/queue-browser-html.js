@@ -3219,6 +3219,7 @@ Bạn có chắc chắn muốn rollback?\`;
       let selectPanelModalFullImageBase64 = null;
       let selectPanelModalCurrentPageIndex = 0;
       let selectPanelModalNumPages = 1;
+      let selectPanelModalPanelMetadata = null;
 
       async function openSelectPanelModal(actionId) {
         try {
@@ -3269,6 +3270,7 @@ Bạn có chắc chắn muốn rollback?\`;
           selectPanelModalFullImageBase64 = null;
           selectPanelModalCurrentPageIndex = 0;
           selectPanelModalNumPages = 1;
+          selectPanelModalPanelMetadata = null;
           
           // Get current panel (parent panel of action)
           let currentPanelId = null;
@@ -3370,6 +3372,7 @@ Bạn có chắc chắn muốn rollback?\`;
             selectPanelModalFullImageBase64 = null;
             selectPanelModalCurrentPageIndex = 0;
             selectPanelModalNumPages = 1;
+            selectPanelModalPanelMetadata = null;
           };
           
           // Setup DRAW NEW PANEL button
@@ -3579,6 +3582,48 @@ Bạn có chắc chắn muốn rollback?\`;
             });
           });
           
+          // Draw crop area rectangle if metadata.global_pos exists
+          if (selectPanelModalPanelMetadata && selectPanelModalPanelMetadata.global_pos) {
+            const globalPos = selectPanelModalPanelMetadata.global_pos;
+            const pageHeight = 1080;
+            const pageYStart = pageIndex * pageHeight;
+            const pageYEnd = pageYStart + img.naturalHeight;
+            const cropYStart = globalPos.y;
+            const cropYEnd = cropYStart + globalPos.h;
+            
+            // Check if crop area intersects with current page
+            if (cropYEnd >= pageYStart && cropYStart <= pageYEnd) {
+              const rectYStart = Math.max(0, cropYStart - pageYStart);
+              const rectYEnd = Math.min(img.naturalHeight, cropYEnd - pageYStart);
+              const rectHeight = rectYEnd - rectYStart;
+              
+              // Calculate rectangle x and width (clamp to canvas bounds)
+              const rectX = Math.max(0, globalPos.x);
+              const rectXEnd = Math.min(img.naturalWidth, globalPos.x + globalPos.w);
+              const rectWidth = rectXEnd - rectX;
+              
+              if (rectHeight > 0 && rectWidth > 0) {
+                const cropRect = new fabric.Rect({
+                  left: rectX,
+                  top: rectYStart,
+                  width: rectWidth,
+                  height: rectHeight,
+                  fill: 'transparent',
+                  stroke: '#00ff00',
+                  strokeWidth: 3,
+                  strokeDashArray: [5, 5],
+                  strokeUniform: true,
+                  selectable: false,
+                  evented: false,
+                  excludeFromExport: true
+                });
+                
+                selectPanelModalFabricCanvas.add(cropRect);
+                selectPanelModalFabricCanvas.bringToFront(cropRect);
+              }
+            }
+          }
+          
           // Always show canvas
           canvas.style.display = 'block';
           
@@ -3668,12 +3713,12 @@ Bạn có chắc chắn muốn rollback?\`;
           selectPanelModalFullImageBase64 = panelImageBase64;
           
           // Get panel metadata for crop area and calculate pages
-          let panelMetadata = null;
+          selectPanelModalPanelMetadata = null;
           if (window.getAllPanels) {
             const panels = await window.getAllPanels();
             const panel = panels.find(p => p.item_id === panelId);
             if (panel) {
-              panelMetadata = panel.metadata;
+              selectPanelModalPanelMetadata = panel.metadata;
             }
           }
           
