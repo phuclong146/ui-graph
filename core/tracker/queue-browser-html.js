@@ -23,11 +23,58 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #panel-tree-container {
-        width: 30%;
+        width: 20%;
+        min-width: 200px;
+        max-width: 60%;
         border-right: 1px solid #e0e0e0;
         background: white;
         overflow-y: auto;
         padding: 10px 0 10px 0;
+        position: relative;
+      }
+      
+      #panel-log-resizer {
+        position: absolute;
+        top: 0;
+        right: -6px;
+        width: 12px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 1000;
+        user-select: none;
+        touch-action: none;
+        pointer-events: auto;
+      }
+      
+      #panel-log-resizer:hover {
+        background: rgba(0, 123, 255, 0.1);
+      }
+      
+      #panel-log-resizer.resizing {
+        background: rgba(0, 123, 255, 0.2);
+      }
+      
+      #panel-log-resizer::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #ccc;
+        transform: translateX(-50%);
+        transition: all 0.2s ease;
+      }
+      
+      #panel-log-resizer:hover::before {
+        background: #007bff;
+        width: 3px;
+      }
+      
+      #panel-log-resizer.resizing::before {
+        background: #007bff;
+        width: 4px;
       }
       
       #panel-tree-container h3 {
@@ -637,6 +684,7 @@ export const QUEUE_BROWSER_HTML = `
           <button id="panel-log-refresh-btn" title="Refresh Panel Log">🔄</button>
         </h3>
         <div id="panel-tree"></div>
+        <div id="panel-log-resizer"></div>
       </div>
       
       <div id="content-container">
@@ -648,7 +696,7 @@ export const QUEUE_BROWSER_HTML = `
       <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
       <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
       <button id="saveBtn" style="background:#007bff;">💾 Save</button>
-      <button id="checkpointBtn" style="background:#28a745;">📋 Rollback</button>
+      <button id="checkpointBtn" style="background:#28a745;">↩️ Rollback</button>
       <button id="quitBtn" style="background:#007bff;">🚪 Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -702,6 +750,156 @@ export const QUEUE_BROWSER_HTML = `
     </div>
 
     <script>
+      // Panel Log Resizer - Initialize when DOM is ready
+      (function initPanelLogResizer() {
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+        
+        function setupResizer() {
+          const panelTreeContainer = document.getElementById('panel-tree-container');
+          const resizer = document.getElementById('panel-log-resizer');
+          const mainContainer = document.getElementById('main-container');
+          
+          if (!panelTreeContainer || !resizer || !mainContainer) {
+            console.warn('Panel log resizer elements not found, retrying...');
+            setTimeout(setupResizer, 100);
+            return;
+          }
+          
+          console.log('✅ Panel log resizer initialized');
+        
+          // Helper function to safely access localStorage
+          function getLocalStorage(key) {
+            try {
+              return localStorage.getItem(key);
+            } catch (e) {
+              console.warn('localStorage not available:', e.message);
+              return null;
+            }
+          }
+          
+          function setLocalStorage(key, value) {
+            try {
+              localStorage.setItem(key, value);
+            } catch (e) {
+              console.warn('localStorage not available:', e.message);
+            }
+          }
+        
+          // Set initial width: 400px or 20% (prefer 400px if possible)
+          const savedWidth = getLocalStorage('panel-log-width');
+          if (savedWidth) {
+            const width = parseInt(savedWidth, 10);
+            const minWidth = 200;
+            const maxWidth = window.innerWidth * 0.6;
+            if (width >= minWidth && width <= maxWidth) {
+              panelTreeContainer.style.width = width + 'px';
+            } else if (width < minWidth) {
+              panelTreeContainer.style.width = minWidth + 'px';
+            } else {
+              panelTreeContainer.style.width = maxWidth + 'px';
+            }
+          } else {
+            // No saved width, use 400px or 20% (prefer 400px, but cap at 20%)
+            const preferredWidth = 400;
+            const percentWidth = window.innerWidth * 0.2;
+            // Use 400px if it's within 20%, otherwise use 20%
+            const initialWidth = preferredWidth <= percentWidth ? preferredWidth : percentWidth;
+            panelTreeContainer.style.width = initialWidth + 'px';
+          }
+          
+          // Handle window resize
+          window.addEventListener('resize', () => {
+            const currentWidth = panelTreeContainer.offsetWidth;
+            const maxWidth = window.innerWidth * 0.6;
+            if (currentWidth > maxWidth) {
+              panelTreeContainer.style.width = maxWidth + 'px';
+              setLocalStorage('panel-log-width', maxWidth.toString());
+            }
+          });
+          
+          // Ensure resizer can receive events
+          resizer.style.pointerEvents = 'auto';
+          resizer.style.touchAction = 'none';
+          
+          // Test if resizer is clickable
+          resizer.addEventListener('click', (e) => {
+            console.log('✅ Resizer is clickable');
+          });
+          
+          // Mouse down handler
+          resizer.addEventListener('mousedown', (e) => {
+            console.log('🖱️ Resizer mousedown at', e.clientX, e.clientY);
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = panelTreeContainer.offsetWidth;
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          });
+          
+          // Mouse move handler
+          const handleMouseMove = (e) => {
+            if (!isResizing) return;
+            
+            const diff = e.clientX - startX;
+            const newWidth = startWidth + diff;
+            const minWidth = 200;
+            const maxWidth = window.innerWidth * 0.6;
+            
+            if (newWidth >= minWidth && newWidth <= maxWidth) {
+              panelTreeContainer.style.width = newWidth + 'px';
+            }
+            e.preventDefault();
+            return false;
+          };
+          
+          document.addEventListener('mousemove', handleMouseMove, { passive: false });
+          
+          // Mouse up handler
+          const handleMouseUp = (e) => {
+            if (isResizing) {
+              console.log('🖱️ Resizer mouseup');
+              isResizing = false;
+              resizer.classList.remove('resizing');
+              document.body.style.cursor = '';
+              document.body.style.userSelect = '';
+              
+              // Save width to localStorage (with error handling)
+              const currentWidth = panelTreeContainer.offsetWidth;
+              setLocalStorage('panel-log-width', currentWidth.toString());
+              console.log('💾 Saved panel width:', currentWidth + 'px');
+              
+              if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }
+          };
+          
+          document.addEventListener('mouseup', handleMouseUp, { passive: false });
+          document.addEventListener('mouseleave', handleMouseUp); // Handle mouse leaving window
+          
+          // Also handle on the resizer itself
+          resizer.addEventListener('mouseup', handleMouseUp);
+          
+          console.log('✅ Resizer event handlers attached');
+        }
+        
+        // Start setup when DOM is ready
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', setupResizer);
+        } else {
+          // DOM already ready, but wait a bit to ensure all elements are rendered
+          setTimeout(setupResizer, 50);
+        }
+      })();
+
+      // Main code (keep existing structure for compatibility)
       const ws = new WebSocket('ws://localhost:8081');
       const container = document.getElementById('events');
       let panelTreeData = [];
@@ -709,6 +907,18 @@ export const QUEUE_BROWSER_HTML = `
       let expandedPanels = new Set();
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
+
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected');
+      };
+      
+      ws.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+      };
+      
+      ws.onclose = () => {
+        console.log('⚠️ WebSocket closed');
+      };
 
       ws.onmessage = async (msg) => {
         const evt = JSON.parse(msg.data);
@@ -953,7 +1163,6 @@ export const QUEUE_BROWSER_HTML = `
           hideSaveReminderDialog();
           return;
         }
-        
       };
 
       const modal = document.getElementById('imageModal');
@@ -1427,7 +1636,7 @@ export const QUEUE_BROWSER_HTML = `
             </div>
             <div class="checkpoint-item-actions">
               <button class="checkpoint-rollback-btn" data-checkpoint-id="\${checkpoint.checkpointId}">
-                🔄 Rollback
+                ↩️ Rollback
               </button>
             </div>
           \`;
