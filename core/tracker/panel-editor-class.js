@@ -373,7 +373,8 @@ window.PanelEditor = class PanelEditor {
             const actionIndex = panel.actions.indexOf(action);
             const actionId = '0-' + actionIndex;
             const hasIntersections = this.actionHasIntersections.get(actionId) || false;
-            const dotColor = hasIntersections ? '#ff5252' : '#4caf50';
+            // Action không giao: #00aaff (xanh dương) - giống với Panel Log và khác với panel (#4caf50)
+            const dotColor = hasIntersections ? '#ff5252' : '#00aaff';
             
             html += \`
                 <div class="action-list-item" data-action-id="\${actionId}" data-has-intersections="\${hasIntersections}" style="

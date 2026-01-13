@@ -6,6 +6,67 @@ export class PanelLogManager {
         this.sessionFolder = sessionFolder;
     }
 
+    // Check if two rectangles overlap
+    doRectsOverlap(rect1, rect2) {
+        if (!rect1 || !rect2) return false;
+        return !(rect1.x + rect1.w <= rect2.x || 
+                 rect2.x + rect2.w <= rect1.x || 
+                 rect1.y + rect1.h <= rect2.y || 
+                 rect2.y + rect2.h <= rect1.y);
+    }
+
+    // Get page number from action position
+    getActionPage(actionPos) {
+        if (!actionPos) return null;
+        if (actionPos.p !== undefined) {
+            return actionPos.p;
+        }
+        // Calculate page from y coordinate (assuming 1080px per page)
+        return Math.floor(actionPos.y / 1080) + 1;
+    }
+
+    // Compute intersections for actions within the same panel and same page
+    computeActionIntersections(actions) {
+        const intersections = new Map();
+        
+        // Group actions by page
+        const actionsByPage = new Map();
+        actions.forEach(action => {
+            if (!action.action_pos) return;
+            const page = this.getActionPage(action.action_pos);
+            if (!actionsByPage.has(page)) {
+                actionsByPage.set(page, []);
+            }
+            actionsByPage.get(page).push(action);
+        });
+        
+        // Compute intersections for each page separately
+        actionsByPage.forEach((pageActions, page) => {
+            for (let i = 0; i < pageActions.length; i++) {
+                const action1 = pageActions[i];
+                if (!action1.action_pos) continue;
+                
+                let hasIntersections = false;
+                
+                for (let j = 0; j < pageActions.length; j++) {
+                    if (i === j) continue;
+                    
+                    const action2 = pageActions[j];
+                    if (!action2.action_pos) continue;
+                    
+                    if (this.doRectsOverlap(action1.action_pos, action2.action_pos)) {
+                        hasIntersections = true;
+                        break;
+                    }
+                }
+                
+                intersections.set(action1.panel_id, hasIntersections);
+            }
+        });
+        
+        return intersections;
+    }
+
     async buildTreeStructure() {
         try {
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
@@ -54,13 +115,24 @@ export class PanelLogManager {
                 if (!parentNode) continue;
                 
                 if (parentEntry.child_actions && parentEntry.child_actions.length > 0) {
+                    const actionNodes = [];
                     for (const actionId of parentEntry.child_actions) {
                         const actionNode = itemMap.get(actionId);
                         if (actionNode) {
-                            parentNode.children.push(actionNode);
+                            actionNodes.push(actionNode);
                         }
                     }
-                    parentNode.children.sort((a, b) => {
+                    
+                    // Compute intersections for actions in this panel
+                    const intersections = this.computeActionIntersections(actionNodes);
+                    
+                    // Add hasIntersections flag to each action node
+                    actionNodes.forEach(actionNode => {
+                        actionNode.hasIntersections = intersections.get(actionNode.panel_id) || false;
+                    });
+                    
+                    // Sort actions by position
+                    actionNodes.sort((a, b) => {
                         const aY = a.action_pos?.y ?? 0;
                         const bY = b.action_pos?.y ?? 0;
                         const aX = a.action_pos?.x ?? 0;
@@ -68,6 +140,8 @@ export class PanelLogManager {
                         if (aY === bY) return aX - bX;
                         return aY - bY;
                     });
+                    
+                    parentNode.children = actionNodes;
                 }
             }
             

@@ -1662,9 +1662,12 @@ Bạn có chắc chắn muốn rollback?\`;
         
         let dotColor;
         if (node.item_category === 'PANEL') {
-          dotColor = '#ff5252';
-        } else {
+          // Panel icons: màu xanh lục (green)
           dotColor = '#4caf50';
+        } else {
+          // Action icons: đỏ nếu có intersection, xanh nếu không
+          const hasIntersections = node.hasIntersections || false;
+          dotColor = hasIntersections ? '#ff4444' : '#00aaff';
         }
         
         let originalDotHTML;
