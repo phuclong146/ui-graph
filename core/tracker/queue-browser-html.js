@@ -672,7 +672,7 @@ export const QUEUE_BROWSER_HTML = `
     <div id="checkpointModal" style="display:none; position:fixed; z-index:20000; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:20px; max-width:800px; max-height:80vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e0e0e0; padding-bottom:10px;">
-          <h3 style="margin:0; font-size:20px; color:#333;">📋 Rollback</h3>
+          <h3 style="margin:0; font-size:20px; color:#333;">📋 Checkpoints</h3>
           <button id="closeCheckpointModal" style="background:none; border:none; font-size:28px; cursor:pointer; color:#666; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
         <div id="checkpointList" style="min-height:200px;">

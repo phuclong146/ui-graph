@@ -62,6 +62,8 @@ window.PanelEditor = class PanelEditor {
         this.panelBeforePageBase64 = null;
         this.overlayAutoIntervalMs = 1000; // Configurable overlay toggle interval in milliseconds (default: 1s)
         this.initialActionPositions = new Map(); // Store initial position/size of actions when panel opens
+        this.actionIntersections = new Map(); // Map actionId -> Set of intersecting actionIds
+        this.actionHasIntersections = new Map(); // Map actionId -> boolean (has intersections)
     }
 
     async init() {
@@ -178,11 +180,6 @@ window.PanelEditor = class PanelEditor {
                 ">
                     <div style="padding: 15px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);">
                         <button id="editorAddActionBtn" class="editor-btn add-btn" style="width: 100%; margin-bottom: 10px;">➕ Add Action</button>
-                        <button id="editorViewAllActionBtn" class="editor-btn" style="
-                            width: 100%;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: white;
-                        ">👁️ View all action</button>
                     </div>
                     <div id="editor-action-list" style="
                         flex: 1;
@@ -354,6 +351,11 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
+        // Compute intersections if not already computed
+        if (this.actionIntersections.size === 0) {
+            this.computeActionIntersections();
+        }
+        
         const currentPage = this.currentPageIndex + 1;
         const actionsOnCurrentPage = panel.actions.filter(action => {
             if (!action.action_pos) return false;
@@ -370,8 +372,11 @@ window.PanelEditor = class PanelEditor {
         actionsOnCurrentPage.forEach((action, index) => {
             const actionIndex = panel.actions.indexOf(action);
             const actionId = '0-' + actionIndex;
+            const hasIntersections = this.actionHasIntersections.get(actionId) || false;
+            const dotColor = hasIntersections ? '#ff5252' : '#4caf50';
+            
             html += \`
-                <div class="action-list-item" data-action-id="\${actionId}" style="
+                <div class="action-list-item" data-action-id="\${actionId}" data-has-intersections="\${hasIntersections}" style="
                     padding: 10px;
                     margin-bottom: 8px;
                     background: rgba(255, 255, 255, 0.05);
@@ -381,10 +386,25 @@ window.PanelEditor = class PanelEditor {
                     transition: all 0.2s ease;
                     color: #fff;
                     font-size: 13px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
                 " onmouseover="this.style.background='rgba(255, 255, 255, 0.1)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'">
-                    <div style="font-weight: 600; margin-bottom: 4px;">\${action.action_name || 'Unnamed Action'}</div>
-                    <div style="font-size: 11px; color: #aaa;">
-                        \${action.action_type || 'button'} • \${action.action_verb || 'click'}
+                    <div class="action-dot-icon" style="
+                        width: 16px;
+                        height: 16px;
+                        min-width: 16px;
+                        flex-shrink: 0;
+                    ">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+                            <circle cx="12" cy="12" r="10" fill="\${dotColor}"/>
+                        </svg>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; margin-bottom: 4px;">\${action.action_name || 'Unnamed Action'}</div>
+                        <div style="font-size: 11px; color: #aaa;">
+                            \${action.action_type || 'button'} • \${action.action_verb || 'click'}
+                        </div>
                     </div>
                 </div>
             \`;
@@ -396,13 +416,15 @@ window.PanelEditor = class PanelEditor {
         actionListContainer.querySelectorAll('.action-list-item').forEach(item => {
             item.addEventListener('click', () => {
                 const actionId = item.getAttribute('data-action-id');
+                const hasIntersections = item.getAttribute('data-has-intersections') === 'true';
                 const boxData = this.fabricObjects.get(actionId);
                 
                 // Toggle selection: if same action clicked, deselect; otherwise select
                 if (this.selectedActionIdInSidebar === actionId) {
-                    // Deselect
+                    // Deselect - show all boxes normally
                     this.selectedActionIdInSidebar = null;
                     this.canvas.discardActiveObject();
+                    this.showAllActionBoxes();
                     this.canvas.renderAll();
                     this.updateRenameByAIButton();
                     // Remove selected style
@@ -411,11 +433,22 @@ window.PanelEditor = class PanelEditor {
                 } else {
                     // Select new action
                     this.selectedActionIdInSidebar = actionId;
+                    
+                    if (hasIntersections) {
+                        // Show all intersecting boxes
+                        const intersections = this.actionIntersections.get(actionId) || new Set();
+                        this.showIntersectingBoxes(actionId, intersections);
+                    } else {
+                        // Show only the selected box
+                        this.showOnlySelectedBox(actionId);
+                    }
+                    
                     if (boxData && boxData.rect) {
                         this.canvas.setActiveObject(boxData.rect);
-                        this.canvas.renderAll();
-                        this.updateRenameByAIButton();
                     }
+                    this.canvas.renderAll();
+                    this.updateRenameByAIButton();
+                    
                     // Update visual selection in sidebar
                     actionListContainer.querySelectorAll('.action-list-item').forEach(otherItem => {
                         otherItem.style.background = 'rgba(255, 255, 255, 0.05)';
@@ -431,13 +464,77 @@ window.PanelEditor = class PanelEditor {
         this.updateSidebarSelection();
     }
     
+    showAllActionBoxes() {
+        this.fabricObjects.forEach((boxData, id) => {
+            if (boxData.rect && boxData.rect.type === 'action') {
+                boxData.rect.visible = true;
+                if (boxData.label) {
+                    boxData.label.visible = true;
+                }
+            }
+        });
+    }
+    
+    showIntersectingBoxes(selectedActionId, intersections) {
+        // Hide all action boxes first
+        this.fabricObjects.forEach((boxData, id) => {
+            if (boxData.rect && boxData.rect.type === 'action') {
+                boxData.rect.visible = false;
+                if (boxData.label) {
+                    boxData.label.visible = false;
+                }
+            }
+        });
+        
+        // Show selected box
+        const selectedBoxData = this.fabricObjects.get(selectedActionId);
+        if (selectedBoxData && selectedBoxData.rect) {
+            selectedBoxData.rect.visible = true;
+            if (selectedBoxData.label) {
+                selectedBoxData.label.visible = true;
+            }
+        }
+        
+        // Show all intersecting boxes
+        intersections.forEach(intersectingId => {
+            const intersectingBoxData = this.fabricObjects.get(intersectingId);
+            if (intersectingBoxData && intersectingBoxData.rect) {
+                intersectingBoxData.rect.visible = true;
+                if (intersectingBoxData.label) {
+                    intersectingBoxData.label.visible = true;
+                }
+            }
+        });
+    }
+    
+    showOnlySelectedBox(selectedActionId) {
+        // Hide all action boxes
+        this.fabricObjects.forEach((boxData, id) => {
+            if (boxData.rect && boxData.rect.type === 'action') {
+                boxData.rect.visible = false;
+                if (boxData.label) {
+                    boxData.label.visible = false;
+                }
+            }
+        });
+        
+        // Show only selected box
+        const selectedBoxData = this.fabricObjects.get(selectedActionId);
+        if (selectedBoxData && selectedBoxData.rect) {
+            selectedBoxData.rect.visible = true;
+            if (selectedBoxData.label) {
+                selectedBoxData.label.visible = true;
+            }
+        }
+    }
+    
     drawDefaultPanelBorder() {
         if (this.defaultPanelBorderLines) {
             this.defaultPanelBorderLines.forEach(line => this.canvas.remove(line));
         }
         
         const borderWidth = 3;
-        const borderColor = '#ff4444';
+        const borderColor = '#4caf50';
         const w = this.canvas.width;
         const h = this.canvas.height;
         const half = borderWidth / 2;
@@ -557,9 +654,81 @@ window.PanelEditor = class PanelEditor {
         this.canvas.renderAll();
     }
 
+    // Check if two rectangles overlap
+    doRectsOverlap(rect1, rect2) {
+        return !(rect1.x + rect1.w <= rect2.x || 
+                 rect2.x + rect2.w <= rect1.x || 
+                 rect1.y + rect1.h <= rect2.y || 
+                 rect2.y + rect2.h <= rect1.y);
+    }
+    
+    // Compute intersections for all actions on current page
+    computeActionIntersections() {
+        this.actionIntersections.clear();
+        this.actionHasIntersections.clear();
+        
+        const panel = this.geminiResult[0];
+        if (!panel || !Array.isArray(panel.actions)) return;
+        
+        const currentPage = this.currentPageIndex + 1;
+        const actionsOnCurrentPage = [];
+        
+        // Collect all actions on current page with their IDs
+        panel.actions.forEach((action, actionIndex) => {
+            if (action.action_pos) {
+                const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / 1080) + 1;
+                if (actionPage === currentPage) {
+                    const actionId = '0-' + actionIndex;
+                    actionsOnCurrentPage.push({
+                        actionId,
+                        action,
+                        pos: action.action_pos
+                    });
+                }
+            }
+        });
+        
+        // Check intersections between all pairs
+        for (let i = 0; i < actionsOnCurrentPage.length; i++) {
+            const action1 = actionsOnCurrentPage[i];
+            const intersections = new Set();
+            
+            for (let j = 0; j < actionsOnCurrentPage.length; j++) {
+                if (i === j) continue;
+                
+                const action2 = actionsOnCurrentPage[j];
+                if (this.doRectsOverlap(action1.pos, action2.pos)) {
+                    intersections.add(action2.actionId);
+                }
+            }
+            
+            this.actionIntersections.set(action1.actionId, intersections);
+            this.actionHasIntersections.set(action1.actionId, intersections.size > 0);
+        }
+    }
+    
+    // Update box colors based on intersections
+    updateBoxColors() {
+        this.fabricObjects.forEach((boxData, id) => {
+            if (boxData.rect && boxData.rect.type === 'action') {
+                const hasIntersections = this.actionHasIntersections.get(id) || false;
+                const newColor = hasIntersections ? '#ff4444' : '#00aaff';
+                
+                boxData.rect.set({
+                    stroke: newColor,
+                    cornerColor: newColor
+                });
+                boxData.rect.hasIntersections = hasIntersections;
+            }
+        });
+    }
+
     drawAllBoxes() {
         const panel = this.geminiResult[0];
         if (!panel || !Array.isArray(panel.actions)) return;
+        
+        // Compute intersections first
+        this.computeActionIntersections();
         
         const currentPage = this.currentPageIndex + 1;
         
@@ -609,7 +778,16 @@ window.PanelEditor = class PanelEditor {
     }
 
     drawBox(pos, id, type, title) {
-        const color = type === 'panel' ? '#ff4444' : '#00aaff';
+        let color;
+        if (type === 'panel') {
+            color = '#ff4444';
+        } else if (type === 'action') {
+            // Use red if action has intersections, green otherwise
+            const hasIntersections = this.actionHasIntersections.get(id) || false;
+            color = hasIntersections ? '#ff4444' : '#00aaff';
+        } else {
+            color = '#00aaff';
+        }
         
         const rect = new fabric.Rect({
             left: pos.x,
@@ -628,7 +806,8 @@ window.PanelEditor = class PanelEditor {
             lockRotation: true,
             id: id,
             type: type,
-            boxType: 'rect'
+            boxType: 'rect',
+            hasIntersections: type === 'action' ? (this.actionHasIntersections.get(id) || false) : false
         });
         
         rect.setControlsVisibility({
@@ -675,6 +854,14 @@ window.PanelEditor = class PanelEditor {
                 console.log(\`  - Resize: "\${actionName}" to (\${newPos.x},\${newPos.y},\${newPos.w},\${newPos.h})\`);
                 this.updateGeminiResult(obj);
                 this.updateLabel(obj);
+                
+                // Recompute intersections and update colors
+                if (obj.type === 'action') {
+                    this.computeActionIntersections();
+                    this.updateBoxColors();
+                    this.renderActionList();
+                }
+                
                 this.showStatus('✓ Box updated (not saved yet)', 'info');
             }
         });
@@ -741,6 +928,12 @@ window.PanelEditor = class PanelEditor {
         });
         
         this.canvas.on('selection:cleared', () => {
+            // When selection is cleared, show all boxes
+            if (this.selectedActionIdInSidebar) {
+                this.selectedActionIdInSidebar = null;
+                this.showAllActionBoxes();
+                this.canvas.renderAll();
+            }
             this.updateRenameByAIButton();
         });
         
@@ -921,22 +1114,6 @@ window.PanelEditor = class PanelEditor {
             // Sidebar controls
             document.getElementById('editorAddActionBtn').onclick = () => this.toggleActionDrawingMode();
             
-            // Add View all action button handler - deselects current action
-            const viewAllActionBtn = document.getElementById('editorViewAllActionBtn');
-            if (viewAllActionBtn) {
-                viewAllActionBtn.onclick = () => {
-                    // Deselect action
-                    this.selectedActionIdInSidebar = null;
-                    this.canvas.discardActiveObject();
-                    this.canvas.renderAll();
-                    this.updateRenameByAIButton();
-                    this.updateSidebarSelection();
-                    
-                    // TODO: Implement view all action functionality
-                    console.log('View all action clicked - functionality to be implemented');
-                };
-            }
-            
             // Render action list after setup
             this.renderActionList();
         }
@@ -1055,6 +1232,12 @@ window.PanelEditor = class PanelEditor {
                 this.geminiResult[panelIdx].actions[actionIdx].action_pos = newPos;
             }
         }
+        
+        // Update intersections if this is an action
+        if (rect.type === 'action') {
+            this.computeActionIntersections();
+            this.updateBoxColors();
+        }
     }
 
     getAllCoordinates() {
@@ -1158,13 +1341,27 @@ window.PanelEditor = class PanelEditor {
             item.style.border = '1px solid rgba(255, 255, 255, 0.1)';
         });
         
-        // Apply selection style to selected item
+        // Apply selection style to selected item and show/hide boxes accordingly
         if (this.selectedActionIdInSidebar) {
             const selectedItem = actionListContainer.querySelector(\`[data-action-id="\${this.selectedActionIdInSidebar}"]\`);
             if (selectedItem) {
                 selectedItem.style.background = 'rgba(102, 126, 234, 0.3)';
                 selectedItem.style.border = '1px solid rgba(102, 126, 234, 0.6)';
+                
+                // Show/hide boxes based on intersection status
+                const hasIntersections = selectedItem.getAttribute('data-has-intersections') === 'true';
+                if (hasIntersections) {
+                    const intersections = this.actionIntersections.get(this.selectedActionIdInSidebar) || new Set();
+                    this.showIntersectingBoxes(this.selectedActionIdInSidebar, intersections);
+                } else {
+                    this.showOnlySelectedBox(this.selectedActionIdInSidebar);
+                }
+                this.canvas.renderAll();
             }
+        } else {
+            // No selection - show all boxes
+            this.showAllActionBoxes();
+            this.canvas.renderAll();
         }
     }
     
@@ -1310,6 +1507,11 @@ window.PanelEditor = class PanelEditor {
                 };
             }
         }
+        
+        // Recompute intersections and update colors after reset
+        this.computeActionIntersections();
+        this.updateBoxColors();
+        this.renderActionList();
         
         this.canvas.renderAll();
         this.showStatus('✅ Action location reset to original position', 'success');
@@ -1985,7 +2187,14 @@ window.PanelEditor = class PanelEditor {
         
         this.geminiResult[panelIndex].actions.push(newAction);
         this.canvas.remove(tempRect);
+        
+        // Recompute intersections before drawing the new box
+        this.computeActionIntersections();
         this.drawBox(newAction.action_pos, panelIndex + '-' + actionIndex, 'action', actionData.name);
+        
+        // Update all box colors after adding new action
+        this.updateBoxColors();
+        
         console.log(\`  - Add: "\${actionData.name}" [\${actionData.type}] at (\${newAction.action_pos.x},\${newAction.action_pos.y},\${newAction.action_pos.w},\${newAction.action_pos.h})\`);
         this.showStatus('✅ Action "' + actionData.name + '" added to "' + this.geminiResult[panelIndex].panel_title + '"', 'success');
         this.renderActionList();
@@ -2097,6 +2306,31 @@ window.PanelEditor = class PanelEditor {
         if (objectsToDelete.length === 0) {
             this.showStatus('⚠️ No actions selected', 'error');
             return;
+        }
+        
+        // Collect action names for confirmation dialog
+        const actionNamesToDelete = [];
+        objectsToDelete.forEach(obj => {
+            const id = obj.id;
+            if (typeof id === 'string' && id.includes('-')) {
+                const [panelIdx, actionIdx] = id.split('-').map(Number);
+                const actionName = this.geminiResult[panelIdx]?.actions[actionIdx]?.action_name || 'action';
+                actionNamesToDelete.push(actionName);
+            }
+        });
+        
+        // Show confirmation dialog
+        let confirmMessage;
+        if (actionNamesToDelete.length === 1) {
+            confirmMessage = 'Bạn có chắc chắn muốn xóa action "' + actionNamesToDelete[0] + '"?\\n\\nHành động này không thể hoàn tác.';
+        } else {
+            const namesList = actionNamesToDelete.slice(0, 3).join('", "');
+            const moreText = actionNamesToDelete.length > 3 ? ' và ' + (actionNamesToDelete.length - 3) + ' action khác' : '';
+            confirmMessage = 'Bạn có chắc chắn muốn xóa ' + actionNamesToDelete.length + ' actions?\\n\\nCác action: "' + namesList + '"' + moreText + '\\n\\nHành động này không thể hoàn tác.';
+        }
+        
+        if (!confirm(confirmMessage)) {
+            return; // User cancelled
         }
         
         this.saveState();
