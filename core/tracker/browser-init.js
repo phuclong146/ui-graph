@@ -66,11 +66,59 @@ export async function initBrowsers(tracker, startUrl) {
     const queueWidth = Math.floor(width * 0.3);
 
     console.log(`🖥️ Screen: ${width}x${height}`);
+    console.log(`📐 Queue browser: ${width}x${height} at (0, 0) - Maximized`);
     console.log(`📐 Tracking browser: ${trackingWidth}x${height} at (0, 0)`);
-    console.log(`📐 Queue browser: ${queueWidth}x${height} at (${trackingWidth}, 0)`);
 
-    console.log("🚀 Launching Real Browser (bypass bot detection)...");
+    // Initialize Queue Browser FIRST
+    console.log("🚀 Launching Queue Browser...");
+    const queueChromePath = await ensureChromeInstalled();
+    
+    try {
+        tracker.queueBrowser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: null,
+            executablePath: queueChromePath,
+            args: [
+                `--window-size=${width},${height}`,
+                `--window-position=0,0`,
+                '--disable-font-subpixel-positioning',
+                '--disable-features=FontAccess',
+                '--font-render-hinting=none',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-software-rasterizer'
+            ]
+        });
+    } catch (queueError) {
+        // If launch fails, try without explicit executablePath
+        console.log("⚠️ Retrying queue browser launch without explicit path...");
+        tracker.queueBrowser = await puppeteer.launch({
+            headless: false,
+            defaultViewport: null,
+            args: [
+                `--window-size=${width},${height}`,
+                `--window-position=0,0`,
+                '--disable-font-subpixel-positioning',
+                '--disable-features=FontAccess',
+                '--font-render-hinting=none',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--disable-software-rasterizer'
+            ]
+        });
+    }
+    const queuePages = await tracker.queueBrowser.pages();
+    tracker.queuePage = queuePages[0];
+    await tracker.queuePage.setJavaScriptEnabled(true);
+    await tracker.queuePage.setContent(QUEUE_BROWSER_HTML);
 
+    // Initialize Tracking Browser SECOND (will be on top)
+    console.log("🚀 Launching Tracking Browser (bypass bot detection)...");
+    
     // Check and use CHROME_PATH if provided and valid, otherwise use Puppeteer's Chrome
     let chromePathToUse = await checkChromePath(ENV.CHROME_PATH);
     if (!chromePathToUse) {
@@ -149,69 +197,23 @@ export async function initBrowsers(tracker, startUrl) {
         }
     });
 
-    // console.log("🛡️ Injecting adblock into tracking browser...");
-    // const blocker = await PuppeteerBlocker.fromPrebuiltFull(fetch, {
-    //     path: join(__dirname, '../lib/engine.bin'),
-    //     read: fsp.readFile,
-    //     write: fsp.writeFile,
-    // });
-    // await blocker.enableBlockingInPage(tracker.page);
-    // console.log("✅ Adblock injected successfully!");
+    console.log("✅ Both browsers launched successfully!");
 
-    console.log("✅ Real Browser launched successfully!");
-
-    // Ensure Chrome is installed for queue browser too
-    const queueChromePath = await ensureChromeInstalled();
-
-    try {
-        tracker.queueBrowser = await puppeteer.launch({
-            headless: false,
-            defaultViewport: null,
-            executablePath: queueChromePath,
-            args: [
-                `--window-size=${queueWidth},${height}`,
-                `--window-position=${trackingWidth},0`,
-                '--disable-font-subpixel-positioning',
-                '--disable-features=FontAccess',
-                '--font-render-hinting=none',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-gpu',
-                '--disable-software-rasterizer'
-            ]
-        });
-    } catch (queueError) {
-        // If launch fails, try without explicit executablePath
-        console.log("⚠️ Retrying queue browser launch without explicit path...");
-        tracker.queueBrowser = await puppeteer.launch({
-            headless: false,
-            defaultViewport: null,
-            args: [
-                `--window-size=${queueWidth},${height}`,
-                `--window-position=${trackingWidth},0`,
-                '--disable-font-subpixel-positioning',
-                '--disable-features=FontAccess',
-                '--font-render-hinting=none',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-gpu',
-                '--disable-software-rasterizer'
-            ]
-        });
-    }
-    const queuePages = await tracker.queueBrowser.pages();
-    tracker.queuePage = queuePages[0];
-    await tracker.queuePage.setJavaScriptEnabled(true);
-    await tracker.queuePage.setContent(QUEUE_BROWSER_HTML);
-
+    // Now setup handlers (both browsers are ready)
     const handlers = createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth);
     tracker._queueHandlers = handlers;
 
     await tracker.queuePage.exposeFunction("quitApp", handlers.quitApp);
     await tracker.queuePage.exposeFunction("saveEvents", handlers.saveEvents);
     await tracker.queuePage.exposeFunction("resizeQueueBrowser", handlers.resizeQueueBrowser);
+    
+    // Maximize Queue Browser immediately after initialization
+    try {
+        await handlers.resizeQueueBrowser(true);
+    } catch (err) {
+        console.error('Failed to maximize queue browser on init:', err);
+    }
+    
     await tracker.queuePage.exposeFunction("openPanelEditor", handlers.openPanelEditor);
     await tracker.queuePage.exposeFunction("savePanelEdits", handlers.savePanelEdits);
     await tracker.queuePage.exposeFunction("drawPanel", handlers.drawPanel);

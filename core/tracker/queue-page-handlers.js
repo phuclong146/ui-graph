@@ -670,21 +670,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const session = await tracker.queuePage.target().createCDPSession();
             const { windowId } = await session.send('Browser.getWindowForTarget');
             
-            if (maximize) {
-                await session.send('Browser.setWindowBounds', {
-                    windowId,
-                    bounds: { left: 0, top: 0, width: width, height: height }
-                });
-            } else {
-                await session.send('Browser.setWindowBounds', {
-                    windowId,
-                    bounds: { windowState: 'normal' }
-                });
-                await session.send('Browser.setWindowBounds', {
-                    windowId,
-                    bounds: { left: trackingWidth, top: 0, width: queueWidth, height: height }
-                });
-            }
+            // Always maximize Queue Tracker (maximized state, taskbar still visible)
+            await session.send('Browser.setWindowBounds', {
+                windowId,
+                bounds: { windowState: 'maximized' }
+            });
             await session.detach();
         } catch (err) {
             console.error('Failed to resize queue browser:', err);
