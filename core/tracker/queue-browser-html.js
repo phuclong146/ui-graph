@@ -2463,9 +2463,15 @@ Bạn có chắc chắn muốn rollback?\`;
           actionImg.src = 'data:image/png;base64,' + evt.action_info.image_base64;
           actionImg.style.display = 'block';
           
-          actionImg.addEventListener('click', () => {
-            document.getElementById('modalImage').src = actionImg.src;
-            document.getElementById('imageModal').classList.add('show');
+          actionImg.addEventListener('click', async () => {
+            // Open panel editor and auto-select this action
+            if (window.openPanelEditorForAction && evt.panel_id) {
+              await window.openPanelEditorForAction(evt.panel_id);
+            } else {
+              // Fallback: show in modal
+              document.getElementById('modalImage').src = actionImg.src;
+              document.getElementById('imageModal').classList.add('show');
+            }
           });
           
           const imageLabel = document.createElement('div');

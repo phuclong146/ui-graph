@@ -682,7 +682,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const openPanelEditorHandler = async () => {
+    const openPanelEditorHandler = async (actionItemIdToSelect = null) => {
         try {
             if (!tracker.selectedPanelId || !tracker.dataItemManager || !tracker.parentPanelManager) {
                 console.error('No panel selected or managers not initialized');
@@ -704,7 +704,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const actionIds = await getActionIdsForItem(tracker.selectedPanelId, panelItem.item_category);
             const actions = [];
-            for (const actionId of actionIds) {
+            let selectedActionIndex = null;
+            
+            for (let i = 0; i < actionIds.length; i++) {
+                const actionId = actionIds[i];
                 const actionItem = await tracker.dataItemManager.getItem(actionId);
                 if (actionItem) {
                     const hasValidP = actionItem.metadata.local_pos.p != null;
@@ -719,6 +722,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 global_pos: actionItem.metadata.global_pos
                             }
                         });
+                    }
+                    
+                    // Track index if this is the action to select
+                    if (actionItemIdToSelect && actionItem.item_id === actionItemIdToSelect) {
+                        selectedActionIndex = i;
                     }
                     
                     actions.push({
@@ -760,17 +768,172 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos);
                 await editor.init();
+                
+                // Auto-select action if specified
+                if (data.selectedActionIndex !== null && data.selectedActionIndex !== undefined) {
+                    const actionId = '0-' + data.selectedActionIndex;
+                    console.log('🎯 Auto-selecting action:', actionId, 'at index:', data.selectedActionIndex);
+                    
+                    // Find the action to get its page number
+                    const action = data.geminiResult[0]?.actions[data.selectedActionIndex];
+                    if (action && action.action_pos) {
+                        const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / 1080) + 1;
+                        const currentPage = editor.currentPageIndex + 1;
+                        console.log('📄 Action page:', actionPage, 'Current page:', currentPage);
+                        
+                        // Switch to the correct page if needed
+                        if (actionPage !== currentPage && editor.switchEditPage) {
+                            console.log('🔄 Switching to page', actionPage);
+                            // Calculate how many pages to switch
+                            const pagesToSwitch = actionPage - currentPage;
+                            if (pagesToSwitch > 0) {
+                                // Switch forward
+                                for (let i = 0; i < pagesToSwitch; i++) {
+                                    await editor.switchEditPage('next');
+                                }
+                            } else if (pagesToSwitch < 0) {
+                                // Switch backward
+                                for (let i = 0; i < Math.abs(pagesToSwitch); i++) {
+                                    await editor.switchEditPage('prev');
+                                }
+                            }
+                            // Wait for page to load and action list to update
+                            await new Promise(resolve => setTimeout(resolve, 300));
+                            console.log('✅ Switched to page', editor.currentPageIndex + 1);
+                        }
+                    }
+                    
+                    // Wait for action list to be rendered, then select the action
+                    const selectAction = () => {
+                        const actionListContainer = document.getElementById('action-list-container');
+                        console.log('🔍 Looking for action list container:', !!actionListContainer);
+                        if (actionListContainer) {
+                            const actionItem = actionListContainer.querySelector('[data-action-id="' + actionId + '"]');
+                            console.log('🔍 Found action item:', !!actionItem, 'for actionId:', actionId);
+                            if (actionItem) {
+                                console.log('✅ Selecting action:', actionId);
+                                // Scroll action item into view
+                                actionItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // Wait a bit then trigger click
+                                setTimeout(() => {
+                                    actionItem.click();
+                                    console.log('✅ Clicked action item');
+                                }, 100);
+                                return true;
+                            } else {
+                                // Log all available action items for debugging
+                                const allItems = actionListContainer.querySelectorAll('.action-list-item');
+                                const availableIds = Array.from(allItems).map(item => item.getAttribute('data-action-id'));
+                                console.log('⚠️ Action item not found. Available items:', availableIds);
+                                console.log('⚠️ Looking for:', actionId);
+                            }
+                        } else {
+                            console.log('⚠️ Action list container not found');
+                        }
+                        return false;
+                    };
+                    
+                    // Also try to select directly using editor's fabricObjects
+                    const selectActionDirectly = () => {
+                        const boxData = editor.fabricObjects.get(actionId);
+                        if (boxData && boxData.rect) {
+                            console.log('✅ Found action in fabricObjects, selecting directly');
+                            editor.selectedActionIdInSidebar = actionId;
+                            const hasIntersections = editor.actionHasIntersections.get(actionId) || false;
+                            
+                            if (hasIntersections) {
+                                const intersections = editor.actionIntersections.get(actionId) || new Set();
+                                editor.showIntersectingBoxes(actionId, intersections);
+                            } else {
+                                editor.showOnlySelectedBox(actionId);
+                            }
+                            
+                            editor.canvas.setActiveObject(boxData.rect);
+                            editor.canvas.renderAll();
+                            
+                            // Update sidebar selection
+                            const actionListContainer = document.getElementById('action-list-container');
+                            if (actionListContainer) {
+                                const actionItem = actionListContainer.querySelector('[data-action-id="' + actionId + '"]');
+                                if (actionItem) {
+                                    actionListContainer.querySelectorAll('.action-list-item').forEach(otherItem => {
+                                        otherItem.style.background = 'rgba(255, 255, 255, 0.05)';
+                                        otherItem.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                                    });
+                                    actionItem.style.background = 'rgba(102, 126, 234, 0.3)';
+                                    actionItem.style.border = '1px solid rgba(102, 126, 234, 0.6)';
+                                    actionItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                            }
+                            
+                            if (editor.updateRenameByAIButton) {
+                                editor.updateRenameByAIButton();
+                            }
+                            
+                            return true;
+                        }
+                        return false;
+                    };
+                    
+                    // Wait for action list to be fully rendered
+                    await new Promise(resolve => setTimeout(resolve, 400));
+                    
+                    // Try to select via DOM click first
+                    if (!selectAction()) {
+                        console.log('⚠️ DOM click failed, trying direct selection...');
+                        // If DOM click fails, try direct selection
+                        if (!selectActionDirectly()) {
+                            console.log('⚠️ Direct selection also failed, retrying DOM click...');
+                            // Retry DOM click
+                            setTimeout(() => {
+                                if (!selectAction()) {
+                                    console.log('⚠️ Second DOM attempt failed, trying direct again...');
+                                    setTimeout(() => {
+                                        if (!selectActionDirectly()) {
+                                            console.error('❌ Failed to select action after all retries');
+                                        }
+                                    }, 300);
+                                }
+                            }, 400);
+                        }
+                    }
+                }
             }, {
                 geminiResult: geminiResult,
                 imageBase64: editorImage,
                 panelEditorClassCode: getPanelEditorClassCode(),
                 panelId: tracker.selectedPanelId,
                 panelBeforeBase64: panelBeforeBase64,
-                panelAfterGlobalPos: panelAfterGlobalPos
+                panelAfterGlobalPos: panelAfterGlobalPos,
+                selectedActionIndex: selectedActionIndex
             });
 
         } catch (err) {
             console.error('Failed to open panel editor:', err);
+        }
+    };
+
+    const openPanelEditorForActionHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.dataItemManager || !tracker.parentPanelManager) {
+                console.error('No action ID provided or managers not initialized');
+                return;
+            }
+
+            // Get parent panel of action
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (!parentPanelId) {
+                console.error('Could not find parent panel for action:', actionItemId);
+                return;
+            }
+
+            // Select the parent panel first
+            tracker.selectedPanelId = parentPanelId;
+            
+            // Open panel editor with action to select
+            await openPanelEditorHandler(actionItemId);
+        } catch (err) {
+            console.error('Failed to open panel editor for action:', err);
         }
     };
 
@@ -3993,6 +4156,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         saveEvents: saveEventsHandler,
         resizeQueueBrowser: resizeQueueBrowserHandler,
         openPanelEditor: openPanelEditorHandler,
+        openPanelEditorForAction: openPanelEditorForActionHandler,
         savePanelEdits: savePanelEditsHandler,
         drawPanel: drawPanelHandler,
         saveCroppedPanel: saveCroppedPanelHandler,

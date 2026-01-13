@@ -215,6 +215,7 @@ export async function initBrowsers(tracker, startUrl) {
     }
     
     await tracker.queuePage.exposeFunction("openPanelEditor", handlers.openPanelEditor);
+    await tracker.queuePage.exposeFunction("openPanelEditorForAction", handlers.openPanelEditorForAction);
     await tracker.queuePage.exposeFunction("savePanelEdits", handlers.savePanelEdits);
     await tracker.queuePage.exposeFunction("drawPanel", handlers.drawPanel);
     await tracker.queuePage.exposeFunction("saveCroppedPanel", handlers.saveCroppedPanel);
