@@ -99,9 +99,30 @@ export class DataItemManager {
         return item.item_id;
     }
 
-    async createAction(name, type, verb, position, pageNumber = null) {
+    async createAction(name, type, verb, position, pageNumber = null, localPos = null) {
         const pageHeight = 1080;
-        const localY = pageNumber ? position.y - (pageNumber - 1) * pageHeight : position.y;
+        
+        // If localPos is provided, use it directly (e.g., when panel has crop)
+        // Otherwise, calculate local_pos from global position
+        let local_pos;
+        if (localPos) {
+            local_pos = {
+                p: pageNumber,
+                x: localPos.x,
+                y: localPos.y,
+                w: localPos.w,
+                h: localPos.h
+            };
+        } else {
+            const localY = pageNumber ? position.y - (pageNumber - 1) * pageHeight : position.y;
+            local_pos = {
+                p: pageNumber,
+                x: position.x,
+                y: localY,
+                w: position.w,
+                h: position.h
+            };
+        }
         
         const item = {
             item_id: this.generateItemId(),
@@ -113,13 +134,7 @@ export class DataItemManager {
             content: null,
             image_url: null,
             metadata: {
-                local_pos: {
-                    p: pageNumber,
-                    x: position.x,
-                    y: localY,
-                    w: position.w,
-                    h: position.h
-                },
+                local_pos: local_pos,
                 global_pos: {
                     x: position.x,
                     y: position.y,

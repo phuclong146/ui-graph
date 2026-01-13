@@ -2219,12 +2219,31 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     nameCountMap.set(actionName, 0);
                 }
 
+                // Calculate global_pos by adding back cropArea offset
+                // action.action_pos is local (relative to cropped panel)
+                // global_pos should be relative to full screenshot
+                const globalPos = {
+                    x: action.action_pos.x + cropArea.x,
+                    y: action.action_pos.y + cropArea.y,
+                    w: action.action_pos.w,
+                    h: action.action_pos.h
+                };
+
+                // local_pos is relative to cropped panel (action.action_pos)
+                const localPos = {
+                    x: action.action_pos.x,
+                    y: action.action_pos.y,
+                    w: action.action_pos.w,
+                    h: action.action_pos.h
+                };
+
                 const actionId = await tracker.dataItemManager.createAction(
                     actionName,
                     action.action_type,
                     action.action_verb,
-                    action.action_pos,
-                    clampedPageNumber
+                    globalPos,
+                    clampedPageNumber,
+                    localPos
                 );
 
                 actionIds.push(actionId);
