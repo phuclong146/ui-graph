@@ -1070,26 +1070,64 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                     globalY = (pageNumber - 1) * pageHeight + newAction.action_pos.y;
                                 }
 
-                                toUpdate.push({
-                                    itemId: existing.item_id,
-                                    newData: {
-                                        name: newAction.action_name,
-                                        metadata: {
-                                            local_pos: {
-                                                p: pageNumber,
-                                                x: newAction.action_pos.x,
-                                                y: newAction.action_pos.y,
-                                                w: newAction.action_pos.w,
-                                                h: newAction.action_pos.h
-                                            },
-                                            global_pos: {
+                                // Prepare update data
+                                const updateData = {
+                                    name: newAction.action_name,
+                                    metadata: {
+                                        local_pos: {
+                                            p: pageNumber,
+                                            x: newAction.action_pos.x,
+                                            y: newAction.action_pos.y,
+                                            w: newAction.action_pos.w,
+                                            h: newAction.action_pos.h
+                                        },
+                                        global_pos: {
+                                            x: globalX,
+                                            y: globalY,
+                                            w: newAction.action_pos.w,
+                                            h: newAction.action_pos.h
+                                        }
+                                    }
+                                };
+
+                                // If position changed, crop new action image from panel
+                                if (posChanged) {
+                                    try {
+                                        // Get parent panel image (prefer fullscreen_base64)
+                                        let panelImageBase64 = null;
+                                        if (panelItem.fullscreen_base64) {
+                                            panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.fullscreen_base64);
+                                        } else if (panelItem.image_base64) {
+                                            panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+                                        }
+
+                                        if (panelImageBase64) {
+                                            // Crop action image with new global_pos
+                                            const newGlobalPos = {
                                                 x: globalX,
                                                 y: globalY,
                                                 w: newAction.action_pos.w,
                                                 h: newAction.action_pos.h
-                                            }
+                                            };
+                                            const actionImage = await cropBase64Image(panelImageBase64, newGlobalPos);
+                                            
+                                            // Calculate hash of new image
+                                            const newImageHash = await calculateHash(actionImage);
+                                            
+                                            // Update image_base64 and hash
+                                            updateData.image_base64 = actionImage;
+                                            updateData.metadata.image_hash = newImageHash;
+                                            
+                                            console.log(`    [${logIndex}] Cropped new action image for "${newAction.action_name}"`);
                                         }
+                                    } catch (err) {
+                                        console.error(`    [${logIndex}] Failed to crop action image for "${newAction.action_name}":`, err);
                                     }
+                                }
+
+                                toUpdate.push({
+                                    itemId: existing.item_id,
+                                    newData: updateData
                                 });
                             } else {
                                 console.log(`    [${logIndex}] "${newAction.action_name}" (${newAction.action_pos.x},${newAction.action_pos.y},${newAction.action_pos.w},${newAction.action_pos.h}) -> no changes`);
@@ -3663,10 +3701,43 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             }
 
                             if (panelImageBase64 && item.metadata?.global_pos) {
-                                // Crop action image from panel image using global_pos
-                                const actionImage = await cropBase64Image(panelImageBase64, item.metadata.global_pos);
-                                actionInfo.image_base64 = actionImage;
-                                console.log(`✅ Cropped action image from panel ${parentPanelId} fullscreen_base64`);
+                                // Check if action already has image in doing_item.jsonl
+                                if (item.image_base64) {
+                                    // Load existing image from doing_item.jsonl
+                                    const existingImageBase64 = await tracker.dataItemManager.loadBase64FromFile(item.image_base64);
+                                    if (existingImageBase64) {
+                                        actionInfo.image_base64 = existingImageBase64;
+                                        console.log(`✅ Loaded existing action image from doing_item.jsonl for action ${itemId}`);
+                                    } else {
+                                        // File not found, need to crop new image
+                                        const actionImage = await cropBase64Image(panelImageBase64, item.metadata.global_pos);
+                                        actionInfo.image_base64 = actionImage;
+                                        
+                                        const newImageHash = await calculateHash(actionImage);
+                                        await tracker.dataItemManager.updateItem(itemId, {
+                                            image_base64: actionImage,
+                                            metadata: {
+                                                ...item.metadata,
+                                                image_hash: newImageHash
+                                            }
+                                        });
+                                        console.log(`✅ Cropped and saved new action image for action ${itemId} (file was missing)`);
+                                    }
+                                } else {
+                                    // Action doesn't have image, crop and save it
+                                    const actionImage = await cropBase64Image(panelImageBase64, item.metadata.global_pos);
+                                    actionInfo.image_base64 = actionImage;
+                                    
+                                    const newImageHash = await calculateHash(actionImage);
+                                    await tracker.dataItemManager.updateItem(itemId, {
+                                        image_base64: actionImage,
+                                        metadata: {
+                                            ...item.metadata,
+                                            image_hash: newImageHash
+                                        }
+                                    });
+                                    console.log(`✅ Cropped and saved new action image for action ${itemId}`);
+                                }
                             }
                         }
                     } catch (err) {
