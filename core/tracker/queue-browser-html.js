@@ -878,8 +878,11 @@ export const QUEUE_BROWSER_HTML = `
         <div style="text-align:center; margin-bottom:25px;">
           <div style="font-size:48px; margin-bottom:15px;">✅</div>
           <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Xác nhận hoàn tất</h3>
-          <p style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+          <p style="margin:0 0 20px 0; font-size:14px; color:#666; line-height:1.6;">
             Bạn đã chắc chắn vẽ đúng panel mới và đúng/đủ các action của panel mới chưa?
+          </p>
+          <p style="margin:0; padding:12px; background-color:#fff3cd; border:1px solid #ffc107; border-radius:6px; font-size:13px; color:#856404; font-weight:600; line-height:1.5;">
+            ⚠️ Đây là thông tin QUAN TRỌNG. Xin hãy KIỂM TRA KỸ và CHỈ BẤM "HOÀN TẤT" khi đã VẼ ĐÚNG PANEL VÀ ĐỦ ACTIONS!
           </p>
         </div>
         <div style="display:flex; gap:10px; justify-content:center;">
@@ -2035,6 +2038,11 @@ Bạn có chắc chắn muốn rollback?\`;
       const showPanelCompletionDialog = (panelId) => {
         if (!panelCompletionConfirmationModal) {
           console.error('panelCompletionConfirmationModal not found');
+          return;
+        }
+        // Check if dialog is already visible - prevent duplicate display
+        if (panelCompletionConfirmationModal.style.display === 'flex') {
+          console.log('Panel completion dialog already visible, skipping duplicate display');
           return;
         }
         currentCompletionPanelId = panelId;

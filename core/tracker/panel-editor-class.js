@@ -3244,9 +3244,10 @@ window.PanelEditor = class PanelEditor {
         const completionModal = document.getElementById('panelCompletionConfirmationModal');
         const isCompletionDialogVisible = completionModal && completionModal.style.display === 'flex';
         
-        if (window.showTrackingBrowser && !isCompletionDialogVisible) {
-            await window.showTrackingBrowser();
-        }
+        // Commented out: Don't show tracking browser automatically
+        // if (window.showTrackingBrowser && !isCompletionDialogVisible) {
+        //     await window.showTrackingBrowser();
+        // }
         
         if (window.resetDrawingFlag) {
             await window.resetDrawingFlag();

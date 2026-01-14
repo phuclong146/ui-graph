@@ -1191,10 +1191,31 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const currentFlowState = await getPanelDrawFlowState(tracker.selectedPanelId);
                     if (currentFlowState === 'edit_actions') {
                         // Panel is in edit_actions state - show completion dialog
-                        await tracker._broadcast({
-                            type: 'show_panel_completion_dialog',
-                            panelId: tracker.selectedPanelId
-                        });
+                        // Wait for panel editor to close before showing dialog to prevent duplicate display
+                        const checkAndShowDialog = async () => {
+                            // Check if panel editor is still open
+                            if (tracker.queuePage) {
+                                const editorExists = await tracker.queuePage.evaluate(() => {
+                                    const editorContainer = document.getElementById('editor-container');
+                                    return editorContainer && editorContainer.parentNode !== null;
+                                });
+                                
+                                if (editorExists) {
+                                    // Editor still open, wait a bit more
+                                    setTimeout(checkAndShowDialog, 200);
+                                    return;
+                                }
+                            }
+                            
+                            // Editor is closed, show dialog
+                            await tracker._broadcast({
+                                type: 'show_panel_completion_dialog',
+                                panelId: tracker.selectedPanelId
+                            });
+                        };
+                        
+                        // Start checking after a short delay
+                        setTimeout(checkAndShowDialog, 500);
                     } else {
                         // If already completed or not part of the flow, just show success toast
                         await tracker._broadcast({
@@ -4395,6 +4416,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const showTrackingBrowserHandler = async () => {
         try {
+            // Check if completion dialog is visible - don't show tracking browser if it is
+            if (tracker.queuePage) {
+                const isCompletionDialogVisible = await tracker.queuePage.evaluate(() => {
+                    const completionModal = document.getElementById('panelCompletionConfirmationModal');
+                    return completionModal && completionModal.style.display === 'flex';
+                });
+                
+                if (isCompletionDialogVisible) {
+                    console.log('⚠️ Completion dialog is visible, skipping showTrackingBrowser');
+                    return;
+                }
+            }
+            
             if (tracker.page) {
                 const session = await tracker.page.target().createCDPSession();
                 const bounds = {
