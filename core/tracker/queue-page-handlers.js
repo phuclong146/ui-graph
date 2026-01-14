@@ -1427,12 +1427,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const croppedBase64 = croppedBuffer.toString('base64');
                     
                     console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
+                    
+                    // Show loading indicator (only in queue browser)
+                    await tracker._broadcast({ 
+                        type: 'show_toast', 
+                        message: '🤖 Đang detect panel type với Gemini, vui lòng đợi...',
+                        target: 'queue'
+                    });
+                    
                     const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
                     // Pass both full screenshot and crop area for better popup detection (Solution 1)
                     detectedPanelType = await detectPanelTypeByGemini(croppedBase64, originalImageBase64, cropPos);
                     console.log(`✅ Detected panel type: ${detectedPanelType}`);
                 } catch (err) {
                     console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                    await tracker._broadcast({ 
+                        type: 'show_toast', 
+                        message: '⚠️ Lỗi khi detect panel type, sử dụng mặc định "screen"' 
+                    });
                 }
             }
 
@@ -1896,6 +1908,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 } else {
                     console.log('📸 PAGE has no screenshot, capturing current viewport...');
 
+                    // Show loading indicator (only in queue browser)
+                    await tracker._broadcast({ 
+                        type: 'show_toast', 
+                        message: '📸 Đang capture màn hình, vui lòng đợi...',
+                        target: 'queue'
+                    });
+
                     const scrollPosition = await tracker.page.evaluate(() => ({
                         x: window.scrollX || window.pageXOffset,
                         y: window.scrollY || window.pageYOffset
@@ -2109,6 +2128,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
+            // Show loading indicator
+            await tracker._broadcast({ 
+                type: 'show_toast', 
+                message: '📸 Đang capture màn hình, vui lòng đợi...' 
+            });
+
             // Check for newly opened tabs (within last 30 seconds)
             let pageToCapture = tracker.page;
             let switchedToNewTab = false;
@@ -2205,12 +2230,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 } else {
                     // Call Gemini with full screenshot
                     try {
+                        // Show loading indicator
+                        await tracker._broadcast({ 
+                            type: 'show_toast', 
+                            message: '🤖 Đang detect panel type với Gemini, vui lòng đợi...' 
+                        });
+                        
                         const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
                         // Call with full screenshot (use screenshot as croppedScreenshotB64, no cropArea)
                         detectedPanelType = await detectPanelTypeByGemini(screenshot, null, null);
                         console.log(`✅ Detected panel type: ${detectedPanelType}`);
                     } catch (err) {
                         console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                        await tracker._broadcast({ 
+                            type: 'show_toast', 
+                            message: '⚠️ Lỗi khi detect panel type, sử dụng mặc định "screen"',
+                            target: 'queue'
+                        });
                     }
                 }
 
@@ -2915,6 +2951,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     deviceScaleFactor: 1
                 });
 
+                // Show loading indicator
+                await tracker._broadcast({ 
+                    type: 'show_toast', 
+                    message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                });
+
                 await tracker.page.evaluate(() => {
                     document.documentElement.style.overflow = 'hidden';
                     document.body.style.overflow = 'hidden';
@@ -3047,6 +3089,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (tracker.selectedPanelId && tracker.dataItemManager) {
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
+                // Show loading indicator
+                await tracker._broadcast({ 
+                    type: 'show_toast', 
+                    message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                });
+
                 const { captureScreenshot } = await import('../media/screenshot.js');
                 screenshot = await captureScreenshot(tracker.page, "base64", true);
                 console.log('📸 Captured FULL PAGE screenshot');
@@ -3160,6 +3208,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 in_progress: true,
                 source: 'queue',
                 timestamp: Date.now()
+            });
+
+            // Show loading indicator
+            await tracker._broadcast({ 
+                type: 'show_toast', 
+                message: '📸 Đang capture màn hình, vui lòng đợi...' 
             });
 
             const { captureScreenshot } = await import('../media/screenshot.js');
@@ -3326,6 +3380,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('📸 DOM Capture (SCROLLING) triggered');
 
             const recordingResult = await tracker.stopPanelRecording();
+
+            // Show loading indicator
+            await tracker._broadcast({ 
+                type: 'show_toast', 
+                message: '📸 Đang capture màn hình, vui lòng đợi...' 
+            });
 
             await tracker.page.evaluate(() => {
                 document.documentElement.style.overflow = 'hidden';

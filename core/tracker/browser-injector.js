@@ -207,7 +207,8 @@ export async function setupTracking(tracker) {
                         const evt = JSON.parse(msg.data);
 
                         if (evt.type === 'show_toast' && evt.message) {
-                            if (window.showTrackingToast) {
+                            // Don't show toast in tracking browser if target is 'queue'
+                            if (evt.target !== 'queue' && window.showTrackingToast) {
                                 window.showTrackingToast(evt.message);
                             }
                         } else if (evt.type === 'panel_selected') {
