@@ -985,9 +985,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 }
                                 console.log(`    [${logIndex}] "${newAction.action_name}" -> ${changeDesc.join(', ')}`);
 
-                                const pageNumber = existing.metadata?.local_pos?.p || 1;
+                                const pageNumber = newAction.action_pos.p || existing.metadata?.local_pos?.p || 1;
                                 const pageHeight = 1080;
-                                const globalY = (pageNumber - 1) * pageHeight + newAction.action_pos.y;
+                                
+                                // Check if panel has crop (panelItem.metadata.global_pos contains crop area)
+                                const panelCropArea = panelItem.metadata?.global_pos;
+                                
+                                let globalX, globalY;
+                                if (panelCropArea) {
+                                    // Panel has crop: convert local_pos (in crop) to global_pos (in fullscreen)
+                                    // global_x = crop_x + local_x
+                                    // global_y = crop_y + local_y (local_y is already relative to crop, so just add crop_y)
+                                    globalX = panelCropArea.x + newAction.action_pos.x;
+                                    // For y: need to account for page offset if local_pos has page number
+                                    // But since local_pos is in crop coordinates, we just add crop_y
+                                    // However, if there's a page number, we need to check if the crop area itself spans pages
+                                    // For now, assume local_y is relative to the crop area, so:
+                                    globalY = panelCropArea.y + newAction.action_pos.y;
+                                } else {
+                                    // Panel has no crop: local_pos is same as global_pos, just account for page offset
+                                    globalX = newAction.action_pos.x;
+                                    globalY = (pageNumber - 1) * pageHeight + newAction.action_pos.y;
+                                }
 
                                 toUpdate.push({
                                     itemId: existing.item_id,
@@ -1002,7 +1021,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                                 h: newAction.action_pos.h
                                             },
                                             global_pos: {
-                                                x: newAction.action_pos.x,
+                                                x: globalX,
                                                 y: globalY,
                                                 w: newAction.action_pos.w,
                                                 h: newAction.action_pos.h
@@ -1029,9 +1048,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                     for (const actionData of toAdd) {
                         const pageNumber = actionData.action_pos.p || 1;
-                        const globalY = (pageNumber - 1) * 1080 + actionData.action_pos.y;
+                        
+                        // Check if panel has crop (panelItem.metadata.global_pos contains crop area)
+                        const panelCropArea = panelItem.metadata?.global_pos;
+                        
+                        let globalX, globalY;
+                        if (panelCropArea) {
+                            // Panel has crop: convert local_pos (in crop) to global_pos (in fullscreen)
+                            globalX = panelCropArea.x + actionData.action_pos.x;
+                            globalY = panelCropArea.y + actionData.action_pos.y;
+                        } else {
+                            // Panel has no crop: local_pos is same as global_pos, just account for page offset
+                            globalX = actionData.action_pos.x;
+                            globalY = (pageNumber - 1) * 1080 + actionData.action_pos.y;
+                        }
+                        
                         const globalPos = {
-                            x: actionData.action_pos.x,
+                            x: globalX,
                             y: globalY,
                             w: actionData.action_pos.w,
                             h: actionData.action_pos.h
@@ -1042,7 +1075,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             actionData.action_type || 'button',
                             actionData.action_verb || 'click',
                             globalPos,
-                            pageNumber
+                            pageNumber,
+                            actionData.action_pos // Pass localPos for createAction to handle correctly
                         );
 
                         await addActionToItem(tracker.selectedPanelId, panelItem.item_category, actionItemId);
