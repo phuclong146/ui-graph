@@ -1437,6 +1437,9 @@ window.PanelEditor = class PanelEditor {
         boxData.label = newLabel;
         this.canvas.renderAll();
         
+        // Update action list in sidebar
+        this.renderActionList();
+        
         console.log(\`  - Renamed: "\${currentName}" -> "\${finalName}"\`);
         this.showStatus('✅ Name updated to "' + finalName + '"', 'success');
     }
@@ -1566,6 +1569,10 @@ window.PanelEditor = class PanelEditor {
                             boxData.label.set({ text: updatedAction.name });
                         }
                         this.canvas.renderAll();
+                        
+                        // Update action list in sidebar
+                        this.renderActionList();
+                        
                         console.log(\`\u2705 AI renamed action to: "\${updatedAction.name}"\`);
                         this.showStatus(\`\u2705 Renamed to: "\${updatedAction.name}"\`, 'success');
                     }
