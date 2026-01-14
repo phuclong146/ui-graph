@@ -73,8 +73,11 @@ export class DataItemManager {
                 y: cropArea.y,
                 w: cropArea.w,
                 h: cropArea.h
-            }
-        } : null;
+            },
+            draw_flow_state: null
+        } : {
+            draw_flow_state: null
+        };
         
         const itemId = this.generateItemId();
         const imagePath = await this.saveBase64ToFile(itemId, imageBase64);

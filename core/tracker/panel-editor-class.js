@@ -1602,6 +1602,11 @@ window.PanelEditor = class PanelEditor {
         }
         
         if (this.mode === 'twoPointCrop' || this.mode === 'confirmOnly' || this.mode === 'cropOnly') {
+            // Call cancel handler for twoPointCrop mode if available (only if it's a real cancel, not after save)
+            if (this.mode === 'twoPointCrop' && window.cancelCropPanel && !this._isSaving) {
+                await window.cancelCropPanel();
+            }
+            this._isSaving = false; // Reset flag
             await this.destroy();
         } else {
             if (confirm('Discard all changes?')) {
@@ -2959,6 +2964,9 @@ window.PanelEditor = class PanelEditor {
         }
         
         this.showStatus('✅ Saving cropped panel...', 'success');
+        
+        // Set flag to indicate we're saving (not canceling)
+        this._isSaving = true;
         
         if (window.confirmPanelCrop) {
             await window.confirmPanelCrop(this.calculatedCropArea);

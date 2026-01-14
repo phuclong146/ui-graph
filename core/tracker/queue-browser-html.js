@@ -171,6 +171,18 @@ export const QUEUE_BROWSER_HTML = `
         text-overflow: ellipsis;
       }
       
+      .tree-incomplete-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 6px;
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffc107;
+      }
+      
       .context-menu {
         position: fixed;
         background: white;
@@ -861,6 +873,26 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="panelCompletionConfirmationModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:600px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">✅</div>
+          <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Xác nhận hoàn tất</h3>
+          <p style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+            Bạn đã chắc chắn vẽ đúng panel mới và đúng/đủ các action của panel mới chưa?
+          </p>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="cancelPanelCompletionBtn" style="background:#6c757d; color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
+            Chưa
+          </button>
+          <button id="confirmPanelCompletionBtn" style="background:linear-gradient(135deg, #28a745 0%, #20c997 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(40,167,69,0.3);">
+            Hoàn tất
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
       <div id="select-panel-sidebar" style="width:200px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
         <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.1);">
@@ -1291,7 +1323,11 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'save_btn_state') {
           console.log('Received save_btn_state event:', evt.hasChanges);
-          updateSaveBtnState(evt.hasChanges);
+          // Get current draw_flow_state from selected panel if available
+          const selectedNode = panelTreeData.find(n => n.panel_id === selectedPanelId) || 
+            panelTreeData.find(n => n.children?.some(c => c.panel_id === selectedPanelId));
+          const drawFlowState = selectedNode?.draw_flow_state || null;
+          updateSaveBtnState(evt.hasChanges, drawFlowState);
           return;
         }
 
@@ -1309,6 +1345,16 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'panel_type_confirmation') {
           showPanelTypeConfirmationDialog(evt.detectedPanelType, evt.fullScreenshot, evt.imageWidth, evt.imageHeight);
+          return;
+        }
+        
+        if (evt.type === 'show_panel_completion_dialog') {
+          showPanelCompletionDialog(evt.panelId);
+          return;
+        }
+        
+        if (evt.type === 'hide_panel_completion_dialog') {
+          hidePanelCompletionDialog();
           return;
         }
       };
@@ -1575,13 +1621,24 @@ export const QUEUE_BROWSER_HTML = `
       let isSaving = false;
       const saveBtn = document.getElementById("saveBtn");
       
-      const updateSaveBtnState = (hasChanges) => {
+      const updateSaveBtnState = (hasChanges, drawFlowState = null) => {
         if (!saveBtn) {
           console.warn('saveBtn not found');
           return;
         }
         
-        console.log('updateSaveBtnState:', hasChanges);
+        console.log('updateSaveBtnState:', hasChanges, 'drawFlowState:', drawFlowState);
+        
+        // Check if panel is incomplete (draw_flow_state is 'edit_actions' or null/undefined for panels that started flow)
+        const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
+        
+        if (isIncomplete) {
+          // Show "Save & Complete" for incomplete panels
+          saveBtn.textContent = '💾 Save & Complete';
+        } else {
+          // Show normal "Save" for completed or no flow state
+          saveBtn.textContent = '💾 Save';
+        }
         
         if (hasChanges) {
           saveBtn.classList.add('has-changes');
@@ -1617,7 +1674,13 @@ export const QUEUE_BROWSER_HTML = `
             saveBtn.style.opacity = '';
             saveBtn.style.cursor = '';
             saveBtn.style.pointerEvents = '';
-            saveBtn.textContent = '💾 Save';
+            
+            // Update button text based on current flow state
+            const selectedNode = panelTreeData.find(n => n.panel_id === selectedPanelId) || 
+              panelTreeData.find(n => n.children?.some(c => c.panel_id === selectedPanelId));
+            const drawFlowState = selectedNode?.draw_flow_state || null;
+            const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
+            saveBtn.textContent = isIncomplete ? '💾 Save & Complete' : '💾 Save';
             
             // Check for changes after save (should be no changes now)
             if (window.checkForChanges) {
@@ -1637,7 +1700,13 @@ export const QUEUE_BROWSER_HTML = `
             saveBtn.style.opacity = '';
             saveBtn.style.cursor = '';
             saveBtn.style.pointerEvents = '';
-            saveBtn.textContent = '💾 Save';
+            
+            // Update button text based on current flow state
+            const selectedNode = panelTreeData.find(n => n.panel_id === selectedPanelId) || 
+              panelTreeData.find(n => n.children?.some(c => c.panel_id === selectedPanelId));
+            const drawFlowState = selectedNode?.draw_flow_state || null;
+            const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
+            saveBtn.textContent = isIncomplete ? '💾 Save & Complete' : '💾 Save';
           }
         } else {
           alert("SAVE function not connected!");
@@ -1957,6 +2026,48 @@ Bạn có chắc chắn muốn rollback?\`;
         });
       }
 
+      // Panel Completion Confirmation Modal handlers
+      const panelCompletionConfirmationModal = document.getElementById('panelCompletionConfirmationModal');
+      const confirmPanelCompletionBtn = document.getElementById('confirmPanelCompletionBtn');
+      const cancelPanelCompletionBtn = document.getElementById('cancelPanelCompletionBtn');
+      let currentCompletionPanelId = null;
+
+      const showPanelCompletionDialog = (panelId) => {
+        if (!panelCompletionConfirmationModal) {
+          console.error('panelCompletionConfirmationModal not found');
+          return;
+        }
+        currentCompletionPanelId = panelId;
+        panelCompletionConfirmationModal.style.display = 'flex';
+      };
+
+      const hidePanelCompletionDialog = () => {
+        if (panelCompletionConfirmationModal) {
+          panelCompletionConfirmationModal.style.display = 'none';
+          currentCompletionPanelId = null;
+        }
+      };
+
+      if (confirmPanelCompletionBtn) {
+        confirmPanelCompletionBtn.addEventListener('click', async () => {
+          hidePanelCompletionDialog();
+          
+          if (window.confirmPanelCompletion) {
+            await window.confirmPanelCompletion(currentCompletionPanelId);
+          }
+        });
+      }
+
+      if (cancelPanelCompletionBtn) {
+        cancelPanelCompletionBtn.addEventListener('click', async () => {
+          hidePanelCompletionDialog();
+          
+          if (window.cancelPanelCompletion) {
+            await window.cancelPanelCompletion();
+          }
+        });
+      }
+
       document.addEventListener("keydown", async (e) => {
         if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
           closeCheckpointModalFn();
@@ -2078,8 +2189,12 @@ Bạn có chắc chắn muốn rollback?\`;
         
         let dotColor;
         if (node.item_category === 'PANEL') {
-          // Panel icons: màu xanh lục (green)
-          dotColor = '#4caf50';
+          // Check if panel is incomplete
+          const isIncomplete = node.draw_flow_state !== null && 
+                              node.draw_flow_state !== undefined && 
+                              node.draw_flow_state !== 'completed';
+          // Panel icons: màu vàng/cam nếu chưa hoàn tất, xanh lục nếu đã hoàn tất
+          dotColor = isIncomplete ? '#ff9800' : '#4caf50';
         } else {
           // Action icons: đỏ nếu có intersection, xanh nếu không
           const hasIntersections = node.hasIntersections || false;
@@ -2104,7 +2219,32 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const label = document.createElement('span');
         label.className = 'tree-label';
-        label.textContent = node.name || 'Item';
+        
+        // Check if panel is incomplete (draw_flow_state is not null and not 'completed')
+        const isIncomplete = node.item_category === 'PANEL' && 
+                            node.draw_flow_state !== null && 
+                            node.draw_flow_state !== undefined && 
+                            node.draw_flow_state !== 'completed';
+        
+        if (isIncomplete) {
+          // Add warning icon before name
+          const warningIcon = document.createElement('span');
+          warningIcon.textContent = '⚠️ ';
+          warningIcon.style.marginRight = '4px';
+          label.appendChild(warningIcon);
+        }
+        
+        const nameText = document.createTextNode(node.name || 'Item');
+        label.appendChild(nameText);
+        
+        if (isIncomplete) {
+          // Add badge after name
+          const badge = document.createElement('span');
+          badge.className = 'tree-incomplete-badge';
+          badge.textContent = '[Chưa hoàn tất]';
+          label.appendChild(badge);
+        }
+        
         contentDiv.appendChild(label);
         
         nodeDiv.appendChild(contentDiv);
@@ -2816,6 +2956,12 @@ Bạn có chắc chắn muốn rollback?\`;
       async function handlePanelSelected(evt) {
         selectedPanelId = evt.panel_id;
         renderPanelTree();
+        
+        // Update save button text based on draw_flow_state
+        if (evt.item_category === 'PANEL' && evt.draw_flow_state !== undefined) {
+          const hasChanges = saveBtn.classList.contains('has-changes');
+          updateSaveBtnState(hasChanges, evt.draw_flow_state);
+        }
         
         const findNodeInTree = (nodes, itemId) => {
           for (const node of nodes) {

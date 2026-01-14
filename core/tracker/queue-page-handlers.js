@@ -191,6 +191,68 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Helper functions for draw flow state management
+     */
+    const getPanelDrawFlowState = async (panelId) => {
+        try {
+            if (!tracker.dataItemManager) return null;
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem || panelItem.item_category !== 'PANEL') return null;
+            return panelItem.metadata?.draw_flow_state || null;
+        } catch (err) {
+            console.error('Failed to get panel draw flow state:', err);
+            return null;
+        }
+    };
+
+    const setPanelDrawFlowState = async (panelId, state) => {
+        try {
+            if (!tracker.dataItemManager) return false;
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem || panelItem.item_category !== 'PANEL') return false;
+            
+            const currentMetadata = panelItem.metadata || {};
+            await tracker.dataItemManager.updateItem(panelId, {
+                metadata: {
+                    ...currentMetadata,
+                    draw_flow_state: state
+                }
+            });
+            
+            console.log(`✅ Panel ${panelId} draw_flow_state → ${state}`);
+            return true;
+        } catch (err) {
+            console.error('Failed to set panel draw flow state:', err);
+            return false;
+        }
+    };
+
+    const getIncompleteDrawFlowPanels = async () => {
+        try {
+            if (!tracker.dataItemManager) return [];
+            const allItems = await tracker.dataItemManager.getAllItems();
+            const panels = allItems.filter(item => item.item_category === 'PANEL');
+            
+            const incompletePanels = [];
+            for (const panel of panels) {
+                const flowState = panel.metadata?.draw_flow_state;
+                if (flowState !== null && flowState !== undefined && flowState !== 'completed') {
+                    incompletePanels.push({
+                        item_id: panel.item_id,
+                        name: panel.name,
+                        draw_flow_state: flowState
+                    });
+                }
+            }
+            
+            return incompletePanels;
+        } catch (err) {
+            console.error('Failed to get incomplete draw flow panels:', err);
+            return [];
+        }
+    };
+
     const removeActionFromItem = async (itemId, itemCategory, actionId) => {
         await tracker.dataItemManager.deleteItem(actionId);
 
@@ -1125,18 +1187,35 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         await tracker.parentPanelManager.updatePanelEntry(tracker.selectedPanelId, panelEntry);
                     }
 
-                    // Tạo quan hệ parent-child từ step
-                    // await createPanelRelationFromStep(tracker.selectedPanelId);
+                    // Check draw_flow_state and show completion dialog if needed
+                    const currentFlowState = await getPanelDrawFlowState(tracker.selectedPanelId);
+                    if (currentFlowState === 'edit_actions') {
+                        // Panel is in edit_actions state - show completion dialog
+                        await tracker._broadcast({
+                            type: 'show_panel_completion_dialog',
+                            panelId: tracker.selectedPanelId
+                        });
+                    } else {
+                        // If already completed or not part of the flow, just show success toast
+                        await tracker._broadcast({
+                            type: 'show_toast',
+                            message: '✅ Đã lưu chỉnh sửa panel!'
+                        });
+                    }
 
                     const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
 
+                    // Use currentFlowState already retrieved above
                     await tracker._broadcast({
                         type: 'panel_selected',
                         panel_id: tracker.selectedPanelId,
+                        item_category: 'PANEL',
                         screenshot: displayImage,
                         actions: newActions,
                         action_list: newActions.map(a => a.action_name).filter(Boolean).join(', '),
                         gemini_result: updatedGeminiResult,
+                        draw_flow_state: currentFlowState,
+                        metadata: panelItem.metadata,
                         timestamp: Date.now()
                     });
 
@@ -1218,6 +1297,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
 
                 return { mode: 'USE_BEFORE' };
+            }
+
+            // Check for incomplete draw flow panels
+            const incompletePanels = await getIncompleteDrawFlowPanels();
+            if (incompletePanels.length > 0) {
+                const incompletePanel = incompletePanels[0];
+                const panelName = incompletePanel.name || 'Unknown Panel';
+                
+                // Show alert and open incomplete panel
+                await tracker.queuePage.evaluate((msg) => {
+                    alert(msg);
+                }, `Bạn hãy hoàn tất panel "${panelName}" trước!`);
+                
+                // Select the incomplete panel and resume flow
+                await selectPanelHandler(incompletePanel.item_id);
+                await drawPanelAndDetectActionsHandler();
+                
+                return { mode: 'DRAW_NEW', success: false, blocked: true };
             }
 
             console.log('Create new panel - Creating empty panel entry...');
@@ -1936,6 +2033,67 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
+            // Check for incomplete panels (excluding current panel)
+            const incompletePanels = await getIncompleteDrawFlowPanels();
+            const otherIncompletePanels = incompletePanels.filter(p => p.item_id !== tracker.selectedPanelId);
+            if (otherIncompletePanels.length > 0) {
+                const incompletePanel = otherIncompletePanels[0];
+                const panelName = incompletePanel.name || 'Unknown Panel';
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: `⚠️ Bạn hãy hoàn tất panel "${panelName}" trước!`
+                });
+                return;
+            }
+
+            // Check current panel's draw_flow_state and resume if needed
+            const currentFlowState = await getPanelDrawFlowState(tracker.selectedPanelId);
+            if (currentFlowState === 'edit_actions') {
+                // Resume at edit actions - open editor directly
+                console.log('🔄 Resuming flow at edit_actions - opening editor...');
+                const { getPanelEditorClassHandler } = await import('./queue-page-handlers.js');
+                const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+                const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+                
+                // Get actions for the panel
+                const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
+                const actionIds = parentEntry?.child_actions || [];
+                const actions = [];
+                for (const actionId of actionIds) {
+                    const actionItem = await tracker.dataItemManager.getItem(actionId);
+                    if (actionItem) {
+                        actions.push({
+                            action_id: actionItem.item_id,
+                            action_name: actionItem.name,
+                            action_type: actionItem.type,
+                            action_verb: actionItem.verb,
+                            action_content: actionItem.content,
+                            action_pos: actionItem.metadata?.local_pos || actionItem.metadata?.global_pos
+                        });
+                    }
+                }
+                
+                // Open editor with existing actions
+                await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
+                    if (window.queueEditor) {
+                        try {
+                            await window.queueEditor.cancel();
+                        } catch (err) {
+                            console.warn('⚠️ Failed to cancel previous editor:', err);
+                        }
+                        window.queueEditor = null;
+                    }
+
+                    eval(editorClass);
+
+                    const editor = new window.PanelEditor(screenshot, geminiResult, 'full');
+                    await editor.init();
+                    window.queueEditor = editor;
+                }, await getPanelEditorClassHandler(), displayImage, [{ panel_title: panelItem.name, actions: actions }]);
+                
+                return;
+            }
+
             const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
             if (parentEntry && parentEntry.child_actions && parentEntry.child_actions.length > 0) {
                 console.warn('⚠️ Panel already has actions. Reset panel first.');
@@ -1945,6 +2103,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+
+            // Set flow state to 'capture' at the start
+            await setPanelDrawFlowState(tracker.selectedPanelId, 'capture');
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
@@ -2006,6 +2167,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             restoreViewport = restoreViewportFn;
             console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
 
+            // Update state to 'detect_type'
+            await setPanelDrawFlowState(tracker.selectedPanelId, 'detect_type');
+
             console.log('📐 Detecting actions from DOM (FULL PAGE)...');
             const { captureActionsFromDOM } = await import('../media/dom-capture.js');
             const fullPageDomActions = await captureActionsFromDOM(pageToCapture, null, true, imageWidth, imageHeight);
@@ -2050,6 +2214,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
 
+                // Update state to 'confirm_type'
+                await setPanelDrawFlowState(tracker.selectedPanelId, 'confirm_type');
+
                 // Show confirmation dialog
                 const confirmationPromise = new Promise((resolve, reject) => {
                     tracker.__panelTypeConfirmationResolve = resolve;
@@ -2078,9 +2245,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 try {
                     confirmedPanelType = await confirmationPromise;
                     console.log(`✅ Panel type confirmed: ${confirmedPanelType}`);
+                    // Update state to 'crop' after confirming panel type
+                    await setPanelDrawFlowState(tracker.selectedPanelId, 'crop');
                 } catch (err) {
-                    // User canceled
+                    // User canceled - set state to null to allow restart
                     console.log('User canceled panel type confirmation');
+                    await setPanelDrawFlowState(tracker.selectedPanelId, null);
                     if (restoreViewport) {
                         await restoreViewport();
                     }
@@ -2206,6 +2376,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const restoreViewportFn = tracker.__panelTypeConfirmationData?.restoreViewportFn;
             tracker.__panelTypeConfirmationData = null;
 
+            // Set state to null (cancel at step 3)
+            if (tracker.selectedPanelId) {
+                await setPanelDrawFlowState(tracker.selectedPanelId, null);
+            }
+
             // Restore viewport nếu có
             if (restoreViewportFn) {
                 await restoreViewportFn();
@@ -2217,6 +2392,83 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
         } catch (err) {
             console.error('Failed to cancel panel type:', err);
+        }
+    };
+
+    const cancelCropPanelHandler = async () => {
+        try {
+            // Check if drawPanelContext exists (means crop was canceled, not saved)
+            if (tracker.__drawPanelContext && tracker.selectedPanelId) {
+                // Set state to null (cancel at step 4)
+                await setPanelDrawFlowState(tracker.selectedPanelId, null);
+                
+                // Cleanup context
+                const { restoreViewport } = tracker.__drawPanelContext;
+                if (restoreViewport) {
+                    await restoreViewport();
+                }
+                delete tracker.__drawPanelContext;
+                
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: 'Đã hủy crop panel'
+                });
+            }
+        } catch (err) {
+            console.error('Failed to cancel crop panel:', err);
+        }
+    };
+
+    const confirmPanelCompletionHandler = async (panelId) => {
+        try {
+            if (!panelId) {
+                panelId = tracker.selectedPanelId;
+            }
+            if (!panelId) {
+                console.error('No panel ID provided for completion');
+                return;
+            }
+
+            // Call makeChild
+            await createPanelRelationFromStep(panelId);
+            
+            // Set state to completed
+            await setPanelDrawFlowState(panelId, 'completed');
+            
+            // Hide dialog
+            await tracker._broadcast({
+                type: 'hide_panel_completion_dialog'
+            });
+            
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '✅ Panel đã hoàn tất!'
+            });
+            
+            // Refresh tree
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+            
+            console.log('✅ Panel completion confirmed and makeChild called');
+        } catch (err) {
+            console.error('Failed to confirm panel completion:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '❌ Lỗi khi hoàn tất panel!'
+            });
+        }
+    };
+
+    const cancelPanelCompletionHandler = async () => {
+        try {
+            // Just hide the dialog, keep state as 'edit_actions'
+            await tracker._broadcast({
+                type: 'hide_panel_completion_dialog'
+            });
+        } catch (err) {
+            console.error('Failed to cancel panel completion:', err);
         }
     };
 
@@ -2458,8 +2710,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
-            // Tạo quan hệ parent-child từ step
-            await createPanelRelationFromStep(tracker.selectedPanelId);
+            // Set flow state to 'edit_actions' and open editor
+            await setPanelDrawFlowState(tracker.selectedPanelId, 'edit_actions');
             
             // Restore original page if we switched to a new tab
             if (switchedToNewTab && originalPage) {
@@ -2475,7 +2727,41 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
             
             delete tracker.__drawPanelContext;
-            console.log('✅ Draw Panel & Detect Actions completed!');
+            
+            // Open editor edit actions automatically
+            console.log('🔄 Opening editor edit actions...');
+            const displayImage = updatedPanel?.image_base64 ? await tracker.dataItemManager.loadBase64FromFile(updatedPanel.image_base64) : null;
+            
+            const geminiResult = [{
+                panel_title: updatedPanel?.name || 'Panel',
+                actions: actions.map(a => ({
+                    action_id: a.action_id,
+                    action_name: a.action_name,
+                    action_type: a.action_type,
+                    action_verb: a.action_verb,
+                    action_content: a.action_content,
+                    action_pos: a.action_pos
+                }))
+            }];
+            
+            await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
+                if (window.queueEditor) {
+                    try {
+                        await window.queueEditor.cancel();
+                    } catch (err) {
+                        console.warn('⚠️ Failed to cancel previous editor:', err);
+                    }
+                    window.queueEditor = null;
+                }
+
+                eval(editorClass);
+
+                const editor = new window.PanelEditor(screenshot, geminiResult, 'full');
+                await editor.init();
+                window.queueEditor = editor;
+            }, await getPanelEditorClassHandler(), displayImage, geminiResult);
+            
+            console.log('✅ Draw Panel & Detect Actions - crop completed, editor opened!');
             
             // Check for changes after drawing panel and detecting actions
             scheduleChangeCheck();
@@ -3311,6 +3597,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
+            // Get draw_flow_state for panels
+            let drawFlowState = null;
+            if (item.item_category === 'PANEL') {
+                drawFlowState = await getPanelDrawFlowState(itemId);
+            }
+
             const baseEvent = {
                 type: 'panel_selected',
                 panel_id: itemId,
@@ -3320,6 +3612,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 item_verb: item.verb,
                 item_content: item.content,
                 screenshot: screenshot,
+                draw_flow_state: drawFlowState,
                 timestamp: Date.now()
             };
 
@@ -4469,6 +4762,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         confirmPanelType: confirmPanelTypeHandler,
         cancelPanelType: cancelPanelTypeHandler,
         confirmPanelCrop: confirmPanelCropHandler,
+        cancelCropPanel: cancelCropPanelHandler,
+        confirmPanelCompletion: confirmPanelCompletionHandler,
+        cancelPanelCompletion: cancelPanelCompletionHandler,
         detectPages: detectPagesHandler,
         selectPanel: selectPanelHandler,
         getPanelTree: getPanelTreeHandler,

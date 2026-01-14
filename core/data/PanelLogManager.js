@@ -104,6 +104,7 @@ export class PanelLogManager {
                     item_category: item.item_category,
                     status: item.status,
                     action_pos: item.metadata?.global_pos,
+                    draw_flow_state: item.metadata?.draw_flow_state || null,
                     children: []
                 });
             });
