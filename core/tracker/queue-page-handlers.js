@@ -2491,6 +2491,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 data: await tracker.panelLogManager.buildTreeStructure()
             });
             
+            // Bring queue browser to front after completion
+            if (tracker.queuePage) {
+                await tracker.queuePage.bringToFront();
+            }
+            
             console.log('✅ Panel completion confirmed and makeChild called');
         } catch (err) {
             console.error('Failed to confirm panel completion:', err);

@@ -3240,49 +3240,11 @@ window.PanelEditor = class PanelEditor {
             await window.resizeQueueBrowser(false);
         }
         
-        if (window.showTrackingBrowser) {
-            await window.showTrackingBrowser();
-        }
+        // Check if completion dialog is visible - don't show tracking browser if it is
+        const completionModal = document.getElementById('panelCompletionConfirmationModal');
+        const isCompletionDialogVisible = completionModal && completionModal.style.display === 'flex';
         
-        if (window.resetDrawingFlag) {
-            await window.resetDrawingFlag();
-        }
-    }
-
-    async destroy() {
-        // Stop auto compare interval if running
-        this.stopAutoCompare();
-        this.hideOverlay();
-        
-        if (this._keydownHandler) {
-            document.removeEventListener('keydown', this._keydownHandler);
-            this._keydownHandler = null;
-        }
-        
-        if (this._twoPointHandler) {
-            this.canvas.off('mouse:down', this._twoPointHandler);
-            this._twoPointHandler = null;
-        }
-        
-        if (this._twoPointUndoHandler) {
-            document.removeEventListener('keydown', this._twoPointUndoHandler);
-            this._twoPointUndoHandler = null;
-        }
-        
-        if (this.canvas) {
-            this.canvas.dispose();
-        }
-        if (this.container && this.container.parentNode) {
-            this.container.parentNode.removeChild(this.container);
-        }
-        
-        document.body.style.zoom = '100%';
-        
-        if (window.resizeQueueBrowser) {
-            await window.resizeQueueBrowser(false);
-        }
-        
-        if (window.showTrackingBrowser) {
+        if (window.showTrackingBrowser && !isCompletionDialogVisible) {
             await window.showTrackingBrowser();
         }
         
