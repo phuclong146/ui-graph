@@ -1633,8 +1633,8 @@ export const QUEUE_BROWSER_HTML = `
         const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
         
         if (isIncomplete) {
-          // Show "Save & Complete" for incomplete panels
-          saveBtn.textContent = '💾 Save & Complete';
+          // Show "Save" for incomplete panels
+          saveBtn.textContent = '💾 Save';
         } else {
           // Show normal "Save" for completed or no flow state
           saveBtn.textContent = '💾 Save';
@@ -1680,7 +1680,7 @@ export const QUEUE_BROWSER_HTML = `
               panelTreeData.find(n => n.children?.some(c => c.panel_id === selectedPanelId));
             const drawFlowState = selectedNode?.draw_flow_state || null;
             const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
-            saveBtn.textContent = isIncomplete ? '💾 Save & Complete' : '💾 Save';
+            saveBtn.textContent = isIncomplete ? '💾 Save' : '💾 Save';
             
             // Check for changes after save (should be no changes now)
             if (window.checkForChanges) {
@@ -1706,7 +1706,7 @@ export const QUEUE_BROWSER_HTML = `
               panelTreeData.find(n => n.children?.some(c => c.panel_id === selectedPanelId));
             const drawFlowState = selectedNode?.draw_flow_state || null;
             const isIncomplete = drawFlowState === 'edit_actions' || (drawFlowState === null && selectedPanelId);
-            saveBtn.textContent = isIncomplete ? '💾 Save & Complete' : '💾 Save';
+            saveBtn.textContent = isIncomplete ? '💾 Save' : '💾 Save';
           }
         } else {
           alert("SAVE function not connected!");
