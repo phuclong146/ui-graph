@@ -237,6 +237,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("manualCaptureAIScrolling", handlers.manualCaptureAIScrolling);
     await tracker.queuePage.exposeFunction("captureActionsScrolling", handlers.captureActionsScrolling);
     await tracker.queuePage.exposeFunction("drawPanelAndDetectActions", handlers.drawPanelAndDetectActions);
+    await tracker.queuePage.exposeFunction("confirmPanelType", handlers.confirmPanelType);
+    await tracker.queuePage.exposeFunction("cancelPanelType", handlers.cancelPanelType);
     await tracker.queuePage.exposeFunction("confirmPanelCrop", handlers.confirmPanelCrop);
     await tracker.queuePage.exposeFunction("detectPages", handlers.detectPages);
     await tracker.queuePage.exposeFunction("selectPanel", handlers.selectPanel);

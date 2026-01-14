@@ -828,11 +828,44 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="panelTypeConfirmationModal" style="display:none; position:fixed; z-index:20003; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:95vw; max-height:95vh; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #e0e0e0; padding-bottom:15px;">
+          <h3 style="margin:0; font-size:20px; color:#333;">Xác nhận Panel Type</h3>
+        </div>
+        <div style="flex:1; overflow:auto; margin-bottom:20px; display:flex; flex-direction:column; align-items:center;">
+          <img id="panelTypePreviewImg" style="max-width:100%; max-height:70vh; border:1px solid #ddd; border-radius:8px; object-fit:contain;" />
+        </div>
+        <div style="margin-bottom:20px;">
+          <p style="margin-bottom:15px; padding:12px; background-color:#fff3cd; border:1px solid #ffc107; border-radius:6px; font-size:13px; color:#856404; font-weight:600; line-height:1.5;">
+            ⚠️ Đây là thông tin QUAN TRỌNG. Xin hãy KIỂM TRA KỸ VÀ CHỌN ĐÚNG LOẠI của panel mới này!
+          </p>
+          <label style="display:block; margin-bottom:8px; font-weight:600; color:#333;">Panel Type:</label>
+          <select id="panelTypeSelect" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:14px;">
+            <option value="screen">Screen</option>
+            <option value="popup">Popup/Dropdown (Overlay - hiện lên trên screen cũ)</option>
+            <option value="newtab">New Tab</option>
+          </select>
+          <p style="margin-top:8px; font-size:12px; color:#666; line-height:1.5;">
+            Gemini đã detect: <strong id="panelTypeDetectedValue"></strong>. Bạn có thể chỉnh sửa nếu cần.
+          </p>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="cancelPanelTypeBtn" style="background:#6c757d; color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
+            ❌ Hủy
+          </button>
+          <button id="confirmPanelTypeBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
+            ✅ Xác nhận
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
       <div id="select-panel-sidebar" style="width:200px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
         <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.1);">
           <button id="select-panel-draw-new" style="width:100%; padding:10px 16px; background:linear-gradient(135deg, #ffb3d9 0%, #ff99cc 100%); color:#333; border:none; border-radius:8px; cursor:pointer; font-size:11px; font-weight:600; text-align:center; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,179,217,0.3);">
-            ➕ DRAW NEW PANEL
+            ➕ DRAW NEW PANEL (vẽ panel mới nếu chưa có)
           </button>
         </div>
         <div id="select-panel-list" style="flex:1; overflow-y:auto; padding:10px;">
@@ -1271,6 +1304,11 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'hide_save_reminder') {
           console.log('🔔 [Save Reminder - Browser] Received hide_save_reminder event');
           hideSaveReminderDialog();
+          return;
+        }
+        
+        if (evt.type === 'panel_type_confirmation') {
+          showPanelTypeConfirmationDialog(evt.detectedPanelType, evt.fullScreenshot, evt.imageWidth, evt.imageHeight);
           return;
         }
       };
@@ -1860,6 +1898,65 @@ Bạn có chắc chắn muốn rollback?\`;
         }
       });
 
+      // Panel Type Confirmation Modal handlers
+      const panelTypeConfirmationModal = document.getElementById('panelTypeConfirmationModal');
+      const confirmPanelTypeBtn = document.getElementById('confirmPanelTypeBtn');
+      const cancelPanelTypeBtn = document.getElementById('cancelPanelTypeBtn');
+
+      const showPanelTypeConfirmationDialog = (detectedType, fullScreenshot, imageWidth, imageHeight) => {
+        if (!panelTypeConfirmationModal) {
+          console.error('panelTypeConfirmationModal not found');
+          return;
+        }
+        
+        const previewImg = document.getElementById('panelTypePreviewImg');
+        const typeSelect = document.getElementById('panelTypeSelect');
+        const detectedValue = document.getElementById('panelTypeDetectedValue');
+        
+        if (!previewImg || !typeSelect || !detectedValue) {
+          console.error('Panel type confirmation modal elements not found');
+          return;
+        }
+        
+        // Set image
+        previewImg.src = 'data:image/png;base64,' + fullScreenshot;
+        
+        // Set detected type
+        typeSelect.value = detectedType;
+        detectedValue.textContent = detectedType;
+        
+        // Show modal
+        panelTypeConfirmationModal.style.display = 'flex';
+      };
+
+      const hidePanelTypeConfirmationDialog = () => {
+        if (panelTypeConfirmationModal) {
+          panelTypeConfirmationModal.style.display = 'none';
+        }
+      };
+
+      if (confirmPanelTypeBtn) {
+        confirmPanelTypeBtn.addEventListener('click', async () => {
+          const typeSelect = document.getElementById('panelTypeSelect');
+          const selectedType = typeSelect?.value || 'screen';
+          hidePanelTypeConfirmationDialog();
+          
+          if (window.confirmPanelType) {
+            await window.confirmPanelType(selectedType);
+          }
+        });
+      }
+
+      if (cancelPanelTypeBtn) {
+        cancelPanelTypeBtn.addEventListener('click', async () => {
+          hidePanelTypeConfirmationDialog();
+          
+          if (window.cancelPanelType) {
+            await window.cancelPanelType();
+          }
+        });
+      }
+
       document.addEventListener("keydown", async (e) => {
         if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
           closeCheckpointModalFn();
@@ -2161,28 +2258,6 @@ Bạn có chắc chắn muốn rollback?\`;
             }
           });
           menu.appendChild(renameByAIOption);
-          
-          const selectPanelOption = document.createElement('div');
-          selectPanelOption.textContent = '📋 SELECT PANEL';
-          selectPanelOption.style.cssText = \`
-            padding: 8px 12px;
-            cursor: pointer;
-            font-size: 14px;
-            border-top: 1px solid #eee;
-          \`;
-          selectPanelOption.addEventListener('mouseenter', () => {
-            selectPanelOption.style.background = '#f0f0f0';
-          });
-          selectPanelOption.addEventListener('mouseleave', () => {
-            selectPanelOption.style.background = 'transparent';
-          });
-          selectPanelOption.addEventListener('click', async () => {
-            menu.remove();
-            if (window.openSelectPanelModal) {
-              await window.openSelectPanelModal(panelId);
-            }
-          });
-          menu.appendChild(selectPanelOption);
         }
         
         const deleteOption = document.createElement('div');
@@ -2641,7 +2716,7 @@ Bạn có chắc chắn muốn rollback?\`;
         buttonsContainer.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
         
         const selectPanelBtn = document.createElement('button');
-        selectPanelBtn.textContent = 'SELECT PANEL';
+        selectPanelBtn.textContent = 'SELECT PANEL (chọn một panel đã vẽ)';
         selectPanelBtn.style.cssText = 'padding: 12px 20px; background: #ffb3d9; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; text-align: center; transition: all 0.2s ease;';
         selectPanelBtn.addEventListener('mouseenter', () => {
           selectPanelBtn.style.background = '#ff99cc';
@@ -2677,7 +2752,7 @@ Bạn có chắc chắn muốn rollback?\`;
         });
         
         const drawNewPanelBtn = document.createElement('button');
-        drawNewPanelBtn.textContent = 'DRAW NEW PANEL';
+        drawNewPanelBtn.textContent = 'DRAW NEW PANEL (vẽ panel mới nếu chưa có)';
         drawNewPanelBtn.style.cssText = 'padding: 12px 20px; background: #ffb3d9; border: 1px solid #333; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; text-align: center; transition: all 0.2s ease;';
         drawNewPanelBtn.addEventListener('mouseenter', () => {
           drawNewPanelBtn.style.background = '#ff99cc';

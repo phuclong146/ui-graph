@@ -691,20 +691,24 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
         'Xác định panel này thuộc loại nào dựa trên đặc điểm visual:\n' +
         '\n' +
         '1. **screen**: Panel chiếm toàn bộ hoặc phần lớn màn hình, là giao diện chính của trang web/ứng dụng\n' +
-        '   - Ví dụ: Trang chủ, trang danh sách sản phẩm, trang profile, menu dropdown, dropdown menu, select menu\n' +
+        '   - Ví dụ: Trang chủ, trang danh sách sản phẩm, trang profile, dropdown menu đóng (chỉ có button/input, chưa mở danh sách)\n' +
         '   - Đặc điểm: Không có overlay, không có backdrop tối phía sau (khi xem full screenshot)\n' +
         '   - Kích thước: Thường chiếm >70% chiều rộng và chiều cao màn hình\n' +
-        '   - QUAN TRỌNG: Dropdown menu (menu thả xuống) luôn là "screen", KHÔNG phải "popup"\n' +
+        '   - QUAN TRỌNG: Dropdown menu ĐÓNG (chỉ có button/input, chưa hiển thị danh sách options) là "screen"\n' +
         '\n' +
         '2. **popup**: Panel là một modal/dialog/popup xuất hiện phía trên nội dung chính\n' +
         '   - Ví dụ: Dialog xác nhận, form đăng nhập popup, modal window, template selection popup, "Share Lovable" popup\n' +
         '   - Đặc điểm QUAN TRỌNG:\n' +
         '     * Có backdrop tối (overlay/dark background) phía sau và xung quanh panel (kiểm tra kỹ trong full screenshot)\n' +
+        '     * HOẶC: Panel có dropdown đang MỞ (dropdown menu đang hiển thị danh sách options/items bên trong)\n' +
+        '       - Nhận diện: Thấy danh sách các options/items hiển thị bên dưới button/input của dropdown\n' +
+        '       - Ví dụ: Select box đang mở với danh sách lựa chọn, combobox đang mở, menu dropdown đang hiển thị items\n' +
         '     * Kích thước: Thường nhỏ hơn màn hình (<80% chiều rộng và chiều cao)\n' +
         '     * Vị trí: Thường ở giữa hoặc gần giữa màn hình\n' +
         '     * Có border/shadow rõ ràng, có thể có nút đóng (X)\n' +
         '   - QUYẾT ĐỊNH: Nếu THẤY backdrop tối xung quanh panel trong full screenshot → "popup"\n' +
-        '   - QUYẾT ĐỊNH: Nếu KHÔNG có backdrop tối → "screen"\n' +
+        '   - QUYẾT ĐỊNH: Nếu panel có dropdown đang MỞ (có danh sách options đang hiển thị) → "popup"\n' +
+        '   - QUYẾT ĐỊNH: Nếu KHÔNG có backdrop tối VÀ KHÔNG có dropdown đang mở → "screen"\n' +
         '\n' +
         '3. **newtab**: Panel mở trong tab mới của trình duyệt\n' +
         '   - Ví dụ: Trang mới mở từ link target="_blank"\n' +
@@ -717,8 +721,9 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
         prompt += '- QUAN TRỌNG: Kiểm tra kỹ vùng xung quanh panel trong full screenshot để tìm backdrop tối\n';
     }
     
-    prompt += '- CHỈ nhận diện popup nếu THẤY RÕ RÀNG backdrop tối (overlay) phía sau và xung quanh panel\n' +
-        '- Dropdown menu, select menu, menu thả xuống luôn là "screen", không bao giờ là "popup"\n' +
+    prompt += '- Nhận diện popup nếu THẤY RÕ RÀNG backdrop tối (overlay) phía sau và xung quanh panel\n' +
+        '- HOẶC nhận diện popup nếu panel có dropdown đang MỞ (có danh sách options/items đang hiển thị)\n' +
+        '- Dropdown menu ĐÓNG (chỉ có button/input, chưa mở danh sách) là "screen"\n' +
         '- Chỉ trả về "newtab" nếu chắc chắn đây là trang mới trong tab mới\n';
 
     const responseSchema = {

@@ -1992,6 +1992,74 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log(`📐 Split into ${numPages} pages`);
 
+            // Check if this is "After Login Panel" - skip confirmation if true
+            const isAfterLoginPanel = panelItem?.name === 'After Login Panel';
+
+            let confirmedPanelType = 'screen'; // Default
+
+            if (!isAfterLoginPanel) {
+                // Detect panel type
+                let detectedPanelType = 'screen'; // Default
+                
+                if (switchedToNewTab) {
+                    detectedPanelType = 'newtab';
+                    console.log(`✅ Panel type set to "newtab" (detected from new tab)`);
+                } else {
+                    // Call Gemini with full screenshot
+                    try {
+                        const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
+                        // Call with full screenshot (use screenshot as croppedScreenshotB64, no cropArea)
+                        detectedPanelType = await detectPanelTypeByGemini(screenshot, null, null);
+                        console.log(`✅ Detected panel type: ${detectedPanelType}`);
+                    } catch (err) {
+                        console.error('⚠️ Failed to detect panel type, using default "screen":', err);
+                    }
+                }
+
+                // Show confirmation dialog
+                const confirmationPromise = new Promise((resolve, reject) => {
+                    tracker.__panelTypeConfirmationResolve = resolve;
+                    tracker.__panelTypeConfirmationReject = reject;
+                    tracker.__panelTypeConfirmationData = {
+                        detectedPanelType,
+                        fullScreenshot: screenshot,
+                        imageWidth,
+                        imageHeight,
+                        pagesData,
+                        fullPageDomActions,
+                        switchedToNewTab,
+                        originalPage: switchedToNewTab ? tracker.originalPage : null,
+                        restoreViewportFn
+                    };
+                });
+
+                await tracker._broadcast({
+                    type: 'panel_type_confirmation',
+                    detectedPanelType,
+                    fullScreenshot: screenshot,
+                    imageWidth,
+                    imageHeight
+                });
+
+                try {
+                    confirmedPanelType = await confirmationPromise;
+                    console.log(`✅ Panel type confirmed: ${confirmedPanelType}`);
+                } catch (err) {
+                    // User canceled
+                    console.log('User canceled panel type confirmation');
+                    if (restoreViewport) {
+                        await restoreViewport();
+                    }
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: 'Đã hủy draw panel'
+                    });
+                    return;
+                }
+            } else {
+                console.log('⚠️ After Login Panel detected - skipping panel type confirmation');
+            }
+
             // Get panelBefore image from step for comparison
             // selectedItem is always PANEL at this point (checked at line 1316)
             console.log(`🔍 Getting panelBefore for crop editor, selectedPanelId: ${tracker.selectedPanelId}`);
@@ -2033,7 +2101,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 restoreViewport: restoreViewportFn,
                 fullPageDomActions,
                 switchedToNewTab: switchedToNewTab,
-                originalPage: switchedToNewTab ? tracker.originalPage : null
+                originalPage: switchedToNewTab ? tracker.originalPage : null,
+                confirmedPanelType: confirmedPanelType
             };
 
             console.log('✅ Opened crop editor. Waiting for user to draw panel...');
@@ -2056,6 +2125,67 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const confirmPanelTypeHandler = async (confirmedPanelType) => {
+        try {
+            if (!tracker.__panelTypeConfirmationData) {
+                console.error('No panel type confirmation data found');
+                return;
+            }
+
+            const { fullScreenshot, imageWidth, imageHeight, pagesData, fullPageDomActions, switchedToNewTab, originalPage, restoreViewportFn } = tracker.__panelTypeConfirmationData;
+
+            // Lưu context với confirmed panel type
+            tracker.__drawPanelContext = {
+                screenshot: fullScreenshot,
+                imageWidth,
+                imageHeight,
+                pagesData,
+                restoreViewport: restoreViewportFn,
+                fullPageDomActions,
+                switchedToNewTab,
+                originalPage,
+                confirmedPanelType // Lưu panel type đã confirm
+            };
+
+            // Resolve promise để drawPanelAndDetectActionsHandler tiếp tục
+            if (tracker.__panelTypeConfirmationResolve) {
+                tracker.__panelTypeConfirmationResolve(confirmedPanelType);
+                tracker.__panelTypeConfirmationResolve = null;
+                tracker.__panelTypeConfirmationReject = null;
+                tracker.__panelTypeConfirmationData = null;
+            }
+        } catch (err) {
+            console.error('Failed to confirm panel type:', err);
+        }
+    };
+
+    const cancelPanelTypeHandler = async () => {
+        try {
+            // Reject promise
+            if (tracker.__panelTypeConfirmationReject) {
+                tracker.__panelTypeConfirmationReject(new Error('User canceled panel type confirmation'));
+                tracker.__panelTypeConfirmationResolve = null;
+                tracker.__panelTypeConfirmationReject = null;
+            }
+
+            // Cleanup
+            const restoreViewportFn = tracker.__panelTypeConfirmationData?.restoreViewportFn;
+            tracker.__panelTypeConfirmationData = null;
+
+            // Restore viewport nếu có
+            if (restoreViewportFn) {
+                await restoreViewportFn();
+            }
+
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: 'Đã hủy draw panel'
+            });
+        } catch (err) {
+            console.error('Failed to cancel panel type:', err);
+        }
+    };
+
     const confirmPanelCropHandler = async (cropArea) => {
         try {
             if (!tracker.__drawPanelContext) {
@@ -2063,7 +2193,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
-            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions, switchedToNewTab, originalPage } = tracker.__drawPanelContext;
+            const { screenshot, imageWidth, imageHeight, pagesData, restoreViewport, fullPageDomActions, switchedToNewTab, originalPage, confirmedPanelType } = tracker.__drawPanelContext;
 
             cropArea.x = Math.max(0, cropArea.x);
             cropArea.y = Math.max(0, cropArea.y);
@@ -2086,31 +2216,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const croppedBase64 = croppedBuffer.toString('base64');
 
-            // Detect panel type using Gemini
-            // Solution 1: Use full screenshot to see backdrop for better popup detection
-            console.log('🤖 Detecting panel type with Gemini (using full screenshot for backdrop detection)...');
-            const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
-            let detectedPanelType = 'screen'; // Default
-            
-            // If we switched to a new tab, force panel type to "newtab"
-            if (switchedToNewTab) {
-                detectedPanelType = 'newtab';
-                console.log(`✅ Panel type set to "newtab" (captured from newly opened tab)`);
-            } else {
-                try {
-                    // Pass both full screenshot and crop area for better popup detection (Solution 1)
-                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, screenshot, cropArea);
-                    console.log(`✅ Detected panel type: ${detectedPanelType}`);
-                } catch (err) {
-                    console.error('⚠️ Failed to detect panel type, using default "screen":', err);
-                }
-            }
+            // Use confirmed panel type from context (already confirmed before opening crop editor)
+            const panelTypeToSave = confirmedPanelType || 'screen';
+            console.log(`✅ Using confirmed panel type: ${panelTypeToSave}`);
 
             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
                 image_base64: croppedBase64,
                 // Luu anh fullscreen goc (khong crop) rieng
                 fullscreen_base64: screenshot,
-                type: detectedPanelType,
+                type: panelTypeToSave,
                 metadata: {
                     global_pos: {
                         x: cropArea.x,
@@ -4318,6 +4432,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         manualCaptureAIScrolling: manualCaptureAIScrollingHandler,
         captureActionsScrolling: captureActionsScrollingHandler,
         drawPanelAndDetectActions: drawPanelAndDetectActionsHandler,
+        confirmPanelType: confirmPanelTypeHandler,
+        cancelPanelType: cancelPanelTypeHandler,
         confirmPanelCrop: confirmPanelCropHandler,
         detectPages: detectPagesHandler,
         selectPanel: selectPanelHandler,
