@@ -2096,9 +2096,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
                     if (window.queueEditor) {
                         try {
-                            await window.queueEditor.cancel();
+                            // Destroy previous editor directly without showing "Discard all changes?" popup
+                            // This is part of the automatic flow (resuming at edit_actions)
+                            await window.queueEditor.destroy();
                         } catch (err) {
-                            console.warn('⚠️ Failed to cancel previous editor:', err);
+                            console.warn('⚠️ Failed to destroy previous editor:', err);
                         }
                         window.queueEditor = null;
                     }
@@ -2313,9 +2315,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 
                 if (window.queueEditor) {
                     try {
-                        await window.queueEditor.cancel();
+                        // Destroy previous editor directly without showing "Discard all changes?" popup
+                        // This is part of the automatic flow, not a user cancel action
+                        await window.queueEditor.destroy();
                     } catch (err) {
-                        console.warn('⚠️ Failed to cancel previous editor:', err);
+                        console.warn('⚠️ Failed to destroy previous editor:', err);
                     }
                     window.queueEditor = null;
                 }
@@ -2783,9 +2787,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
                 if (window.queueEditor) {
                     try {
-                        await window.queueEditor.cancel();
+                        // Destroy previous editor directly without showing "Discard all changes?" popup
+                        // This is part of the automatic flow (opening edit actions after crop)
+                        await window.queueEditor.destroy();
                     } catch (err) {
-                        console.warn('⚠️ Failed to cancel previous editor:', err);
+                        console.warn('⚠️ Failed to destroy previous editor:', err);
                     }
                     window.queueEditor = null;
                 }
