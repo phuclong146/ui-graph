@@ -738,14 +738,26 @@ window.PanelEditor = class PanelEditor {
         this.computeActionIntersections();
         
         const currentPage = this.currentPageIndex + 1;
+        const pageHeight = 1080;
+        const pageYOffset = this.currentPageIndex * pageHeight;
         
         panel.actions.forEach((action, actionIndex) => {
             if (action.action_pos) {
-                const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / 1080) + 1;
+                const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / pageHeight) + 1;
                 
                 if (actionPage === currentPage) {
+                    // Adjust position relative to current page
+                    // action.action_pos contains absolute coordinates, but canvas shows only current page
+                    const relativePos = {
+                        x: action.action_pos.x,
+                        y: action.action_pos.y - pageYOffset, // Adjust y coordinate relative to current page
+                        w: action.action_pos.w,
+                        h: action.action_pos.h,
+                        p: action.action_pos.p
+                    };
+                    
                     this.drawBox(
-                        action.action_pos,
+                        relativePos,
                         '0-' + actionIndex,
                         'action',
                         action.action_name
@@ -754,7 +766,7 @@ window.PanelEditor = class PanelEditor {
             }
         });
         
-        console.log(\`🎨 Drew boxes for \${panel.actions.filter(a => (a.action_pos?.p || Math.floor((a.action_pos?.y || 0) / 1080) + 1) === currentPage).length} actions on page \${currentPage}\`);
+        console.log(\`🎨 Drew boxes for \${panel.actions.filter(a => (a.action_pos?.p || Math.floor((a.action_pos?.y || 0) / pageHeight) + 1) === currentPage).length} actions on page \${currentPage}\`);
     }
 
     saveInitialActionPositions() {
@@ -1223,9 +1235,13 @@ window.PanelEditor = class PanelEditor {
     updateGeminiResult(rect) {
         const id = rect.id;
         
+        // Convert relative coordinates (on current page canvas) back to absolute coordinates
+        const pageHeight = 1080;
+        const pageYOffset = this.currentPageIndex * pageHeight;
+        
         const newPos = {
             x: Math.round(rect.left),
-            y: Math.round(rect.top),
+            y: Math.round(rect.top + pageYOffset), // Convert relative y to absolute y
             w: Math.round(rect.width * rect.scaleX),
             h: Math.round(rect.height * rect.scaleY),
             p: this.currentPageIndex + 1
@@ -1479,13 +1495,27 @@ window.PanelEditor = class PanelEditor {
             return;
         }
         
+        // Check if action is on current page
+        const pageHeight = 1080;
+        const initialPage = initialPos.p || Math.floor(initialPos.y / pageHeight) + 1;
+        const currentPage = this.currentPageIndex + 1;
+        
+        if (initialPage !== currentPage) {
+            this.showStatus(\`⚠️ Action is on page \${initialPage}, but you're viewing page \${currentPage}\`, 'warning');
+            return;
+        }
+        
         this.saveState();
         
-        // Restore position and size on canvas
+        // Convert absolute coordinates to relative coordinates for current page
+        const pageYOffset = this.currentPageIndex * pageHeight;
+        const relativeY = initialPos.y - pageYOffset;
+        
+        // Restore position and size on canvas (using relative coordinates)
         // Reset scaleX and scaleY to 1 to ensure proper size reset
         boxData.rect.set({
             left: initialPos.x,
-            top: initialPos.y,
+            top: relativeY, // Use relative y coordinate
             width: initialPos.w,
             height: initialPos.h,
             scaleX: 1,
@@ -1499,18 +1529,18 @@ window.PanelEditor = class PanelEditor {
         if (boxData.label) {
             boxData.label.set({
                 left: initialPos.x + 8,
-                top: initialPos.y - 20
+                top: relativeY - 20 // Use relative y coordinate
             });
             boxData.label.setCoords();
         }
         
-        // Update data in geminiResult
+        // Update data in geminiResult (using absolute coordinates)
         if (typeof id === 'string' && id.includes('-')) {
             const [panelIdx, actionIdx] = id.split('-').map(Number);
             if (this.geminiResult[panelIdx] && this.geminiResult[panelIdx].actions[actionIdx]) {
                 this.geminiResult[panelIdx].actions[actionIdx].action_pos = {
                     x: initialPos.x,
-                    y: initialPos.y,
+                    y: initialPos.y, // Keep absolute y coordinate in data
                     w: initialPos.w,
                     h: initialPos.h,
                     p: initialPos.p // Preserve page number if exists
