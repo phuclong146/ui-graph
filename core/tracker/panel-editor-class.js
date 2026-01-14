@@ -203,7 +203,7 @@ window.PanelEditor = class PanelEditor {
             // Add Compare button only if panelBeforeBase64 exists
             console.log(\`🔍 Checking panelBeforeBase64 for Compare button: \${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}\`);
             if (this.panelBeforeBase64) {
-                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (AUTO)</button>';
+                toolbarHTML += '<button id="editorCompareBtn" class="editor-btn compare-btn">🔄 Compare (OFF)</button>';
                 console.log(\`✅ Added Compare button to toolbar\`);
             } else {
                 console.warn(\`⚠️ Compare button NOT added - panelBeforeBase64 is null\`);
@@ -281,7 +281,13 @@ window.PanelEditor = class PanelEditor {
         // Initialize compare mode if panelBeforeBase64 exists (for both 'full' and 'twoPointCrop' modes)
         console.log(\`🔍 Initializing compare mode: panelBeforeBase64=\${this.panelBeforeBase64 ? 'EXISTS' : 'NULL'}, mode=\${this.mode}\`);
         if (this.panelBeforeBase64 && (this.mode === 'full' || this.mode === 'twoPointCrop')) {
-            console.log(\`✅ Initializing compare mode with AUTO for mode \${this.mode}\`);
+            // Set OFF for edit action mode (full), keep AUTO for other modes
+            if (this.mode === 'full') {
+                this.compareMode = 'OFF';
+                console.log(\`✅ Initializing compare mode with OFF for edit action mode\`);
+            } else {
+                console.log(\`✅ Initializing compare mode with AUTO for mode \${this.mode}\`);
+            }
             this.updateCompareButton();
             if (this.compareMode === 'AUTO') {
                 this.startAutoCompare();
