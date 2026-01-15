@@ -49,13 +49,18 @@ export class MySQLExporter {
         return normalized.replace(/\s+/g, '').toUpperCase();
     }
 
-    generateMyItem(itemType, name) {
+    generateMyItem(itemType, name, panelName = null) {
+        if (itemType === 'ACTION' && panelName) {
+            const normalizedPanelName = this.normalizeName(panelName);
+            const normalizedActionName = this.normalizeName(name);
+            return `DOI-ACTION-${normalizedPanelName}-${normalizedActionName}`;
+        }
         const normalizedName = this.normalizeName(name);
-        return `DOI_${itemType}_${normalizedName}`;
+        return `DOI-${itemType}-${normalizedName}`;
     }
 
-    generateCode(itemType, name) {
-        const myItem = this.generateMyItem(itemType, name);
+    generateCode(itemType, name, panelName = null) {
+        const myItem = this.generateMyItem(itemType, name, panelName);
         return `${this.myAiTool}_${myItem}`;
     }
 
@@ -302,13 +307,65 @@ export class MySQLExporter {
             } catch (err) {
             }
             
+            // Build actionId -> panelId map from myparent_panel.jsonl
+            const actionIdToPanelIdMap = new Map();
+            const panelIdToPanelNameMap = new Map();
+            
+            try {
+                const parentContent = await fsp.readFile(myparentPanelPath, 'utf8');
+                const parents = parentContent.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                
+                // Build panelId -> panelName map from items
+                for (const item of items) {
+                    if (item.item_category === 'PANEL' && item.item_id && item.name) {
+                        panelIdToPanelNameMap.set(item.item_id, item.name);
+                    }
+                }
+                
+                // Build actionId -> panelId map
+                for (const parent of parents) {
+                    const panelId = parent.parent_panel;
+                    
+                    // Handle direct child_actions
+                    if (parent.child_actions && Array.isArray(parent.child_actions)) {
+                        for (const actionId of parent.child_actions) {
+                            actionIdToPanelIdMap.set(actionId, panelId);
+                        }
+                    }
+                    
+                    // Handle child_actions in child_pages
+                    if (parent.child_pages && Array.isArray(parent.child_pages)) {
+                        for (const page of parent.child_pages) {
+                            if (page.child_actions && Array.isArray(page.child_actions)) {
+                                for (const actionId of page.child_actions) {
+                                    actionIdToPanelIdMap.set(actionId, panelId);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('⚠️ Could not read myparent_panel.jsonl for action-panel mapping:', err.message);
+            }
+            
             const itemIdToMyItemMap = new Map();
             
             for (const item of items) {
                 if (!item.item_id || !item.name) continue;
                 
-                const myItem = this.generateMyItem(item.item_category, item.name);
-                const code = this.generateCode(item.item_category, item.name);
+                // For ACTION items, find the parent panel and use its name
+                let panelName = null;
+                if (item.item_category === 'ACTION') {
+                    const panelId = actionIdToPanelIdMap.get(item.item_id);
+                    if (panelId) {
+                        panelName = panelIdToPanelNameMap.get(panelId);
+                    }
+                }
+                
+                const myItem = this.generateMyItem(item.item_category, item.name, panelName);
+                const code = this.generateCode(item.item_category, item.name, panelName);
                 
                 itemIdToMyItemMap.set(item.item_id, myItem);
                 
