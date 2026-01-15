@@ -255,6 +255,9 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("bringQueueBrowserToFront", handlers.bringQueueBrowserToFront);
     await tracker.queuePage.exposeFunction("hideTrackingBrowser", handlers.hideTrackingBrowser);
     await tracker.queuePage.exposeFunction("showTrackingBrowser", handlers.showTrackingBrowser);
+    await tracker.queuePage.exposeFunction("viewGraph", handlers.viewGraph);
+    await tracker.queuePage.exposeFunction("showPanelInfoGraph", handlers.showPanelInfoGraph);
+    await tracker.queuePage.exposeFunction("showStepInfoGraph", handlers.showStepInfoGraph);
     await tracker.queuePage.exposeFunction("resetDrawingFlag", handlers.resetDrawingFlag);
     await tracker.queuePage.exposeFunction("checkActionHasStep", handlers.checkActionHasStep);
     await tracker.queuePage.exposeFunction("importCookiesFromJson", handlers.importCookiesFromJson);

@@ -4918,6 +4918,704 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         });
     }, 1000);
 
+    // Graph View Handlers
+    const loadGraphData = async () => {
+        const doingItemPath = path.join(tracker.sessionFolder, 'doing_item.jsonl');
+        const myparentPanelPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+        const doingStepPath = path.join(tracker.sessionFolder, 'doing_step.jsonl');
+
+        let items = [];
+        let parentPanels = [];
+        let steps = [];
+
+        try {
+            const itemContent = await fsp.readFile(doingItemPath, 'utf8');
+            items = itemContent.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+        } catch (err) {
+            console.warn('Could not read doing_item.jsonl:', err.message);
+        }
+
+        try {
+            const parentContent = await fsp.readFile(myparentPanelPath, 'utf8');
+            parentPanels = parentContent.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+        } catch (err) {
+            console.warn('Could not read myparent_panel.jsonl:', err.message);
+        }
+
+        try {
+            const stepContent = await fsp.readFile(doingStepPath, 'utf8');
+            steps = stepContent.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+        } catch (err) {
+            console.warn('Could not read doing_step.jsonl:', err.message);
+        }
+
+        return { items, parentPanels, steps };
+    };
+
+    const getEdgeStatus = (actionId, stepMap, actionMap) => {
+        const step = stepMap.get(actionId);
+        const actionItem = actionMap.get(actionId);
+
+        if (step && step.panel_after?.item_id) {
+            return 'normal';
+        }
+
+        if (step && !step.panel_after?.item_id) {
+            return 'in_progress';
+        }
+
+        if (!step && actionItem && actionItem.status === 'completed') {
+            return 'done';
+        }
+
+        return 'pending';
+    };
+
+    const buildGraphStructure = async () => {
+        const { items, parentPanels, steps } = await loadGraphData();
+
+        // Create maps for quick lookup
+        const itemMap = new Map();
+        items.forEach(item => {
+            itemMap.set(item.item_id, item);
+        });
+
+        const stepMap = new Map();
+        steps.forEach(step => {
+            if (step.action?.item_id) {
+                stepMap.set(step.action.item_id, step);
+            }
+        });
+
+        // Build nodes (panels only)
+        const nodes = [];
+        const panelIds = new Set();
+        items.forEach(item => {
+            if (item.item_category === 'PANEL') {
+                panelIds.add(item.item_id);
+                const isIncomplete = item.metadata?.draw_flow_state !== null && 
+                                    item.metadata?.draw_flow_state !== undefined && 
+                                    item.metadata?.draw_flow_state !== 'completed';
+                const color = isIncomplete ? '#ff9800' : '#4caf50';
+                nodes.push({
+                    id: item.item_id,
+                    label: item.name || 'Panel',
+                    color: color,
+                    shape: 'box',
+                    font: { color: '#fff', size: 14 },
+                    data: { item }
+                });
+            }
+        });
+
+        // Build edges (actions)
+        const edges = [];
+        parentPanels.forEach(parent => {
+            const panelBeforeId = parent.parent_panel;
+            const childActions = parent.child_actions || [];
+
+            // Handle child_actions in child_pages
+            if (parent.child_pages) {
+                parent.child_pages.forEach(page => {
+                    if (page.child_actions) {
+                        childActions.push(...page.child_actions);
+                    }
+                });
+            }
+
+            childActions.forEach(actionId => {
+                const actionItem = itemMap.get(actionId);
+                if (!actionItem) return;
+
+                const step = stepMap.get(actionId);
+                const status = getEdgeStatus(actionId, stepMap, itemMap);
+                
+                let edge = {
+                    id: `edge_${panelBeforeId}_${actionId}`,
+                    from: panelBeforeId,
+                    label: actionItem.name || 'Action',
+                    data: { actionId, actionItem, step }
+                };
+
+                if (status === 'normal' && step?.panel_after?.item_id) {
+                    const panelAfterId = step.panel_after.item_id;
+                    edge.to = panelAfterId;
+                    edge.color = { color: '#00aaff' };
+                    edge.dashes = false;
+                } else if (status === 'in_progress') {
+                    // Dangling edge - đang làm
+                    edge.to = null;
+                    edge.color = { color: '#ffc107' };
+                    edge.dashes = true;
+                    edge.label = `${actionItem.name || 'Action'} [Đang làm]`;
+                } else if (status === 'done') {
+                    // Dangling edge - đã mark done
+                    edge.to = null;
+                    edge.color = { color: '#00aaff' };
+                    edge.dashes = false;
+                    edge.label = `${actionItem.name || 'Action'} [Done]`;
+                } else {
+                    // Dangling edge - chưa làm
+                    edge.to = null;
+                    edge.color = { color: '#999999' };
+                    edge.dashes = true;
+                    edge.label = `${actionItem.name || 'Action'} [Chưa làm]`;
+                }
+
+                edges.push(edge);
+            });
+        });
+
+        return { nodes, edges, itemMap, stepMap };
+    };
+
+    // Note: drawCropBorder will be called in browser context via evaluate
+
+    const viewGraphHandler = async () => {
+        try {
+            // Load data in Node.js context
+            const { nodes, edges, itemMap, stepMap } = await buildGraphStructure();
+
+            if (nodes.length === 0) {
+                await tracker.queuePage.evaluate(() => {
+                    const graphContainer = document.getElementById('graphContainer');
+                    if (graphContainer) {
+                        graphContainer.innerHTML = '<div style="color:#fff; padding:20px; text-align:center;">No panels found</div>';
+                    }
+                });
+                return;
+            }
+
+            // Serialize data for browser
+            const nodesData = nodes.map(n => ({
+                id: n.id,
+                label: n.label,
+                color: n.color,
+                shape: n.shape,
+                font: n.font,
+                data: {
+                    itemId: n.data.item.item_id,
+                    itemCategory: n.data.item.item_category,
+                    name: n.data.item.name,
+                    type: n.data.item.type,
+                    verb: n.data.item.verb,
+                    image_base64: n.data.item.image_base64,
+                    fullscreen_base64: n.data.item.fullscreen_base64,
+                    metadata: n.data.item.metadata
+                }
+            }));
+
+            const edgesData = edges.map(e => ({
+                id: e.id,
+                from: e.from,
+                to: e.to,
+                label: e.label,
+                color: e.color,
+                dashes: e.dashes,
+                data: {
+                    actionId: e.data.actionId,
+                    actionName: e.data.actionItem.name,
+                    actionType: e.data.actionItem.type,
+                    actionVerb: e.data.actionItem.verb,
+                    actionPurpose: e.data.actionItem.purpose,
+                    actionImage_base64: e.data.actionItem.image_base64,
+                    actionMetadata: e.data.actionItem.metadata,
+                    step: e.data.step ? {
+                        step_id: e.data.step.step_id,
+                        panel_before: e.data.step.panel_before,
+                        panel_after: e.data.step.panel_after
+                    } : null
+                }
+            }));
+
+            // Render graph in browser context
+            await tracker.queuePage.evaluate(async (nodesData, edgesData) => {
+                const graphContainer = document.getElementById('graphContainer');
+                if (!graphContainer) {
+                    console.error('graphContainer not found');
+                    return;
+                }
+
+                graphContainer.innerHTML = '';
+
+                if (typeof vis === 'undefined') {
+                    graphContainer.innerHTML = '<div style="color:#ff0000; padding:20px;">vis-network library not loaded</div>';
+                    return;
+                }
+
+                // Create vis-network data
+                const data = {
+                    nodes: new vis.DataSet(nodesData),
+                    edges: new vis.DataSet(edgesData)
+                };
+
+                const options = {
+                    nodes: {
+                        shape: 'box',
+                        font: { color: '#fff', size: 14 },
+                        borderWidth: 2,
+                        shadow: true
+                    },
+                    edges: {
+                        arrows: {
+                            to: { enabled: true, scaleFactor: 1.2 }
+                        },
+                        font: { color: '#fff', size: 12, align: 'middle' },
+                        smooth: {
+                            type: 'continuous',
+                            roundness: 0.5
+                        },
+                        shadow: true
+                    },
+                    physics: {
+                        enabled: true,
+                        stabilization: { iterations: 200 }
+                    },
+                    interaction: {
+                        dragNodes: true,
+                        zoomView: true,
+                        dragView: true
+                    }
+                };
+
+                const network = new vis.Network(graphContainer, data, options);
+
+                // Store network reference globally for fit to screen
+                window.graphNetwork = network;
+
+                // Handle node click (panel)
+                network.on('click', async (params) => {
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        const node = nodesData.find(n => n.id === nodeId);
+                        if (node && node.data) {
+                            if (window.showPanelInfoGraph) {
+                                await window.showPanelInfoGraph(node.data);
+                            }
+                        }
+                    } else if (params.edges.length > 0) {
+                        const edgeId = params.edges[0];
+                        const edge = edgesData.find(e => e.id === edgeId);
+                        if (edge && edge.data) {
+                            if (window.showStepInfoGraph) {
+                                await window.showStepInfoGraph(edge.data, nodesData);
+                            }
+                        }
+                    }
+                });
+            }, nodesData, edgesData);
+
+        } catch (err) {
+            console.error('Failed to render graph:', err);
+            await tracker.queuePage.evaluate((errorMsg) => {
+                const graphContainer = document.getElementById('graphContainer');
+                if (graphContainer) {
+                    graphContainer.innerHTML = `<div style="color:#ff0000; padding:20px;">Error: ${errorMsg}</div>`;
+                }
+            }, err.message);
+        }
+    };
+
+    const showPanelInfoHandler = async (panelData) => {
+        // Load image in Node.js context
+        let imageBase64 = null;
+        if (panelData.fullscreen_base64) {
+            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.fullscreen_base64);
+        } else if (panelData.image_base64) {
+            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.image_base64);
+        }
+
+        const globalPos = panelData.metadata?.global_pos;
+
+        // Show info in browser context
+        await tracker.queuePage.evaluate((panelData, imageBase64, globalPos) => {
+            const infoPanel = document.getElementById('graphInfoPanel');
+            const infoContent = document.getElementById('graphInfoContent');
+            if (!infoPanel || !infoContent) return;
+
+            infoPanel.style.display = 'flex';
+
+            let imageHtml = '';
+            if (imageBase64) {
+                if (globalPos) {
+                    imageHtml = `<div id="panelImageContainer" style="position:relative; display:inline-block;">
+                        <img id="panelImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                        <canvas id="panelImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                    </div>`;
+                } else {
+                    imageHtml = `<img src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                }
+            }
+
+            infoContent.innerHTML = `
+                <h3 style="margin-top:0; color:#fff;">Panel Info</h3>
+                <p><strong>Name:</strong> ${panelData.name || 'N/A'}</p>
+                <p><strong>Type:</strong> ${panelData.type || 'N/A'}</p>
+                <p><strong>Verb:</strong> ${panelData.verb || 'N/A'}</p>
+                <div style="margin-top:15px;">
+                    ${imageHtml}
+                </div>
+            `;
+
+            // Draw border after HTML is set
+            if (imageBase64 && globalPos) {
+                const img = document.getElementById('panelImage');
+                const canvas = document.getElementById('panelImageCanvas');
+                if (img && canvas) {
+                    const drawBorder = () => {
+                        const rect = img.getBoundingClientRect();
+                        canvas.width = rect.width;
+                        canvas.height = rect.height;
+                        canvas.style.width = rect.width + 'px';
+                        canvas.style.height = rect.height + 'px';
+                        const ctx = canvas.getContext('2d');
+                        const scaleX = rect.width / img.naturalWidth;
+                        const scaleY = rect.height / img.naturalHeight;
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
+                    };
+                    if (img.complete) {
+                        drawBorder();
+                    } else {
+                        img.onload = drawBorder;
+                    }
+                }
+            }
+        }, panelData, imageBase64, globalPos);
+    };
+
+    const showStepInfoHandler = async (edgeData, nodesData) => {
+        // Load images in Node.js context
+        let panelBeforeImage = null;
+        let panelAfterImage = null;
+        
+        const step = edgeData.step;
+        const actionItem = {
+            name: edgeData.actionName,
+            type: edgeData.actionType,
+            verb: edgeData.actionVerb,
+            purpose: edgeData.actionPurpose,
+            metadata: edgeData.actionMetadata
+        };
+
+        // Panel Before
+        if (step?.panel_before?.item_id) {
+            const panelBeforeNode = nodesData.find(n => n.id === step.panel_before.item_id);
+            if (panelBeforeNode && panelBeforeNode.data) {
+                if (panelBeforeNode.data.fullscreen_base64) {
+                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.fullscreen_base64);
+                } else if (panelBeforeNode.data.image_base64) {
+                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.image_base64);
+                }
+            }
+        }
+
+        // Panel After
+        if (step?.panel_after?.item_id) {
+            const panelAfterNode = nodesData.find(n => n.id === step.panel_after.item_id);
+            if (panelAfterNode && panelAfterNode.data) {
+                if (panelAfterNode.data.fullscreen_base64) {
+                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.fullscreen_base64);
+                } else if (panelAfterNode.data.image_base64) {
+                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.image_base64);
+                }
+            }
+        }
+
+        // Get positions
+        const panelAfterNode = step?.panel_after?.item_id ? nodesData.find(n => n.id === step.panel_after.item_id) : null;
+        const panelAfterPos = panelAfterNode?.data?.metadata?.global_pos;
+        const actionPos = actionItem.metadata?.global_pos;
+
+        // Show info in browser context
+        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelAfterPos, actionPos) => {
+            const infoPanel = document.getElementById('graphInfoPanel');
+            const infoContent = document.getElementById('graphInfoContent');
+            if (!infoPanel || !infoContent) return;
+
+            infoPanel.style.display = 'flex';
+
+            let panelBeforeHtml = '';
+            let panelAfterHtml = '';
+            let actionInfoHtml = '';
+
+            // Panel Before
+            if (panelBeforeImage) {
+                panelBeforeHtml = `
+                    <h4 style="color:#fff;">Panel Before</h4>
+                    <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
+                        <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                        <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                    </div>
+                `;
+            }
+
+            // Action Info
+            actionInfoHtml = `
+                <h4 style="color:#fff;">Action Info</h4>
+                <p><strong>Name:</strong> ${actionItem.name || 'N/A'}</p>
+                <p><strong>Type:</strong> ${actionItem.type || 'N/A'}</p>
+                <p><strong>Verb:</strong> ${actionItem.verb || 'N/A'}</p>
+                <p><strong>Purpose:</strong> ${actionItem.purpose || 'N/A'}</p>
+            `;
+
+            // Panel After
+            if (panelAfterImage) {
+                if (panelAfterPos) {
+                    panelAfterHtml = `
+                        <h4 style="color:#fff;">Panel After</h4>
+                        <div id="panelAfterImageContainer" style="position:relative; display:inline-block;">
+                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                            <canvas id="panelAfterImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                        </div>`;
+                } else {
+                    panelAfterHtml = `
+                        <h4 style="color:#fff;">Panel After</h4>
+                        <img src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                }
+            }
+
+            infoContent.innerHTML = `
+                <h3 style="margin-top:0; color:#fff;">Step Info</h3>
+                ${panelBeforeHtml}
+                ${actionInfoHtml}
+                ${panelAfterHtml}
+            `;
+
+            // Draw borders after HTML is set
+            if (panelBeforeImage && (panelAfterPos || actionPos)) {
+                const img = document.getElementById('panelBeforeImage');
+                const canvas = document.getElementById('panelBeforeImageCanvas');
+                if (img && canvas) {
+                    const drawBorders = () => {
+                        const rect = img.getBoundingClientRect();
+                        canvas.width = rect.width;
+                        canvas.height = rect.height;
+                        canvas.style.width = rect.width + 'px';
+                        canvas.style.height = rect.height + 'px';
+                        const ctx = canvas.getContext('2d');
+                        const scaleX = rect.width / img.naturalWidth;
+                        const scaleY = rect.height / img.naturalHeight;
+                        
+                        if (panelAfterPos) {
+                            ctx.strokeStyle = '#00ff00';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(panelAfterPos.x * scaleX, panelAfterPos.y * scaleY, panelAfterPos.w * scaleX, panelAfterPos.h * scaleY);
+                        }
+                        
+                        if (actionPos) {
+                            ctx.strokeStyle = '#ff0000';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(actionPos.x * scaleX, actionPos.y * scaleY, actionPos.w * scaleX, actionPos.h * scaleY);
+                        }
+                    };
+                    if (img.complete) {
+                        drawBorders();
+                    } else {
+                        img.onload = drawBorders;
+                    }
+                }
+            }
+
+            // Draw border for panel after
+            if (panelAfterImage && panelAfterPos) {
+                const img = document.getElementById('panelAfterImage');
+                const canvas = document.getElementById('panelAfterImageCanvas');
+                if (img && canvas) {
+                    const drawBorder = () => {
+                        const rect = img.getBoundingClientRect();
+                        canvas.width = rect.width;
+                        canvas.height = rect.height;
+                        canvas.style.width = rect.width + 'px';
+                        canvas.style.height = rect.height + 'px';
+                        const ctx = canvas.getContext('2d');
+                        const scaleX = rect.width / img.naturalWidth;
+                        const scaleY = rect.height / img.naturalHeight;
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(panelAfterPos.x * scaleX, panelAfterPos.y * scaleY, panelAfterPos.w * scaleX, panelAfterPos.h * scaleY);
+                    };
+                    if (img.complete) {
+                        drawBorder();
+                    } else {
+                        img.onload = drawBorder;
+                    }
+                }
+            }
+        }, actionItem, step, panelBeforeImage, panelAfterImage, panelAfterPos, actionPos);
+    };
+
+    const showStepInfo = async (actionItem, step, itemMap) => {
+        const infoPanel = document.getElementById('graphInfoPanel');
+        const infoContent = document.getElementById('graphInfoContent');
+        if (!infoPanel || !infoContent) return;
+
+        infoPanel.style.display = 'flex';
+
+        let panelBeforeHtml = '';
+        let panelAfterHtml = '';
+        let actionInfoHtml = '';
+
+        // Panel Before
+        if (step?.panel_before?.item_id) {
+            const panelBefore = itemMap.get(step.panel_before.item_id);
+            if (panelBefore) {
+                let imageBase64 = null;
+                if (panelBefore.fullscreen_base64) {
+                    imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBefore.fullscreen_base64);
+                } else if (panelBefore.image_base64) {
+                    imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelBefore.image_base64);
+                }
+
+                if (imageBase64) {
+                    const panelAfter = step.panel_after?.item_id ? itemMap.get(step.panel_after.item_id) : null;
+                    const panelAfterPos = panelAfter?.metadata?.global_pos;
+                    const actionPos = actionItem.metadata?.global_pos;
+
+                    panelBeforeHtml = `
+                        <h4 style="color:#fff;">Panel Before</h4>
+                        <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
+                            <img id="panelBeforeImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                            <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Action Info
+        actionInfoHtml = `
+            <h4 style="color:#fff;">Action Info</h4>
+            <p><strong>Name:</strong> ${actionItem.name || 'N/A'}</p>
+            <p><strong>Type:</strong> ${actionItem.type || 'N/A'}</p>
+            <p><strong>Verb:</strong> ${actionItem.verb || 'N/A'}</p>
+            <p><strong>Purpose:</strong> ${actionItem.purpose || 'N/A'}</p>
+        `;
+
+        // Panel After
+        if (step?.panel_after?.item_id) {
+            const panelAfter = itemMap.get(step.panel_after.item_id);
+            if (panelAfter) {
+                let imageBase64 = null;
+                if (panelAfter.fullscreen_base64) {
+                    imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelAfter.fullscreen_base64);
+                } else if (panelAfter.image_base64) {
+                    imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelAfter.image_base64);
+                }
+
+                if (imageBase64) {
+                    const panelAfterPos = panelAfter.metadata?.global_pos;
+                    if (panelAfterPos) {
+                        panelAfterHtml = `
+                            <h4 style="color:#fff;">Panel After</h4>
+                            <div id="panelAfterImageContainer" style="position:relative; display:inline-block;">
+                                <img id="panelAfterImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                                <canvas id="panelAfterImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                            </div>`;
+                    } else {
+                        panelAfterHtml = `
+                            <h4 style="color:#fff;">Panel After</h4>
+                            <img src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                    }
+                }
+            }
+        }
+
+        infoContent.innerHTML = `
+            <h3 style="margin-top:0; color:#fff;">Step Info</h3>
+            ${panelBeforeHtml}
+            ${actionInfoHtml}
+            ${panelAfterHtml}
+        `;
+
+        // Draw borders after HTML is set
+        if (step?.panel_before?.item_id) {
+            const panelBefore = itemMap.get(step.panel_before.item_id);
+            if (panelBefore) {
+                const panelAfter = step.panel_after?.item_id ? itemMap.get(step.panel_after.item_id) : null;
+                const panelAfterPos = panelAfter?.metadata?.global_pos;
+                const actionPos = actionItem.metadata?.global_pos;
+
+                if (panelAfterPos || actionPos) {
+                    await tracker.queuePage.evaluate((afterPos, actPos) => {
+                        const img = document.getElementById('panelBeforeImage');
+                        const canvas = document.getElementById('panelBeforeImageCanvas');
+                        if (img && canvas) {
+                            const drawBorders = () => {
+                                const rect = img.getBoundingClientRect();
+                                canvas.width = rect.width;
+                                canvas.height = rect.height;
+                                canvas.style.width = rect.width + 'px';
+                                canvas.style.height = rect.height + 'px';
+                                const ctx = canvas.getContext('2d');
+                                const scaleX = rect.width / img.naturalWidth;
+                                const scaleY = rect.height / img.naturalHeight;
+                                
+                                if (afterPos) {
+                                    ctx.strokeStyle = '#00ff00';
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeRect(afterPos.x * scaleX, afterPos.y * scaleY, afterPos.w * scaleX, afterPos.h * scaleY);
+                                }
+                                
+                                if (actPos) {
+                                    ctx.strokeStyle = '#ff0000';
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeRect(actPos.x * scaleX, actPos.y * scaleY, actPos.w * scaleX, actPos.h * scaleY);
+                                }
+                            };
+                            if (img.complete) {
+                                drawBorders();
+                            } else {
+                                img.onload = drawBorders;
+                            }
+                        }
+                    }, panelAfterPos, actionPos);
+                }
+            }
+        }
+
+        // Draw border for panel after
+        if (step?.panel_after?.item_id) {
+            const panelAfter = itemMap.get(step.panel_after.item_id);
+            if (panelAfter) {
+                const panelAfterPos = panelAfter.metadata?.global_pos;
+                if (panelAfterPos) {
+                    await tracker.queuePage.evaluate((pos) => {
+                        const img = document.getElementById('panelAfterImage');
+                        const canvas = document.getElementById('panelAfterImageCanvas');
+                        if (img && canvas) {
+                            const drawBorder = () => {
+                                const rect = img.getBoundingClientRect();
+                                canvas.width = rect.width;
+                                canvas.height = rect.height;
+                                canvas.style.width = rect.width + 'px';
+                                canvas.style.height = rect.height + 'px';
+                                const ctx = canvas.getContext('2d');
+                                const scaleX = rect.width / img.naturalWidth;
+                                const scaleY = rect.height / img.naturalHeight;
+                                ctx.strokeStyle = '#00ff00';
+                                ctx.lineWidth = 2;
+                                ctx.strokeRect(pos.x * scaleX, pos.y * scaleY, pos.w * scaleX, pos.h * scaleY);
+                            };
+                            if (img.complete) {
+                                drawBorder();
+                            } else {
+                                img.onload = drawBorder;
+                            }
+                        }
+                    }, panelAfterPos);
+                }
+            }
+        }
+    };
+
     return {
         quitApp: quitAppHandler,
         saveEvents: saveEventsHandler,
@@ -4974,6 +5672,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         isMainScreenActive: isMainScreenActive,
         isAnyOperationRunning: isAnyOperationRunning,
         showSaveReminderDialog: showSaveReminderDialog,
-        handleSaveReminderResponse: handleSaveReminderResponse
+        handleSaveReminderResponse: handleSaveReminderResponse,
+        viewGraph: viewGraphHandler,
+        showPanelInfoGraph: showPanelInfoHandler,
+        showStepInfoGraph: showStepInfoHandler
     };
 }

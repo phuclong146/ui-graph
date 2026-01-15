@@ -3,6 +3,7 @@ export const QUEUE_BROWSER_HTML = `
   <head>
     <title>Queue Tracker</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -789,6 +790,7 @@ export const QUEUE_BROWSER_HTML = `
       <button id="saveBtn" style="background:#007bff;">💾 Save</button>
       <button id="checkpointBtn" style="background:#28a745;">↩️ Rollback</button>
       <button id="quitBtn" style="background:#007bff;">🚪 Quit</button>
+      <button id="viewGraphBtn" style="background:#007bff;">📊 View Graph</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
     
@@ -924,6 +926,27 @@ export const QUEUE_BROWSER_HTML = `
         <button id="select-panel-cancel" class="editor-btn cancel-btn" style="border:none; border-radius:8px; padding:8px 16px; cursor:pointer; font-weight:600; font-size:13px; transition:all 0.2s ease;">
           ❌ Cancel
         </button>
+      </div>
+    </div>
+
+    <div id="graphViewModal" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.95); flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#1a1a1a; border-bottom:1px solid #333;">
+        <h3 style="margin:0; font-size:18px; color:#fff;">📊 View Graph</h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="graphFitToScreenBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🔍 Fit to Screen</button>
+          <button id="closeGraphViewBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
+        </div>
+      </div>
+      <div style="flex:1; display:flex; overflow:hidden; position:relative;">
+        <div id="graphContainer" style="flex:1; position:relative; background:#1a1a1a;"></div>
+        <div id="graphInfoPanel" style="width:400px; background:#2a2a2a; border-left:1px solid #333; overflow-y:auto; display:none; flex-direction:column;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0; font-size:16px; color:#fff;">Info</h4>
+            <button id="closeGraphInfoBtn" style="background:none; border:none; font-size:20px; cursor:pointer; color:#fff; padding:0; width:24px; height:24px; line-height:1;">&times;</button>
+          </div>
+          <div id="graphInfoContent" style="padding:15px; color:#fff;">
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1785,6 +1808,67 @@ export const QUEUE_BROWSER_HTML = `
           quitBtn.textContent = originalText;
         }
       });
+
+      // Graph View Modal handlers
+      const graphViewModal = document.getElementById('graphViewModal');
+      const viewGraphBtn = document.getElementById('viewGraphBtn');
+      const closeGraphViewBtn = document.getElementById('closeGraphViewBtn');
+      const graphFitToScreenBtn = document.getElementById('graphFitToScreenBtn');
+      const graphInfoPanel = document.getElementById('graphInfoPanel');
+      const closeGraphInfoBtn = document.getElementById('closeGraphInfoBtn');
+      let graphNetwork = null;
+
+      const openGraphView = async () => {
+        if (!graphViewModal) {
+          console.error('graphViewModal not found');
+          return;
+        }
+        graphViewModal.style.display = 'flex';
+        if (window.viewGraph) {
+          await window.viewGraph();
+        }
+      };
+
+      const closeGraphView = () => {
+        if (graphViewModal) {
+          graphViewModal.style.display = 'none';
+          if (graphInfoPanel) {
+            graphInfoPanel.style.display = 'none';
+          }
+        }
+      };
+
+      if (viewGraphBtn) {
+        viewGraphBtn.addEventListener('click', openGraphView);
+      }
+
+      if (closeGraphViewBtn) {
+        closeGraphViewBtn.addEventListener('click', closeGraphView);
+      }
+
+      if (closeGraphInfoBtn) {
+        closeGraphInfoBtn.addEventListener('click', () => {
+          if (graphInfoPanel) {
+            graphInfoPanel.style.display = 'none';
+          }
+        });
+      }
+
+      if (graphViewModal) {
+        graphViewModal.addEventListener('click', (e) => {
+          if (e.target === graphViewModal) {
+            closeGraphView();
+          }
+        });
+      }
+
+      if (graphFitToScreenBtn) {
+        graphFitToScreenBtn.addEventListener('click', () => {
+          if (window.graphNetwork) {
+            window.graphNetwork.fit();
+          }
+        });
+      }
 
       const checkpointBtn = document.getElementById("checkpointBtn");
       const checkpointModal = document.getElementById("checkpointModal");
