@@ -4962,18 +4962,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         const step = stepMap.get(actionId);
         const actionItem = actionMap.get(actionId);
 
-        if (step && step.panel_after?.item_id) {
-            return 'normal';
-        }
-
-        if (step && !step.panel_after?.item_id) {
+        // Check if step exists and has panel_after with item_id
+        if (step) {
+            // Check if panel_after exists and has item_id
+            if (step.panel_after && step.panel_after.item_id) {
+                return 'normal';
+            }
+            // Step exists but panel_after is null/undefined or doesn't have item_id
             return 'in_progress';
         }
 
+        // No step, check if action is marked as completed
         if (!step && actionItem && actionItem.status === 'completed') {
             return 'done';
         }
 
+        // No step and not completed
         return 'pending';
     };
 
@@ -5003,9 +5007,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                     item.metadata?.draw_flow_state !== undefined && 
                                     item.metadata?.draw_flow_state !== 'completed';
                 const color = isIncomplete ? '#ff9800' : '#4caf50';
+                
+                // Build label with draw_flow_state suffix
+                let label = item.name || 'Panel';
+                const drawFlowState = item.metadata?.draw_flow_state;
+                if (drawFlowState === null || drawFlowState === undefined) {
+                    label = `${label} [Chưa làm]`;
+                } else if (drawFlowState === 'edit_actions') {
+                    label = `${label} [Đang làm]`;
+                }
+                
                 nodes.push({
                     id: item.item_id,
-                    label: item.name || 'Panel',
+                    label: label,
                     color: color,
                     shape: 'box',
                     font: { color: '#fff', size: 14 },
@@ -5039,6 +5053,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const step = stepMap.get(actionId);
                 const status = getEdgeStatus(actionId, stepMap, itemMap);
                 
+                // Debug logging
+                if (status === 'in_progress') {
+                    console.log(`[Graph] Action ${actionId} (${actionItem.name}) has step but no panel_after - status: in_progress`);
+                }
+                
                 let edge = {
                     id: `edge_${panelBeforeId}_${actionId}`,
                     from: panelBeforeId,
@@ -5057,6 +5076,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     edge.color = { color: '#ffc107' };
                     edge.dashes = true;
                     virtualNodesNeeded.add('virtual_in_progress');
+                    console.log(`[Graph] Added virtual_in_progress node for action ${actionId}`);
                 } else if (status === 'done') {
                     // Dangling edge - đã mark done
                     edge.to = 'virtual_done';
@@ -5076,6 +5096,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         });
 
         // Add virtual nodes for dangling edges
+        console.log(`[Graph] Virtual nodes needed:`, Array.from(virtualNodesNeeded));
+        
         if (virtualNodesNeeded.has('virtual_pending')) {
             nodes.push({
                 id: 'virtual_pending',
@@ -5087,6 +5109,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 borderColor: '#999999',
                 data: { isVirtual: true, type: 'pending' }
             });
+            console.log(`[Graph] Created virtual_pending node`);
         }
 
         if (virtualNodesNeeded.has('virtual_in_progress')) {
@@ -5100,6 +5123,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 borderColor: '#ffc107',
                 data: { isVirtual: true, type: 'in_progress' }
             });
+            console.log(`[Graph] Created virtual_in_progress node`);
         }
 
         if (virtualNodesNeeded.has('virtual_done')) {
@@ -5113,7 +5137,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 borderColor: '#00aaff',
                 data: { isVirtual: true, type: 'done' }
             });
+            console.log(`[Graph] Created virtual_done node`);
         }
+        
+        console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
 
         return { nodes, edges, itemMap, stepMap };
     };
