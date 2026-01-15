@@ -5477,12 +5477,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
 
         // Get positions
+        const panelBeforeNode = step?.panel_before?.item_id ? nodesData.find(n => n.id === step.panel_before.item_id) : null;
+        const panelBeforePos = panelBeforeNode?.data?.metadata?.global_pos;
         const panelAfterNode = step?.panel_after?.item_id ? nodesData.find(n => n.id === step.panel_after.item_id) : null;
         const panelAfterPos = panelAfterNode?.data?.metadata?.global_pos;
         const actionPos = actionItem.metadata?.global_pos;
 
         // Show info in browser context
-        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelAfterPos, actionPos) => {
+        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos) => {
             const infoPanel = document.getElementById('graphInfoPanel');
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
@@ -5556,7 +5558,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             infoContent.style.overflowY = 'auto';
 
             // Draw borders after HTML is set
-            if (panelBeforeImage && (panelAfterPos || actionPos)) {
+            if (panelBeforeImage && (panelBeforePos || actionPos)) {
                 const img = document.getElementById('panelBeforeImage');
                 const canvas = document.getElementById('panelBeforeImageCanvas');
                 if (img && canvas) {
@@ -5571,10 +5573,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
                         
-                        if (panelAfterPos) {
+                        if (panelBeforePos) {
                             ctx.strokeStyle = '#00ff00';
                             ctx.lineWidth = 2;
-                            ctx.strokeRect(panelAfterPos.x * scaleX, panelAfterPos.y * scaleY, panelAfterPos.w * scaleX, panelAfterPos.h * scaleY);
+                            ctx.strokeRect(panelBeforePos.x * scaleX, panelBeforePos.y * scaleY, panelBeforePos.w * scaleX, panelBeforePos.h * scaleY);
                         }
                         
                         if (actionPos) {
@@ -5655,7 +5657,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
             }
-        }, actionItem, step, panelBeforeImage, panelAfterImage, panelAfterPos, actionPos);
+        }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos);
     };
 
     const showStepInfo = async (actionItem, step, itemMap) => {
@@ -5745,12 +5747,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         if (step?.panel_before?.item_id) {
             const panelBefore = itemMap.get(step.panel_before.item_id);
             if (panelBefore) {
-                const panelAfter = step.panel_after?.item_id ? itemMap.get(step.panel_after.item_id) : null;
-                const panelAfterPos = panelAfter?.metadata?.global_pos;
+                const panelBeforePos = panelBefore.metadata?.global_pos;
                 const actionPos = actionItem.metadata?.global_pos;
 
-                if (panelAfterPos || actionPos) {
-                    await tracker.queuePage.evaluate((afterPos, actPos) => {
+                if (panelBeforePos || actionPos) {
+                    await tracker.queuePage.evaluate((beforePos, actPos) => {
                         const img = document.getElementById('panelBeforeImage');
                         const canvas = document.getElementById('panelBeforeImageCanvas');
                         if (img && canvas) {
@@ -5764,10 +5765,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 const scaleX = rect.width / img.naturalWidth;
                                 const scaleY = rect.height / img.naturalHeight;
                                 
-                                if (afterPos) {
+                                if (beforePos) {
                                     ctx.strokeStyle = '#00ff00';
                                     ctx.lineWidth = 2;
-                                    ctx.strokeRect(afterPos.x * scaleX, afterPos.y * scaleY, afterPos.w * scaleX, afterPos.h * scaleY);
+                                    ctx.strokeRect(beforePos.x * scaleX, beforePos.y * scaleY, beforePos.w * scaleX, beforePos.h * scaleY);
                                 }
                                 
                                 if (actPos) {
@@ -5782,7 +5783,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 img.onload = drawBorders;
                             }
                         }
-                    }, panelAfterPos, actionPos);
+                    }, panelBeforePos, actionPos);
                 }
             }
         }
