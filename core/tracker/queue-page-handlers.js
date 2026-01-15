@@ -5225,41 +5225,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 };
                 
-                // Function to show label for selected edge
-                const showEdgeLabel = (edgeId) => {
-                    const edge = edgesData.find(e => e.id === edgeId);
-                    if (edge && edge.data && edge.data.actionName) {
-                        data.edges.update({
-                            id: edgeId,
-                            label: edge.data.actionName,
-                            font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' }
-                        });
-                    }
-                };
-                
-                // Handle edge selection to show label (chỉ khi chọn, không khi hover)
+                // Handle edge selection - keep labels hidden
                 network.on('selectEdge', (params) => {
                     hideAllEdgeLabels();
-                    
-                    // Show label only for selected edge
-                    if (params.edges && params.edges.length > 0) {
-                        showEdgeLabel(params.edges[0]);
-                    }
                 });
                 
                 network.on('deselectEdge', () => {
                     hideAllEdgeLabels();
                 });
                 
-                // Handle click events (gộp tất cả logic vào một handler)
+                // Handle click events
                 network.on('click', async (params) => {
-                    // Xử lý edge labels trước
+                    // Keep all edge labels hidden
+                    hideAllEdgeLabels();
+                    
                     if (params.edges && params.edges.length > 0) {
-                        // Edge clicked
-                        hideAllEdgeLabels();
-                        showEdgeLabel(params.edges[0]);
-                        
-                        // Show step info
+                        // Edge clicked - show step info but keep label hidden
                         const edgeId = params.edges[0];
                         const edge = edgesData.find(e => e.id === edgeId);
                         if (edge && edge.data) {
@@ -5268,10 +5249,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             }
                         }
                     } else if (params.nodes && params.nodes.length > 0) {
-                        // Node clicked - hide all edge labels
-                        hideAllEdgeLabels();
-                        
-                        // Show panel info
+                        // Node clicked - show panel info
                         const nodeId = params.nodes[0];
                         const node = nodesData.find(n => n.id === nodeId);
                         if (node && node.data) {
@@ -5279,9 +5257,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 await window.showPanelInfoGraph(node.data);
                             }
                         }
-                    } else {
-                        // Clicked on background - hide all edge labels
-                        hideAllEdgeLabels();
                     }
                 });
             }, nodesData, edgesData);
