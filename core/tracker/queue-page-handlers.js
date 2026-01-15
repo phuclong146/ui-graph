@@ -5223,8 +5223,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     label: '' // Force empty label
                 }));
                 
+                // Add collapse/expand icons to nodes that have outgoing edges
+                const nodesWithIcons = nodesData.map(node => {
+                    const hasOutgoingEdges = edgesData.some(e => e.from === node.id);
+                    if (hasOutgoingEdges && !node.data?.isVirtual) {
+                        // Add ▼ icon to indicate node can be collapsed (expanded by default)
+                        return {
+                            ...node,
+                            label: `▼ ${node.label}`
+                        };
+                    }
+                    return node;
+                });
+                
                 const data = {
-                    nodes: new vis.DataSet(nodesData),
+                    nodes: new vis.DataSet(nodesWithIcons),
                     edges: new vis.DataSet(edgesForVis)
                 };
 
@@ -5272,6 +5285,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
                 
+                // Log info about collapsible nodes
+                const collapsibleNodes = nodesWithIcons.filter(n => {
+                    const hasOutgoingEdges = edgesData.some(e => e.from === n.id);
+                    return hasOutgoingEdges && !n.data?.isVirtual;
+                });
+                console.log(`[Graph] Graph rendered with ${nodesWithIcons.length} nodes, ${edgesData.length} edges`);
+                console.log(`[Graph] ${collapsibleNodes.length} nodes can be collapsed/expanded (click on nodes with ▼ icon)`);
+                
+                // Track collapsed nodes
+                const collapsedNodes = new Set();
+                
+                // Store original labels (without icons) for all nodes
+                const originalLabels = new Map();
+                nodesWithIcons.forEach(node => {
+                    // Extract original label by removing icon if present
+                    let originalLabel = node.label;
+                    if (originalLabel && (originalLabel.startsWith('▼ ') || originalLabel.startsWith('▶ '))) {
+                        originalLabel = originalLabel.substring(2);
+                    }
+                    originalLabels.set(node.id, originalLabel);
+                });
+                
                 // Đảm bảo tất cả edges có label rỗng khi khởi tạo
                 const allEdges = data.edges.get();
                 allEdges.forEach(edge => {
@@ -5295,6 +5330,172 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 };
                 
+                // Function to get all outgoing edges and their target nodes for a given node
+                const getOutgoingEdgesAndNodes = (nodeId) => {
+                    const outgoingEdges = edgesData.filter(e => e.from === nodeId);
+                    const targetNodeIds = new Set(outgoingEdges.map(e => e.to));
+                    return { edges: outgoingEdges, targetNodeIds: Array.from(targetNodeIds) };
+                };
+                
+                // Function to recursively get all descendant nodes (for nested collapse)
+                const getDescendantNodes = (nodeId, visited = new Set()) => {
+                    if (visited.has(nodeId)) return new Set();
+                    visited.add(nodeId);
+                    
+                    const descendants = new Set();
+                    const { targetNodeIds } = getOutgoingEdgesAndNodes(nodeId);
+                    
+                    targetNodeIds.forEach(targetId => {
+                        descendants.add(targetId);
+                        const nested = getDescendantNodes(targetId, visited);
+                        nested.forEach(n => descendants.add(n));
+                    });
+                    
+                    return descendants;
+                };
+                
+                // Function to update node label with collapse/expand icon
+                const updateNodeLabel = (nodeId, isCollapsed) => {
+                    const nodeInDataSet = data.nodes.get(nodeId);
+                    if (!nodeInDataSet) return;
+                    
+                    const originalLabel = originalLabels.get(nodeId) || 'Node';
+                    const icon = isCollapsed ? '▶' : '▼';
+                    const newLabel = `${icon} ${originalLabel}`;
+                    
+                    data.nodes.update({
+                        id: nodeId,
+                        label: newLabel
+                    });
+                };
+                
+                // Function to collapse a node (hide outgoing edges and target nodes)
+                const collapseNode = (nodeId) => {
+                    console.log(`[Graph] ===== COLLAPSE NODE CALLED =====`);
+                    console.log(`[Graph] NodeId received: ${nodeId}`);
+                    console.log(`[Graph] NodeId type: ${typeof nodeId}`);
+                    
+                    const { edges, targetNodeIds } = getOutgoingEdgesAndNodes(nodeId);
+                    
+                    console.log(`[Graph] Found ${edges.length} outgoing edges from node ${nodeId}`);
+                    console.log(`[Graph] Edges:`, edges.map(e => ({ id: e.id, from: e.from, to: e.to })));
+                    console.log(`[Graph] Target node IDs:`, targetNodeIds);
+                    
+                    if (edges.length === 0) {
+                        console.log(`[Graph] Cannot collapse node ${nodeId}: no outgoing edges`);
+                        return; // No outgoing edges, nothing to collapse
+                    }
+                    
+                    console.log(`[Graph] Collapsing node ${nodeId}, will hide ${edges.length} edges and ${targetNodeIds.length} target nodes`);
+                    
+                    // Update label to show collapsed icon
+                    updateNodeLabel(nodeId, true);
+                    
+                    // Hide edges by removing them from dataset
+                    const edgeIdsToRemove = edges.map(e => e.id);
+                    console.log(`[Graph] Removing edges:`, edgeIdsToRemove);
+                    data.edges.remove(edgeIdsToRemove);
+                    
+                    // Hide immediate target nodes and recursively hide their descendants
+                    const nodesToHide = new Set();
+                    const hideNodeAndDescendants = (targetId) => {
+                        if (nodesToHide.has(targetId)) return;
+                        nodesToHide.add(targetId);
+                        
+                        // Recursively hide children of this target node
+                        const childEdges = edgesData.filter(e => e.from === targetId);
+                        childEdges.forEach(childEdge => {
+                            // Also remove child edges
+                            const childEdgeInDataSet = data.edges.get(childEdge.id);
+                            if (childEdgeInDataSet) {
+                                data.edges.remove(childEdge.id);
+                            }
+                            hideNodeAndDescendants(childEdge.to);
+                        });
+                    };
+                    
+                    targetNodeIds.forEach(targetId => {
+                        hideNodeAndDescendants(targetId);
+                    });
+                    
+                    // Remove all nodes that should be hidden
+                    if (nodesToHide.size > 0) {
+                        console.log(`[Graph] Removing ${nodesToHide.size} nodes:`, Array.from(nodesToHide));
+                        data.nodes.remove(Array.from(nodesToHide));
+                    }
+                    
+                    collapsedNodes.add(nodeId);
+                    console.log(`[Graph] Node ${nodeId} collapsed successfully`);
+                };
+                
+                // Function to expand a node (show outgoing edges and target nodes)
+                const expandNode = (nodeId) => {
+                    console.log(`[Graph] ===== EXPAND NODE CALLED =====`);
+                    console.log(`[Graph] NodeId received: ${nodeId}`);
+                    console.log(`[Graph] NodeId type: ${typeof nodeId}`);
+                    
+                    const { edges, targetNodeIds } = getOutgoingEdgesAndNodes(nodeId);
+                    
+                    console.log(`[Graph] Found ${edges.length} outgoing edges from node ${nodeId}`);
+                    console.log(`[Graph] Edges:`, edges.map(e => ({ id: e.id, from: e.from, to: e.to })));
+                    console.log(`[Graph] Target node IDs:`, targetNodeIds);
+                    
+                    if (edges.length === 0) {
+                        console.log(`[Graph] Cannot expand node ${nodeId}: no outgoing edges`);
+                        return; // No outgoing edges
+                    }
+                    
+                    console.log(`[Graph] Expanding node ${nodeId}, will show ${edges.length} edges and ${targetNodeIds.length} target nodes`);
+                    
+                    // Update label to show expanded icon
+                    updateNodeLabel(nodeId, false);
+                    
+                    // Add edges back to dataset
+                    const edgesToAdd = edges.map(edge => ({
+                        id: edge.id,
+                        from: edge.from,
+                        to: edge.to,
+                        label: '',
+                        color: edge.color,
+                        dashes: edge.dashes,
+                        data: edge.data
+                    }));
+                    console.log(`[Graph] Adding edges:`, edgesToAdd.map(e => e.id));
+                    data.edges.add(edgesToAdd);
+                    
+                    // Show immediate target nodes by adding them back
+                    const nodesToAdd = [];
+                    targetNodeIds.forEach(targetId => {
+                        const originalNode = nodesWithIcons.find(n => n.id === targetId);
+                        if (originalNode) {
+                            // Check if node already exists in dataset
+                            const existingNode = data.nodes.get(targetId);
+                            if (!existingNode) {
+                                nodesToAdd.push(originalNode);
+                            }
+                        }
+                    });
+                    
+                    if (nodesToAdd.length > 0) {
+                        console.log(`[Graph] Adding ${nodesToAdd.length} nodes:`, nodesToAdd.map(n => n.id));
+                        data.nodes.add(nodesToAdd);
+                    }
+                    
+                    // If target nodes are not collapsed, recursively expand them
+                    targetNodeIds.forEach(targetId => {
+                        if (!collapsedNodes.has(targetId)) {
+                            const childEdges = edgesData.filter(e => e.from === targetId);
+                            if (childEdges.length > 0) {
+                                // Recursively expand this child node to show its children
+                                expandNode(targetId);
+                            }
+                        }
+                    });
+                    
+                    collapsedNodes.delete(nodeId);
+                    console.log(`[Graph] Node ${nodeId} expanded successfully`);
+                };
+                
                 // Handle edge selection - keep labels hidden
                 network.on('selectEdge', (params) => {
                     hideAllEdgeLabels();
@@ -5304,10 +5505,175 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     hideAllEdgeLabels();
                 });
                 
-                // Handle click events
+                // Create context menu element - append to graphViewModal for proper z-index
+                const graphViewModal = document.getElementById('graphViewModal');
+                const contextMenu = document.createElement('div');
+                contextMenu.id = 'graphContextMenu';
+                contextMenu.style.cssText = `
+                    display: none;
+                    position: fixed;
+                    background: white;
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                    padding: 4px 0;
+                    z-index: 20006;
+                    min-width: 150px;
+                    pointer-events: auto;
+                `;
+                // Append to graphViewModal if available, otherwise to body
+                if (graphViewModal) {
+                    graphViewModal.appendChild(contextMenu);
+                } else {
+                    document.body.appendChild(contextMenu);
+                }
+                
+                // Function to show context menu
+                const showContextMenu = (x, y, nodeId) => {
+                    console.log('[Graph] showContextMenu called for node:', nodeId, 'at position:', x, y);
+                    
+                    const { edges } = getOutgoingEdgesAndNodes(nodeId);
+                    const isCollapsed = collapsedNodes.has(nodeId);
+                    
+                    contextMenu.innerHTML = '';
+                    
+                    if (edges.length > 0) {
+                        const collapseItem = document.createElement('div');
+                        collapseItem.className = 'context-menu-item';
+                        collapseItem.style.cssText = 'padding: 8px 16px; cursor: pointer; font-size: 13px;';
+                        collapseItem.textContent = isCollapsed ? '▶ Expand' : '▼ Collapse';
+                        collapseItem.onmouseover = () => collapseItem.style.background = '#f0f0f0';
+                        collapseItem.onmouseout = () => collapseItem.style.background = '';
+                        
+                        // Store nodeId in data attribute to ensure it's preserved
+                        collapseItem.setAttribute('data-node-id', nodeId);
+                        
+                        collapseItem.onclick = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            // Get nodeId from data attribute to ensure correct node
+                            const targetNodeId = collapseItem.getAttribute('data-node-id') || nodeId;
+                            const targetIsCollapsed = collapsedNodes.has(targetNodeId);
+                            
+                            console.log('[Graph] Collapse/Expand clicked for node:', targetNodeId, 'isCollapsed:', targetIsCollapsed);
+                            
+                            contextMenu.style.display = 'none';
+                            
+                            if (targetIsCollapsed) {
+                                console.log('[Graph] Expanding node:', targetNodeId);
+                                expandNode(targetNodeId);
+                            } else {
+                                console.log('[Graph] Collapsing node:', targetNodeId);
+                                collapseNode(targetNodeId);
+                            }
+                        };
+                        contextMenu.appendChild(collapseItem);
+                    }
+                    
+                    const node = nodesData.find(n => n.id === nodeId);
+                    if (node && node.data && !node.data.isVirtual) {
+                        const infoItem = document.createElement('div');
+                        infoItem.className = 'context-menu-item';
+                        infoItem.style.cssText = 'padding: 8px 16px; cursor: pointer; font-size: 13px;';
+                        infoItem.textContent = 'ℹ️ Show Info';
+                        infoItem.onmouseover = () => infoItem.style.background = '#f0f0f0';
+                        infoItem.onmouseout = () => infoItem.style.background = '';
+                        
+                        // Store nodeId and node data to ensure correct info is shown
+                        infoItem.setAttribute('data-node-id', nodeId);
+                        
+                        infoItem.onclick = async (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            
+                            const targetNodeId = infoItem.getAttribute('data-node-id') || nodeId;
+                            const targetNode = nodesData.find(n => n.id === targetNodeId);
+                            
+                            console.log('[Graph] Show Info clicked for node:', targetNodeId);
+                            
+                            contextMenu.style.display = 'none';
+                            
+                            if (targetNode && targetNode.data && window.showPanelInfoGraph) {
+                                await window.showPanelInfoGraph(targetNode.data);
+                            }
+                        };
+                        contextMenu.appendChild(infoItem);
+                    }
+                    
+                    if (contextMenu.children.length === 0) {
+                        console.log('[Graph] No menu items to show');
+                        return;
+                    }
+                    
+                    // Ensure menu is visible and on top
+                    contextMenu.style.display = 'block';
+                    contextMenu.style.visibility = 'visible';
+                    contextMenu.style.opacity = '1';
+                    contextMenu.style.left = x + 'px';
+                    contextMenu.style.top = y + 'px';
+                    contextMenu.style.zIndex = '20006';
+                    
+                    console.log('[Graph] Context menu displayed at:', x, y);
+                    console.log('[Graph] Context menu style:', {
+                        display: contextMenu.style.display,
+                        left: contextMenu.style.left,
+                        top: contextMenu.style.top,
+                        zIndex: contextMenu.style.zIndex,
+                        children: contextMenu.children.length
+                    });
+                    
+                    // Force a reflow to ensure rendering
+                    contextMenu.offsetHeight;
+                };
+                
+                // Hide context menu when clicking elsewhere
+                document.addEventListener('click', (e) => {
+                    if (contextMenu && !contextMenu.contains(e.target)) {
+                        contextMenu.style.display = 'none';
+                    }
+                });
+                
+                // Also hide on Escape key
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && contextMenu && contextMenu.style.display === 'block') {
+                        contextMenu.style.display = 'none';
+                    }
+                });
+                
+                // Track current node under cursor for right-click
+                let currentNodeUnderCursor = null;
+                let lastSelectedNodeId = null;
+                
+                // Handle hover to track which node is under cursor
+                network.on('hoverNode', (params) => {
+                    currentNodeUnderCursor = params.node;
+                    console.log('[Graph] Hovering over node:', params.node);
+                });
+                
+                network.on('blurNode', () => {
+                    // Keep currentNodeUnderCursor for a short time to allow right-click
+                    // Don't clear immediately
+                });
+                
+                // Also track selected nodes
+                network.on('selectNode', (params) => {
+                    if (params.nodes && params.nodes.length > 0) {
+                        lastSelectedNodeId = params.nodes[0];
+                        currentNodeUnderCursor = params.nodes[0];
+                        console.log('[Graph] Node selected:', params.nodes[0]);
+                    }
+                });
+                
+                // Handle click events (left click - show panel info)
                 network.on('click', async (params) => {
                     // Keep all edge labels hidden
                     hideAllEdgeLabels();
+                    
+                    // Update current node
+                    if (params.nodes && params.nodes.length > 0) {
+                        currentNodeUnderCursor = params.nodes[0];
+                    }
                     
                     if (params.edges && params.edges.length > 0) {
                         // Edge clicked - show step info but keep label hidden
@@ -5322,11 +5688,32 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         // Node clicked - show panel info (skip virtual nodes)
                         const nodeId = params.nodes[0];
                         const node = nodesData.find(n => n.id === nodeId);
+                        
                         if (node && node.data && !node.data.isVirtual) {
                             if (window.showPanelInfoGraph) {
                                 await window.showPanelInfoGraph(node.data);
                             }
                         }
+                    }
+                });
+                
+                // Handle right-click events (context menu)
+                graphContainer.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log('[Graph] Right-click detected at:', e.clientX, e.clientY);
+                    console.log('[Graph] currentNodeUnderCursor:', currentNodeUnderCursor);
+                    console.log('[Graph] lastSelectedNodeId:', lastSelectedNodeId);
+                    
+                    // Use the node that's currently under cursor or was last selected/clicked
+                    const targetNodeId = currentNodeUnderCursor || lastSelectedNodeId;
+                    
+                    if (targetNodeId) {
+                        console.log('[Graph] Showing context menu for node:', targetNodeId);
+                        showContextMenu(e.clientX, e.clientY, targetNodeId);
+                    } else {
+                        console.log('[Graph] No node found for context menu. Try clicking on a node first, then right-click.');
                     }
                 });
             }, nodesData, edgesData);
