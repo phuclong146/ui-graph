@@ -5039,7 +5039,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 let edge = {
                     id: `edge_${panelBeforeId}_${actionId}`,
                     from: panelBeforeId,
-                    label: actionItem.name || 'Action',
+                    label: '', // Không hiện action name mặc định
                     data: { actionId, actionItem, step }
                 };
 
@@ -5053,19 +5053,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     edge.to = null;
                     edge.color = { color: '#ffc107' };
                     edge.dashes = true;
-                    edge.label = `${actionItem.name || 'Action'} [Đang làm]`;
                 } else if (status === 'done') {
                     // Dangling edge - đã mark done
                     edge.to = null;
                     edge.color = { color: '#00aaff' };
                     edge.dashes = false;
-                    edge.label = `${actionItem.name || 'Action'} [Done]`;
                 } else {
                     // Dangling edge - chưa làm
                     edge.to = null;
                     edge.color = { color: '#999999' };
                     edge.dashes = true;
-                    edge.label = `${actionItem.name || 'Action'} [Chưa làm]`;
                 }
 
                 edges.push(edge);
@@ -5115,9 +5112,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 id: e.id,
                 from: e.from,
                 to: e.to,
-                label: e.label,
+                label: '', // Đảm bảo label luôn rỗng khi khởi tạo
                 color: e.color,
                 dashes: e.dashes,
+                font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' },
                 data: {
                     actionId: e.data.actionId,
                     actionName: e.data.actionItem.name,
@@ -5149,10 +5147,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     return;
                 }
 
-                // Create vis-network data
+                // Create vis-network data - đảm bảo tất cả edges có label rỗng
+                const edgesForVis = edgesData.map(e => ({
+                    ...e,
+                    label: '' // Force empty label
+                }));
+                
                 const data = {
                     nodes: new vis.DataSet(nodesData),
-                    edges: new vis.DataSet(edgesData)
+                    edges: new vis.DataSet(edgesForVis)
                 };
 
                 const options = {
@@ -5166,12 +5169,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         arrows: {
                             to: { enabled: true, scaleFactor: 1.2 }
                         },
-                        font: { color: '#fff', size: 12, align: 'middle' },
+                        font: { color: '#fff', size: 11, align: 'middle', face: 'Roboto' },
                         smooth: {
                             type: 'continuous',
                             roundness: 0.5
                         },
-                        shadow: true
+                        shadow: true,
+                        width: 2,
+                        selectionWidth: 3,
+                        chosen: {
+                            edge: function(values, id, selected, hovering) {
+                                if (selected || hovering) {
+                                    values.color = '#0056b3'; // Xanh dương đậm
+                                    values.width = 3;
+                                }
+                            }
+                        }
                     },
                     physics: {
                         enabled: true,
@@ -5188,18 +5201,65 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
+                
+                // Đảm bảo tất cả edges có label rỗng khi khởi tạo
+                const allEdges = data.edges.get();
+                allEdges.forEach(edge => {
+                    if (edge.label && edge.label !== '') {
+                        data.edges.update({
+                            id: edge.id,
+                            label: ''
+                        });
+                    }
+                });
 
-                // Handle node click (panel)
+                // Function to hide all edge labels
+                const hideAllEdgeLabels = () => {
+                    const allEdges = data.edges.get();
+                    const updates = allEdges.map(edge => ({
+                        id: edge.id,
+                        label: ''
+                    }));
+                    if (updates.length > 0) {
+                        data.edges.update(updates);
+                    }
+                };
+                
+                // Function to show label for selected edge
+                const showEdgeLabel = (edgeId) => {
+                    const edge = edgesData.find(e => e.id === edgeId);
+                    if (edge && edge.data && edge.data.actionName) {
+                        data.edges.update({
+                            id: edgeId,
+                            label: edge.data.actionName,
+                            font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' }
+                        });
+                    }
+                };
+                
+                // Handle edge selection to show label (chỉ khi chọn, không khi hover)
+                network.on('selectEdge', (params) => {
+                    hideAllEdgeLabels();
+                    
+                    // Show label only for selected edge
+                    if (params.edges && params.edges.length > 0) {
+                        showEdgeLabel(params.edges[0]);
+                    }
+                });
+                
+                network.on('deselectEdge', () => {
+                    hideAllEdgeLabels();
+                });
+                
+                // Handle click events (gộp tất cả logic vào một handler)
                 network.on('click', async (params) => {
-                    if (params.nodes.length > 0) {
-                        const nodeId = params.nodes[0];
-                        const node = nodesData.find(n => n.id === nodeId);
-                        if (node && node.data) {
-                            if (window.showPanelInfoGraph) {
-                                await window.showPanelInfoGraph(node.data);
-                            }
-                        }
-                    } else if (params.edges.length > 0) {
+                    // Xử lý edge labels trước
+                    if (params.edges && params.edges.length > 0) {
+                        // Edge clicked
+                        hideAllEdgeLabels();
+                        showEdgeLabel(params.edges[0]);
+                        
+                        // Show step info
                         const edgeId = params.edges[0];
                         const edge = edgesData.find(e => e.id === edgeId);
                         if (edge && edge.data) {
@@ -5207,6 +5267,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 await window.showStepInfoGraph(edge.data, nodesData);
                             }
                         }
+                    } else if (params.nodes && params.nodes.length > 0) {
+                        // Node clicked - hide all edge labels
+                        hideAllEdgeLabels();
+                        
+                        // Show panel info
+                        const nodeId = params.nodes[0];
+                        const node = nodesData.find(n => n.id === nodeId);
+                        if (node && node.data) {
+                            if (window.showPanelInfoGraph) {
+                                await window.showPanelInfoGraph(node.data);
+                            }
+                        }
+                    } else {
+                        // Clicked on background - hide all edge labels
+                        hideAllEdgeLabels();
                     }
                 });
             }, nodesData, edgesData);
@@ -5239,6 +5314,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
 
+            // Set default width to 2/3 of screen
+            if (!infoPanel.dataset.widthSet) {
+                const screenWidth = window.innerWidth;
+                infoPanel.style.width = (screenWidth * 2 / 3) + 'px';
+                infoPanel.dataset.widthSet = 'true';
+            }
+            
             infoPanel.style.display = 'flex';
 
             let imageHtml = '';
@@ -5275,16 +5357,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         canvas.style.width = rect.width + 'px';
                         canvas.style.height = rect.height + 'px';
                         const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
                         ctx.strokeStyle = '#ff0000';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
                     };
+                    
                     if (img.complete) {
                         drawBorder();
                     } else {
                         img.onload = drawBorder;
+                    }
+                    
+                    // Use ResizeObserver to redraw border when image size changes
+                    const resizeObserver = new ResizeObserver(() => {
+                        if (img.complete) {
+                            drawBorder();
+                        }
+                    });
+                    resizeObserver.observe(img);
+                    
+                    // Also observe the info panel for resize
+                    if (infoPanel) {
+                        const panelResizeObserver = new ResizeObserver(() => {
+                            if (img.complete) {
+                                drawBorder();
+                            }
+                        });
+                        panelResizeObserver.observe(infoPanel);
                     }
                 }
             }
@@ -5340,6 +5442,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
 
+            // Set default width to 2/3 of screen
+            if (!infoPanel.dataset.widthSet) {
+                const screenWidth = window.innerWidth;
+                infoPanel.style.width = (screenWidth * 2 / 3) + 'px';
+                infoPanel.dataset.widthSet = 'true';
+            }
+            
             infoPanel.style.display = 'flex';
 
             let panelBeforeHtml = '';
@@ -5383,11 +5492,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             infoContent.innerHTML = `
-                <h3 style="margin-top:0; color:#fff;">Step Info</h3>
-                ${panelBeforeHtml}
-                ${actionInfoHtml}
-                ${panelAfterHtml}
+                <h3 style="margin-top:0; margin-bottom:15px; color:#fff; text-align:center;">Step Info</h3>
+                <div id="stepInfoContainer" style="display:flex; flex-direction:row; gap:15px; align-items:flex-start; min-width:max-content;">
+                    <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
+                        ${panelBeforeHtml}
+                    </div>
+                    <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                        ${actionInfoHtml}
+                    </div>
+                    <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
+                        ${panelAfterHtml}
+                    </div>
+                </div>
             `;
+            
+            // Make images resizable and add horizontal scroll
+            infoContent.style.overflowX = 'auto';
+            infoContent.style.overflowY = 'auto';
 
             // Draw borders after HTML is set
             if (panelBeforeImage && (panelAfterPos || actionPos)) {
@@ -5401,6 +5522,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         canvas.style.width = rect.width + 'px';
                         canvas.style.height = rect.height + 'px';
                         const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
                         
@@ -5416,10 +5538,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             ctx.strokeRect(actionPos.x * scaleX, actionPos.y * scaleY, actionPos.w * scaleX, actionPos.h * scaleY);
                         }
                     };
+                    
                     if (img.complete) {
                         drawBorders();
                     } else {
                         img.onload = drawBorders;
+                    }
+                    
+                    // Use ResizeObserver to redraw borders when image size changes
+                    const resizeObserver = new ResizeObserver(() => {
+                        if (img.complete) {
+                            drawBorders();
+                        }
+                    });
+                    resizeObserver.observe(img);
+                    
+                    // Also observe the info panel for resize
+                    if (infoPanel) {
+                        const panelResizeObserver = new ResizeObserver(() => {
+                            if (img.complete) {
+                                drawBorders();
+                            }
+                        });
+                        panelResizeObserver.observe(infoPanel);
                     }
                 }
             }
@@ -5436,16 +5577,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         canvas.style.width = rect.width + 'px';
                         canvas.style.height = rect.height + 'px';
                         const ctx = canvas.getContext('2d');
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
                         ctx.strokeStyle = '#00ff00';
                         ctx.lineWidth = 2;
                         ctx.strokeRect(panelAfterPos.x * scaleX, panelAfterPos.y * scaleY, panelAfterPos.w * scaleX, panelAfterPos.h * scaleY);
                     };
+                    
                     if (img.complete) {
                         drawBorder();
                     } else {
                         img.onload = drawBorder;
+                    }
+                    
+                    // Use ResizeObserver to redraw border when image size changes
+                    const resizeObserver = new ResizeObserver(() => {
+                        if (img.complete) {
+                            drawBorder();
+                        }
+                    });
+                    resizeObserver.observe(img);
+                    
+                    // Also observe the info panel for resize
+                    if (infoPanel) {
+                        const panelResizeObserver = new ResizeObserver(() => {
+                            if (img.complete) {
+                                drawBorder();
+                            }
+                        });
+                        panelResizeObserver.observe(infoPanel);
                     }
                 }
             }

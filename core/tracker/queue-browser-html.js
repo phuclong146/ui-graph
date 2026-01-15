@@ -766,6 +766,82 @@ export const QUEUE_BROWSER_HTML = `
         opacity: 0.5;
       }
       
+      #graphInfoResizer {
+        position: absolute;
+        left: -6px;
+        top: 0;
+        width: 12px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 1000;
+        user-select: none;
+        touch-action: none;
+      }
+      
+      #graphInfoResizer:hover {
+        background: rgba(0, 123, 255, 0.1);
+      }
+      
+      #graphInfoResizer.resizing {
+        background: rgba(0, 123, 255, 0.2);
+      }
+      
+      #graphInfoResizer::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #ccc;
+        transform: translateX(-50%);
+        transition: all 0.2s ease;
+      }
+      
+      #graphInfoResizer:hover::before {
+        background: #007bff;
+        width: 3px;
+      }
+      
+      #graphInfoResizer.resizing::before {
+        background: #007bff;
+        width: 4px;
+      }
+      
+      #stepInfoContainer {
+        display: flex;
+        flex-direction: row;
+        gap: 15px;
+        align-items: flex-start;
+        min-width: max-content;
+      }
+      
+      #stepPanelBefore, #stepPanelAfter {
+        flex: 0 0 auto;
+        min-width: 300px;
+        max-width: 500px;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      #stepPanelBefore img, #stepPanelAfter img {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #555;
+        border-radius: 4px;
+      }
+      
+      #stepAction {
+        flex: 0 0 auto;
+        min-width: 200px;
+        max-width: 300px;
+        display: flex;
+        flex-direction: column;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+      }
     </style>
   </head>
   <body>
@@ -789,8 +865,21 @@ export const QUEUE_BROWSER_HTML = `
       <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
       <button id="saveBtn" style="background:#007bff;">💾 Save</button>
       <button id="checkpointBtn" style="background:#28a745;">↩️ Rollback</button>
-      <button id="quitBtn" style="background:#007bff;">🚪 Quit</button>
-      <button id="viewGraphBtn" style="background:#007bff;">📊 View Graph</button>
+      <button id="viewGraphBtn" style="background:#007bff; display:flex; align-items:center; gap:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;">
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="18" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <line x1="6" y1="6" x2="12" y2="12"></line>
+          <line x1="18" y1="6" x2="12" y2="12"></line>
+          <line x1="6" y1="18" x2="12" y2="12"></line>
+          <line x1="18" y1="18" x2="12" y2="12"></line>
+        </svg>
+        View Graph
+      </button>
+      <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
     
@@ -931,7 +1020,20 @@ export const QUEUE_BROWSER_HTML = `
 
     <div id="graphViewModal" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.95); flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#1a1a1a; border-bottom:1px solid #333;">
-        <h3 style="margin:0; font-size:18px; color:#fff;">📊 View Graph</h3>
+        <h3 style="margin:0; font-size:18px; color:#fff; display:flex; align-items:center; gap:8px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="3"></circle>
+            <circle cx="18" cy="6" r="3"></circle>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="12" cy="12" r="3"></circle>
+            <line x1="6" y1="6" x2="12" y2="12"></line>
+            <line x1="18" y1="6" x2="12" y2="12"></line>
+            <line x1="6" y1="18" x2="12" y2="12"></line>
+            <line x1="18" y1="18" x2="12" y2="12"></line>
+          </svg>
+          View Graph
+        </h3>
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="graphFitToScreenBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🔍 Fit to Screen</button>
           <button id="closeGraphViewBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
@@ -939,12 +1041,13 @@ export const QUEUE_BROWSER_HTML = `
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
         <div id="graphContainer" style="flex:1; position:relative; background:#1a1a1a;"></div>
-        <div id="graphInfoPanel" style="width:400px; background:#2a2a2a; border-left:1px solid #333; overflow-y:auto; display:none; flex-direction:column;">
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center;">
+        <div id="graphInfoPanel" style="min-width:400px; max-width:90vw; background:#2a2a2a; border-left:1px solid #333; overflow:hidden; display:none; flex-direction:column; position:relative;">
+          <div id="graphInfoResizer" style="position:absolute; left:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Info</h4>
             <button id="closeGraphInfoBtn" style="background:none; border:none; font-size:20px; cursor:pointer; color:#fff; padding:0; width:24px; height:24px; line-height:1;">&times;</button>
           </div>
-          <div id="graphInfoContent" style="padding:15px; color:#fff;">
+          <div id="graphInfoContent" style="flex:1; overflow:auto; padding:15px; color:#fff;">
           </div>
         </div>
       </div>
@@ -1866,6 +1969,44 @@ export const QUEUE_BROWSER_HTML = `
         graphFitToScreenBtn.addEventListener('click', () => {
           if (window.graphNetwork) {
             window.graphNetwork.fit();
+          }
+        });
+      }
+
+      // Graph Info Panel Resizer
+      const graphInfoResizer = document.getElementById('graphInfoResizer');
+      if (graphInfoResizer && graphInfoPanel) {
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        graphInfoResizer.addEventListener('mousedown', (e) => {
+          isResizing = true;
+          startX = e.clientX;
+          startWidth = parseInt(window.getComputedStyle(graphInfoPanel).width, 10);
+          graphInfoResizer.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+          e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+          if (!isResizing) return;
+          const diff = startX - e.clientX;
+          const newWidth = startWidth + diff;
+          const minWidth = 400;
+          const maxWidth = window.innerWidth * 0.9;
+          if (newWidth >= minWidth && newWidth <= maxWidth) {
+            graphInfoPanel.style.width = newWidth + 'px';
+          }
+        });
+
+        document.addEventListener('mouseup', () => {
+          if (isResizing) {
+            isResizing = false;
+            graphInfoResizer.classList.remove('resizing');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
           }
         });
       }
