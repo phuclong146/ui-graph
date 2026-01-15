@@ -5014,6 +5014,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
         });
 
+        // Track which virtual nodes are needed
+        const virtualNodesNeeded = new Set();
+
         // Build edges (actions)
         const edges = [];
         parentPanels.forEach(parent => {
@@ -5050,24 +5053,67 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     edge.dashes = false;
                 } else if (status === 'in_progress') {
                     // Dangling edge - đang làm
-                    edge.to = null;
+                    edge.to = 'virtual_in_progress';
                     edge.color = { color: '#ffc107' };
                     edge.dashes = true;
+                    virtualNodesNeeded.add('virtual_in_progress');
                 } else if (status === 'done') {
                     // Dangling edge - đã mark done
-                    edge.to = null;
+                    edge.to = 'virtual_done';
                     edge.color = { color: '#00aaff' };
                     edge.dashes = false;
+                    virtualNodesNeeded.add('virtual_done');
                 } else {
                     // Dangling edge - chưa làm
-                    edge.to = null;
+                    edge.to = 'virtual_pending';
                     edge.color = { color: '#999999' };
                     edge.dashes = true;
+                    virtualNodesNeeded.add('virtual_pending');
                 }
 
                 edges.push(edge);
             });
         });
+
+        // Add virtual nodes for dangling edges
+        if (virtualNodesNeeded.has('virtual_pending')) {
+            nodes.push({
+                id: 'virtual_pending',
+                label: '[Chưa làm]',
+                color: '#999999',
+                shape: 'box',
+                font: { color: '#fff', size: 14 },
+                borderWidth: 2,
+                borderColor: '#999999',
+                data: { isVirtual: true, type: 'pending' }
+            });
+        }
+
+        if (virtualNodesNeeded.has('virtual_in_progress')) {
+            nodes.push({
+                id: 'virtual_in_progress',
+                label: '[Đang làm]',
+                color: '#ffc107',
+                shape: 'box',
+                font: { color: '#fff', size: 14 },
+                borderWidth: 2,
+                borderColor: '#ffc107',
+                data: { isVirtual: true, type: 'in_progress' }
+            });
+        }
+
+        if (virtualNodesNeeded.has('virtual_done')) {
+            nodes.push({
+                id: 'virtual_done',
+                label: '[Done]',
+                color: '#00aaff',
+                shape: 'box',
+                font: { color: '#fff', size: 14 },
+                borderWidth: 2,
+                borderColor: '#00aaff',
+                data: { isVirtual: true, type: 'done' }
+            });
+        }
 
         return { nodes, edges, itemMap, stepMap };
     };
@@ -5090,23 +5136,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             // Serialize data for browser
-            const nodesData = nodes.map(n => ({
-                id: n.id,
-                label: n.label,
-                color: n.color,
-                shape: n.shape,
-                font: n.font,
-                data: {
-                    itemId: n.data.item.item_id,
-                    itemCategory: n.data.item.item_category,
-                    name: n.data.item.name,
-                    type: n.data.item.type,
-                    verb: n.data.item.verb,
-                    image_base64: n.data.item.image_base64,
-                    fullscreen_base64: n.data.item.fullscreen_base64,
-                    metadata: n.data.item.metadata
+            const nodesData = nodes.map(n => {
+                const baseNode = {
+                    id: n.id,
+                    label: n.label,
+                    color: n.color,
+                    shape: n.shape,
+                    font: n.font
+                };
+                
+                // Virtual nodes don't have item data
+                if (n.data.isVirtual) {
+                    baseNode.data = {
+                        isVirtual: true,
+                        type: n.data.type
+                    };
+                } else {
+                    baseNode.data = {
+                        itemId: n.data.item.item_id,
+                        itemCategory: n.data.item.item_category,
+                        name: n.data.item.name,
+                        type: n.data.item.type,
+                        verb: n.data.item.verb,
+                        image_base64: n.data.item.image_base64,
+                        fullscreen_base64: n.data.item.fullscreen_base64,
+                        metadata: n.data.item.metadata
+                    };
                 }
-            }));
+                
+                return baseNode;
+            });
 
             const edgesData = edges.map(e => ({
                 id: e.id,
@@ -5249,10 +5308,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             }
                         }
                     } else if (params.nodes && params.nodes.length > 0) {
-                        // Node clicked - show panel info
+                        // Node clicked - show panel info (skip virtual nodes)
                         const nodeId = params.nodes[0];
                         const node = nodesData.find(n => n.id === nodeId);
-                        if (node && node.data) {
+                        if (node && node.data && !node.data.isVirtual) {
                             if (window.showPanelInfoGraph) {
                                 await window.showPanelInfoGraph(node.data);
                             }
