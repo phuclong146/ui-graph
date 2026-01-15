@@ -5028,8 +5028,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
         });
 
-        // Track which virtual nodes are needed
-        const virtualNodesNeeded = new Set();
+        // Track virtual nodes created for each action (to avoid duplicates)
+        const virtualNodesCreated = new Set();
 
         // Build edges (actions)
         const edges = [];
@@ -5070,75 +5070,59 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     edge.to = panelAfterId;
                     edge.color = { color: '#00aaff' };
                     edge.dashes = false;
-                } else if (status === 'in_progress') {
-                    // Dangling edge - đang làm
-                    edge.to = 'virtual_in_progress';
-                    edge.color = { color: '#ffc107' };
-                    edge.dashes = true;
-                    virtualNodesNeeded.add('virtual_in_progress');
-                    console.log(`[Graph] Added virtual_in_progress node for action ${actionId}`);
-                } else if (status === 'done') {
-                    // Dangling edge - đã mark done
-                    edge.to = 'virtual_done';
-                    edge.color = { color: '#00aaff' };
-                    edge.dashes = false;
-                    virtualNodesNeeded.add('virtual_done');
                 } else {
-                    // Dangling edge - chưa làm
-                    edge.to = 'virtual_pending';
-                    edge.color = { color: '#999999' };
-                    edge.dashes = true;
-                    virtualNodesNeeded.add('virtual_pending');
+                    // Create individual virtual node for each action
+                    const actionName = actionItem.name || 'Unnamed Action';
+                    let virtualNodeId, virtualNodeLabel, virtualNodeColor, virtualNodeBorderColor, statusLabel;
+                    
+                    if (status === 'in_progress') {
+                        // Dangling edge - đang làm
+                        virtualNodeId = `virtual_${actionId}_in_progress`;
+                        statusLabel = 'Đang làm';
+                        virtualNodeColor = '#ffc107';
+                        virtualNodeBorderColor = '#ffc107';
+                        edge.color = { color: '#ffc107' };
+                        edge.dashes = true;
+                    } else if (status === 'done') {
+                        // Dangling edge - đã mark done
+                        virtualNodeId = `virtual_${actionId}_done`;
+                        statusLabel = 'Done';
+                        virtualNodeColor = '#00aaff';
+                        virtualNodeBorderColor = '#00aaff';
+                        edge.color = { color: '#00aaff' };
+                        edge.dashes = false;
+                    } else {
+                        // Dangling edge - chưa làm
+                        virtualNodeId = `virtual_${actionId}_pending`;
+                        statusLabel = 'Chưa làm';
+                        virtualNodeColor = '#999999';
+                        virtualNodeBorderColor = '#999999';
+                        edge.color = { color: '#999999' };
+                        edge.dashes = true;
+                    }
+                    
+                    edge.to = virtualNodeId;
+                    
+                    // Create virtual node if not already created
+                    if (!virtualNodesCreated.has(virtualNodeId)) {
+                        nodes.push({
+                            id: virtualNodeId,
+                            label: `[${actionName}] [${statusLabel}]`,
+                            color: virtualNodeColor,
+                            shape: 'box',
+                            font: { color: '#fff', size: 14 },
+                            borderWidth: 2,
+                            borderColor: virtualNodeBorderColor,
+                            data: { isVirtual: true, type: status, actionId, actionItem }
+                        });
+                        virtualNodesCreated.add(virtualNodeId);
+                        console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
+                    }
                 }
 
                 edges.push(edge);
             });
         });
-
-        // Add virtual nodes for dangling edges
-        console.log(`[Graph] Virtual nodes needed:`, Array.from(virtualNodesNeeded));
-        
-        if (virtualNodesNeeded.has('virtual_pending')) {
-            nodes.push({
-                id: 'virtual_pending',
-                label: '[Chưa làm]',
-                color: '#999999',
-                shape: 'box',
-                font: { color: '#fff', size: 14 },
-                borderWidth: 2,
-                borderColor: '#999999',
-                data: { isVirtual: true, type: 'pending' }
-            });
-            console.log(`[Graph] Created virtual_pending node`);
-        }
-
-        if (virtualNodesNeeded.has('virtual_in_progress')) {
-            nodes.push({
-                id: 'virtual_in_progress',
-                label: '[Đang làm]',
-                color: '#ffc107',
-                shape: 'box',
-                font: { color: '#fff', size: 14 },
-                borderWidth: 2,
-                borderColor: '#ffc107',
-                data: { isVirtual: true, type: 'in_progress' }
-            });
-            console.log(`[Graph] Created virtual_in_progress node`);
-        }
-
-        if (virtualNodesNeeded.has('virtual_done')) {
-            nodes.push({
-                id: 'virtual_done',
-                label: '[Done]',
-                color: '#00aaff',
-                shape: 'box',
-                font: { color: '#fff', size: 14 },
-                borderWidth: 2,
-                borderColor: '#00aaff',
-                data: { isVirtual: true, type: 'done' }
-            });
-            console.log(`[Graph] Created virtual_done node`);
-        }
         
         console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
 
