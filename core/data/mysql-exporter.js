@@ -472,14 +472,10 @@ export class MySQLExporter {
                     }
                 }
                 
-                let metadataToSave = {};
-                if (localPos) {
-                    metadataToSave.local_pos = localPos;
-                }
-                if (globalPos) {
-                    metadataToSave.global_pos = globalPos;
-                }
+                // Lưu toàn bộ item.metadata vào DB
+                let metadataToSave = item.metadata ? { ...item.metadata } : {};
                 
+                // Bổ sung clicks cho ACTION items nếu có
                 if (item.item_category === 'ACTION') {
                     const clicks = allClicks
                         .filter(c => c.action_item_id === item.item_id)
