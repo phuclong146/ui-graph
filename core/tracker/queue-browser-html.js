@@ -1231,6 +1231,12 @@ export const QUEUE_BROWSER_HTML = `
           View Graph
         </h3>
         <div style="display:flex; gap:10px; align-items:center;">
+          <button id="toggleGraphPanelLogBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 12px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;" title="Ẩn/Hiện Panel Log">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            <span>Panel Log</span>
+          </button>
           <button id="graphFitToScreenBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🔍 Fit to Screen</button>
           <button id="closeGraphViewBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
@@ -2168,6 +2174,31 @@ export const QUEUE_BROWSER_HTML = `
           return;
         }
         graphViewModal.style.display = 'flex';
+        
+        // Restore panel log visibility state
+        const graphPanelLogTreeContainer = document.getElementById('graphPanelLogTreeContainer');
+        const toggleGraphPanelLogBtn = document.getElementById('toggleGraphPanelLogBtn');
+        if (graphPanelLogTreeContainer && toggleGraphPanelLogBtn) {
+          const savedState = getLocalStorage('graph-panel-log-visible');
+          const isVisible = savedState === null ? true : savedState === 'true';
+          
+          if (!isVisible) {
+            graphPanelLogTreeContainer.style.display = 'none';
+            // Update button icon to chevron-right (show)
+            const svg = toggleGraphPanelLogBtn.querySelector('svg');
+            if (svg) {
+              svg.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+            }
+          } else {
+            graphPanelLogTreeContainer.style.display = 'flex';
+            // Update button icon to chevron-left (hide)
+            const svg = toggleGraphPanelLogBtn.querySelector('svg');
+            if (svg) {
+              svg.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+            }
+          }
+        }
+        
         if (window.viewGraph) {
           await window.viewGraph();
         }
@@ -2194,6 +2225,35 @@ export const QUEUE_BROWSER_HTML = `
         closeGraphInfoBtn.addEventListener('click', () => {
           if (graphInfoPanel) {
             graphInfoPanel.style.display = 'none';
+          }
+        });
+      }
+
+      // Toggle Panel Log visibility
+      const toggleGraphPanelLogBtn = document.getElementById('toggleGraphPanelLogBtn');
+      const graphPanelLogTreeContainer = document.getElementById('graphPanelLogTreeContainer');
+      if (toggleGraphPanelLogBtn && graphPanelLogTreeContainer) {
+        toggleGraphPanelLogBtn.addEventListener('click', () => {
+          const isCurrentlyVisible = graphPanelLogTreeContainer.style.display !== 'none';
+          
+          if (isCurrentlyVisible) {
+            // Hide panel log
+            graphPanelLogTreeContainer.style.display = 'none';
+            setLocalStorage('graph-panel-log-visible', 'false');
+            // Update button icon to chevron-right (to show)
+            const svg = toggleGraphPanelLogBtn.querySelector('svg');
+            if (svg) {
+              svg.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+            }
+          } else {
+            // Show panel log
+            graphPanelLogTreeContainer.style.display = 'flex';
+            setLocalStorage('graph-panel-log-visible', 'true');
+            // Update button icon to chevron-left (to hide)
+            const svg = toggleGraphPanelLogBtn.querySelector('svg');
+            if (svg) {
+              svg.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+            }
           }
         });
       }
