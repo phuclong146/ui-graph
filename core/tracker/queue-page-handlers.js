@@ -5774,6 +5774,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             infoPanel.style.display = 'flex';
 
+            // Update header title
+            const headerTitle = infoPanel.querySelector('h4');
+            if (headerTitle) {
+                headerTitle.textContent = 'Panel info';
+            }
+
             let imageHtml = '';
             if (imageBase64) {
                 if (globalPos) {
@@ -5787,7 +5793,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             infoContent.innerHTML = `
-                <h3 style="margin-top:0; color:#fff;">Panel Info</h3>
                 <p><strong>Name:</strong> ${panelData.name || 'N/A'}</p>
                 <p><strong>Type:</strong> ${panelData.type || 'N/A'}</p>
                 <p><strong>Verb:</strong> ${panelData.verb || 'N/A'}</p>
@@ -5974,6 +5979,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             infoPanel.style.display = 'flex';
 
+            // Update header title
+            const headerTitle = infoPanel.querySelector('h4');
+            if (headerTitle) {
+                headerTitle.textContent = 'Step info';
+            }
+
             let panelBeforeHtml = '';
             let panelAfterHtml = '';
             let actionInfoHtml = '';
@@ -6029,7 +6040,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             infoContent.innerHTML = `
-                <h3 style="margin-top:0; margin-bottom:15px; color:#fff; text-align:center;">Step Info</h3>
                 <div id="stepInfoContainer" style="display:flex; flex-direction:row; gap:15px; align-items:flex-start; min-width:max-content;">
                     <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                         ${panelBeforeHtml}
@@ -6268,8 +6278,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             `;
         }
 
+        // Update header title
+        const headerTitle = infoPanel.querySelector('h4');
+        if (headerTitle) {
+            headerTitle.textContent = 'Step info';
+        }
+
         infoContent.innerHTML = `
-            <h3 style="margin-top:0; margin-bottom:15px; color:#fff; text-align:center;">Step Info</h3>
             <div id="stepInfoContainer" style="display:flex; flex-direction:row; gap:15px; align-items:flex-start; min-width:max-content;">
                 <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                     ${panelBeforeHtml}
