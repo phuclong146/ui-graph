@@ -32,6 +32,7 @@ export const QUEUE_BROWSER_HTML = `
         overflow-y: auto;
         padding: 10px 0 10px 0;
         position: relative;
+        margin-top: -10px;
       }
       
       #panel-log-resizer {
@@ -80,13 +81,16 @@ export const QUEUE_BROWSER_HTML = `
       
       #panel-tree-container h3 {
         margin: 0 0 10px 0;
-        padding: 0 10px;
+        padding: 10px 10px;
         font-size: 14px;
         color: #666;
         display: flex;
         justify-content: space-between;
         align-items: center;
         position: relative;
+        height: 40px;
+        box-sizing: border-box;
+        line-height: 20px;
       }
       
       #panel-log-refresh-btn {
@@ -151,8 +155,8 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #panel-log-show-mode-btn img {
-        width: 32px;
-        height: 32px;
+        width: 24px;
+        height: 24px;
         display: block;
       }
       
@@ -276,6 +280,9 @@ export const QUEUE_BROWSER_HTML = `
         position: sticky;
         top: 0;
         z-index: 10;
+        align-items: center;
+        height: 40px;
+        box-sizing: border-box;
       }
 
       #controls button {
@@ -889,7 +896,7 @@ export const QUEUE_BROWSER_HTML = `
           <span>Panel Log</span>
           <div style="display: flex; gap: 4px; align-items: center;">
             <button id="panel-log-show-mode-btn" title="Switch to Tree Mode">
-              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />
+              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />
             </button>
             <button id="panel-log-refresh-btn" title="Refresh Panel Log">🔄</button>
           </div>
@@ -3713,11 +3720,11 @@ Bạn có chắc chắn muốn rollback?\`;
         
         if (panelLogDisplayMode === 'log') {
           // Show tree icon when in log mode (to switch to tree mode)
-          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
         } else {
           // Show list icon when in tree mode (to switch to log mode)
-          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
