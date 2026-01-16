@@ -1279,7 +1279,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       // Panel log display mode: 'log' or 'tree'
-      let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
+      let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'tree';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
 
