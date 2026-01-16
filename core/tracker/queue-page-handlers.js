@@ -3825,9 +3825,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const getPanelTreeHandler = async () => {
+    const getPanelTreeHandler = async (mode = 'log') => {
         try {
             if (!tracker.panelLogManager) return [];
+            if (mode === 'tree') {
+                return await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+            }
             return await tracker.panelLogManager.buildTreeStructure();
         } catch (err) {
             console.error('Failed to get panel tree:', err);

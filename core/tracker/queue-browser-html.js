@@ -96,7 +96,7 @@ export const QUEUE_BROWSER_HTML = `
         border-radius: 6px;
         padding: 4px 8px;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 24px;
         font-weight: 500;
         transition: color 0.2s ease;
         display: inline-flex;
@@ -116,6 +116,44 @@ export const QUEUE_BROWSER_HTML = `
         opacity: 0.6;
         cursor: not-allowed;
         pointer-events: none;
+      }
+      
+      #panel-log-show-mode-btn {
+        background: transparent;
+        color: #666;
+        border: none;
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: color 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 48px;
+        height: 48px;
+      }
+      
+      #panel-log-show-mode-btn:hover {
+        color: #007bff;
+      }
+      
+      #panel-log-show-mode-btn:active {
+        transform: scale(0.95);
+      }
+      
+      #panel-log-show-mode-btn svg {
+        width: 32px;
+        height: 32px;
+        fill: currentColor;
+      }
+      
+      #panel-log-show-mode-btn img {
+        width: 32px;
+        height: 32px;
+        display: block;
       }
       
       .tree-node {
@@ -849,7 +887,12 @@ export const QUEUE_BROWSER_HTML = `
       <div id="panel-tree-container">
         <h3>
           <span>Panel Log</span>
-          <button id="panel-log-refresh-btn" title="Refresh Panel Log">🔄</button>
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <button id="panel-log-show-mode-btn" title="Switch to Tree Mode">
+              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />
+            </button>
+            <button id="panel-log-refresh-btn" title="Refresh Panel Log">🔄</button>
+          </div>
         </h3>
         <div id="panel-tree"></div>
         <div id="panel-log-resizer"></div>
@@ -1209,6 +1252,27 @@ export const QUEUE_BROWSER_HTML = `
       let panelTreeData = [];
       let selectedPanelId = null;
       let expandedPanels = new Set();
+      
+      // Helper functions for localStorage
+      function getLocalStorage(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          console.warn('localStorage not available:', e.message);
+          return null;
+        }
+      }
+      
+      function setLocalStorage(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {
+          console.warn('localStorage not available:', e.message);
+        }
+      }
+      
+      // Panel log display mode: 'log' or 'tree'
+      let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
 
@@ -1228,8 +1292,22 @@ export const QUEUE_BROWSER_HTML = `
         const evt = JSON.parse(msg.data);
         
         if (evt.type === 'tree_update') {
-          panelTreeData = evt.data || [];
-          renderPanelTree();
+          // If we're in tree mode, reload data with tree mode
+          // (tree_update from server is always log mode)
+          if (panelLogDisplayMode === 'tree' && window.getPanelTree) {
+            window.getPanelTree(panelLogDisplayMode).then(data => {
+              panelTreeData = data || [];
+              renderPanelTree();
+            }).catch(err => {
+              console.error('Failed to reload tree with tree mode:', err);
+              // Fallback to received data
+              panelTreeData = evt.data || [];
+              renderPanelTree();
+            });
+          } else {
+            panelTreeData = evt.data || [];
+            renderPanelTree();
+          }
           
           // Check for changes after panel log is loaded
           setTimeout(() => {
@@ -2397,6 +2475,11 @@ Bạn có chắc chắn muốn rollback?\`;
         contentDiv.setAttribute('data-panel-id', node.panel_id);
         if (selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
+        }
+        
+        // Add padding-left for child panels (20px per level)
+        if (depth > 0) {
+          contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
         
         const expandIcon = document.createElement('span');
@@ -3623,9 +3706,40 @@ Bạn có chắc chắn muốn rollback?\`;
         }
       }
       
+      // Update showMode button icon based on current mode
+      function updateShowModeButton() {
+        const showModeBtn = document.getElementById('panel-log-show-mode-btn');
+        if (!showModeBtn) return;
+        
+        if (panelLogDisplayMode === 'log') {
+          // Show tree icon when in log mode (to switch to tree mode)
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.title = 'Switch to Tree Mode';
+        } else {
+          // Show list icon when in tree mode (to switch to log mode)
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 32px; height: 32px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.title = 'Switch to Log Mode';
+        }
+      }
+      
+      // Toggle display mode between 'log' and 'tree'
+      async function togglePanelLogDisplayMode() {
+        panelLogDisplayMode = panelLogDisplayMode === 'log' ? 'tree' : 'log';
+        setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+        updateShowModeButton();
+        
+        // Reload tree data with new mode
+        if (window.getPanelTree) {
+          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+          renderPanelTree();
+          const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+          showToast('✅ Switched to ' + modeText + ' Mode');
+        }
+      }
+      
       async function loadInitialTree() {
         if (window.getPanelTree) {
-          panelTreeData = await window.getPanelTree();
+          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
           renderPanelTree();
         }
       }
@@ -3641,7 +3755,7 @@ Bạn có chắc chắn muốn rollback?\`;
         
         try {
           if (window.getPanelTree) {
-            panelTreeData = await window.getPanelTree();
+            panelTreeData = await window.getPanelTree(panelLogDisplayMode);
             renderPanelTree();
             showToast('✅ Panel Log đã được cập nhật');
           } else {
@@ -3661,6 +3775,14 @@ Bạn có chắc chắn muốn rollback?\`;
       const panelLogRefreshBtn = document.getElementById('panel-log-refresh-btn');
       if (panelLogRefreshBtn) {
         panelLogRefreshBtn.addEventListener('click', refreshPanelTree);
+      }
+      
+      // Thêm event listener cho nút showMode
+      const panelLogShowModeBtn = document.getElementById('panel-log-show-mode-btn');
+      if (panelLogShowModeBtn) {
+        panelLogShowModeBtn.addEventListener('click', togglePanelLogDisplayMode);
+        // Initialize button icon
+        updateShowModeButton();
       }
       
       setTimeout(loadInitialTree, 1000);
