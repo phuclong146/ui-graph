@@ -5844,6 +5844,69 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }, panelData, imageBase64, globalPos);
     };
 
+    // Helper function to find panel containing an action
+    const findPanelForAction = async (actionId) => {
+        try {
+            const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
+            const content = await fsp.readFile(parentPath, 'utf8');
+            const allParents = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            // First, check direct child_actions
+            for (const entry of allParents) {
+                if (entry.child_actions && entry.child_actions.includes(actionId)) {
+                    return entry.parent_panel;
+                }
+
+                // Also check child_pages for actions
+                if (entry.child_pages) {
+                    for (const page of entry.child_pages) {
+                        if (page.child_actions && page.child_actions.includes(actionId)) {
+                            return entry.parent_panel;
+                        }
+                    }
+                }
+            }
+
+            // If not found in direct child_actions, check recursively in child_panels
+            const checkChildPanels = async (panelId) => {
+                const entry = allParents.find(p => p.parent_panel === panelId);
+                if (!entry) return null;
+
+                // Check if this panel's child_panels contain the action
+                if (entry.child_panels && entry.child_panels.length > 0) {
+                    for (const childPanelId of entry.child_panels) {
+                        const childEntry = allParents.find(p => p.parent_panel === childPanelId);
+                        if (childEntry) {
+                            if (childEntry.child_actions && childEntry.child_actions.includes(actionId)) {
+                                return childPanelId;
+                            }
+                            // Recursively check nested child_panels
+                            const nestedResult = await checkChildPanels(childPanelId);
+                            if (nestedResult) return nestedResult;
+                        }
+                    }
+                }
+                return null;
+            };
+
+            // Check all root panels (panels that are not child_panels of others)
+            for (const entry of allParents) {
+                const isChildPanel = allParents.some(p => p.child_panels && p.child_panels.includes(entry.parent_panel));
+                if (!isChildPanel) {
+                    const result = await checkChildPanels(entry.parent_panel);
+                    if (result) return result;
+                }
+            }
+
+            return null;
+        } catch (err) {
+            console.error('Error finding panel for action:', err);
+            return null;
+        }
+    };
+
     const showStepInfoHandler = async (edgeData, nodesData) => {
         // Load images in Node.js context
         let panelBeforeImage = null;
@@ -5859,8 +5922,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         };
 
         // Panel Before
-        if (step?.panel_before?.item_id) {
-            const panelBeforeNode = nodesData.find(n => n.id === step.panel_before.item_id);
+        let panelBeforeId = step?.panel_before?.item_id;
+        
+        // If doing_step doesn't have panel_before, find panel containing the action
+        if (!panelBeforeId && edgeData.actionId) {
+            panelBeforeId = await findPanelForAction(edgeData.actionId);
+        }
+
+        if (panelBeforeId) {
+            const panelBeforeNode = nodesData.find(n => n.id === panelBeforeId);
             if (panelBeforeNode && panelBeforeNode.data) {
                 if (panelBeforeNode.data.fullscreen_base64) {
                     panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.fullscreen_base64);
@@ -5883,7 +5953,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
 
         // Get positions
-        const panelBeforeNode = step?.panel_before?.item_id ? nodesData.find(n => n.id === step.panel_before.item_id) : null;
+        const panelBeforeNode = panelBeforeId ? nodesData.find(n => n.id === panelBeforeId) : null;
         const panelBeforePos = panelBeforeNode?.data?.metadata?.global_pos;
         const panelAfterNode = step?.panel_after?.item_id ? nodesData.find(n => n.id === step.panel_after.item_id) : null;
         const panelAfterPos = panelAfterNode?.data?.metadata?.global_pos;
@@ -5908,13 +5978,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let panelAfterHtml = '';
             let actionInfoHtml = '';
 
-            // Panel Before
+            // Panel Before - always show frame, even if no data
             if (panelBeforeImage) {
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
                     <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
                         <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
                         <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                    </div>
+                `;
+            } else {
+                panelBeforeHtml = `
+                    <h4 style="color:#fff;">Panel Before</h4>
+                    <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                        <p style="color:#888; margin:0; text-align:center;">No information available</p>
                     </div>
                 `;
             }
@@ -5928,7 +6005,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 <p><strong>Purpose:</strong> ${actionItem.purpose || 'N/A'}</p>
             `;
 
-            // Panel After
+            // Panel After - always show frame, even if no data
             if (panelAfterImage) {
                 if (panelAfterPos) {
                     panelAfterHtml = `
@@ -5942,6 +6019,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         <h4 style="color:#fff;">Panel After</h4>
                         <img src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
                 }
+            } else {
+                panelAfterHtml = `
+                    <h4 style="color:#fff;">Panel After</h4>
+                    <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                        <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                    </div>
+                `;
             }
 
             infoContent.innerHTML = `
@@ -6077,7 +6161,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         let panelAfterHtml = '';
         let actionInfoHtml = '';
 
-        // Panel Before
+        // Panel Before - always show frame, even if no data
         if (step?.panel_before?.item_id) {
             const panelBefore = itemMap.get(step.panel_before.item_id);
             if (panelBefore) {
@@ -6100,8 +6184,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                         </div>
                     `;
+                } else {
+                    panelBeforeHtml = `
+                        <h4 style="color:#fff;">Panel Before</h4>
+                        <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                            <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                        </div>
+                    `;
                 }
+            } else {
+                panelBeforeHtml = `
+                    <h4 style="color:#fff;">Panel Before</h4>
+                    <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                        <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                    </div>
+                `;
             }
+        } else {
+            panelBeforeHtml = `
+                <h4 style="color:#fff;">Panel Before</h4>
+                <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                    <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                </div>
+            `;
         }
 
         // Action Info
@@ -6113,7 +6218,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             <p><strong>Purpose:</strong> ${actionItem.purpose || 'N/A'}</p>
         `;
 
-        // Panel After
+        // Panel After - always show frame, even if no data
         if (step?.panel_after?.item_id) {
             const panelAfter = itemMap.get(step.panel_after.item_id);
             if (panelAfter) {
@@ -6138,16 +6243,49 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             <h4 style="color:#fff;">Panel After</h4>
                             <img src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
                     }
+                } else {
+                    panelAfterHtml = `
+                        <h4 style="color:#fff;">Panel After</h4>
+                        <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                            <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                        </div>
+                    `;
                 }
+            } else {
+                panelAfterHtml = `
+                    <h4 style="color:#fff;">Panel After</h4>
+                    <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                        <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                    </div>
+                `;
             }
+        } else {
+            panelAfterHtml = `
+                <h4 style="color:#fff;">Panel After</h4>
+                <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
+                    <p style="color:#888; margin:0; text-align:center;">No information available</p>
+                </div>
+            `;
         }
 
         infoContent.innerHTML = `
-            <h3 style="margin-top:0; color:#fff;">Step Info</h3>
-            ${panelBeforeHtml}
-            ${actionInfoHtml}
-            ${panelAfterHtml}
+            <h3 style="margin-top:0; margin-bottom:15px; color:#fff; text-align:center;">Step Info</h3>
+            <div id="stepInfoContainer" style="display:flex; flex-direction:row; gap:15px; align-items:flex-start; min-width:max-content;">
+                <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
+                    ${panelBeforeHtml}
+                </div>
+                <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                    ${actionInfoHtml}
+                </div>
+                <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
+                    ${panelAfterHtml}
+                </div>
+            </div>
         `;
+        
+        // Make images resizable and add horizontal scroll
+        infoContent.style.overflowX = 'auto';
+        infoContent.style.overflowY = 'auto';
 
         // Draw borders after HTML is set
         if (step?.panel_before?.item_id) {
