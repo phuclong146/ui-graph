@@ -854,6 +854,152 @@ export const QUEUE_BROWSER_HTML = `
         width: 4px;
       }
       
+      #graphPanelLogTreeContainer {
+        width: 300px;
+        min-width: 200px;
+        max-width: 40vw;
+        background: #2a2a2a;
+        border-right: 1px solid #333;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      
+      #graphPanelLogTreeResizer {
+        position: absolute;
+        right: -6px;
+        top: 0;
+        width: 12px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 1000;
+        user-select: none;
+        touch-action: none;
+      }
+      
+      #graphPanelLogTreeResizer:hover {
+        background: rgba(0, 123, 255, 0.1);
+      }
+      
+      #graphPanelLogTreeResizer.resizing {
+        background: rgba(0, 123, 255, 0.2);
+      }
+      
+      #graphPanelLogTreeResizer::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #555;
+        transform: translateX(-50%);
+        transition: all 0.2s ease;
+      }
+      
+      #graphPanelLogTreeResizer:hover::before {
+        background: #007bff;
+        width: 3px;
+      }
+      
+      #graphPanelLogTreeResizer.resizing::before {
+        background: #007bff;
+        width: 4px;
+      }
+      
+      #graphPanelLogTree {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px 0;
+      }
+      
+      .graph-tree-node {
+      }
+      
+      .graph-tree-node-content {
+        display: flex;
+        align-items: center;
+        padding: 4px 4px 4px 4px;
+        cursor: pointer;
+        border-radius: 4px;
+        font-size: 13px;
+        user-select: none;
+        color: #fff;
+      }
+      
+      .graph-tree-node-content:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      
+      .graph-tree-node-content.selected {
+        background: rgba(0, 123, 255, 0.3);
+      }
+      
+      .graph-tree-expand {
+        width: 12px;
+        height: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 0px;
+        font-size: 10px;
+        cursor: pointer;
+        color: #fff;
+      }
+      
+      .graph-tree-node-dot {
+        margin-right: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        position: relative;
+      }
+      
+      .graph-tree-node-dot svg {
+        width: 100%;
+        height: 100%;
+      }
+      
+      .graph-tree-label {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #fff;
+      }
+      
+      .graph-tree-incomplete-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 6px;
+        background: rgba(255, 193, 7, 0.3);
+        color: #ffc107;
+        border: 1px solid #ffc107;
+      }
+      
+      .graph-tree-children {
+        display: none;
+      }
+      
+      .graph-tree-children.expanded {
+        display: block;
+      }
+      
+      .graph-tree-children.level-1 {
+        padding-left: 4px;
+      }
+      
+      .graph-tree-children.level-2 {
+        padding-left: 4px;
+      }
+      
       #stepInfoContainer {
         display: flex;
         flex-direction: row;
@@ -1090,6 +1236,14 @@ export const QUEUE_BROWSER_HTML = `
         </div>
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
+        <div id="graphPanelLogTreeContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
+          <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+            <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
+          </div>
+          <div id="graphPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
+          </div>
+        </div>
         <div id="graphContainer" style="flex:1; position:relative; background:#1a1a1a;"></div>
         <div id="graphInfoPanel" style="min-width:400px; max-width:90vw; background:#2a2a2a; border-left:1px solid #333; overflow:hidden; display:none; flex-direction:column; position:relative;">
           <div id="graphInfoResizer" style="position:absolute; left:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
@@ -2005,6 +2159,8 @@ export const QUEUE_BROWSER_HTML = `
       const graphInfoPanel = document.getElementById('graphInfoPanel');
       const closeGraphInfoBtn = document.getElementById('closeGraphInfoBtn');
       let graphNetwork = null;
+      let graphPanelTreeData = [];
+      let graphExpandedPanels = new Set();
 
       const openGraphView = async () => {
         if (!graphViewModal) {
@@ -2094,6 +2250,224 @@ export const QUEUE_BROWSER_HTML = `
             document.body.style.userSelect = '';
           }
         });
+      }
+
+      // Graph Panel Log Tree functions
+      async function loadGraphPanelTree() {
+        if (window.graphPanelTreeData) {
+          graphPanelTreeData = window.graphPanelTreeData;
+          renderGraphPanelTree();
+        }
+      }
+      
+      // Expose to window for access from evaluate context
+      window.loadGraphPanelTree = loadGraphPanelTree;
+
+      function renderGraphPanelTree() {
+        const treeContainer = document.getElementById('graphPanelLogTree');
+        if (!treeContainer) return;
+        
+        treeContainer.innerHTML = '';
+        graphPanelTreeData.forEach(node => {
+          treeContainer.appendChild(createGraphTreeNode(node, 0));
+        });
+      }
+
+      function createGraphTreeNode(node, depth) {
+        const nodeDiv = document.createElement('div');
+        nodeDiv.className = 'graph-tree-node';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'graph-tree-node-content';
+        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        
+        // Add padding-left for child panels (20px per level)
+        if (depth > 0) {
+          contentDiv.style.paddingLeft = (20 * depth) + 'px';
+        }
+        
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'graph-tree-expand';
+        if (node.item_category === 'PANEL') {
+          if (node.children && node.children.length > 0) {
+            expandIcon.textContent = '▶';
+          } else {
+            expandIcon.textContent = '';
+            expandIcon.style.visibility = 'hidden';
+          }
+        } else {
+          expandIcon.textContent = '';
+          expandIcon.style.visibility = 'hidden';
+        }
+        contentDiv.appendChild(expandIcon);
+        
+        const nodeDot = document.createElement('span');
+        nodeDot.className = 'graph-tree-node-dot';
+        if (node.item_category === 'ACTION') {
+          nodeDot.style.marginLeft = '8px';
+        }
+        
+        let dotColor;
+        if (node.item_category === 'PANEL') {
+          const isIncomplete = node.draw_flow_state !== null && 
+                              node.draw_flow_state !== undefined && 
+                              node.draw_flow_state !== 'completed';
+          dotColor = isIncomplete ? '#ff9800' : '#4caf50';
+        } else {
+          const hasIntersections = node.hasIntersections || false;
+          dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        }
+        
+        let originalDotHTML;
+        if (node.status === 'completed') {
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
+            '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>';
+        } else {
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
+            '</svg>';
+        }
+        nodeDot.innerHTML = originalDotHTML;
+        contentDiv.appendChild(nodeDot);
+        
+        const label = document.createElement('span');
+        label.className = 'graph-tree-label';
+        
+        const isIncomplete = node.item_category === 'PANEL' && 
+                            node.draw_flow_state !== null && 
+                            node.draw_flow_state !== undefined && 
+                            node.draw_flow_state !== 'completed';
+        
+        if (isIncomplete) {
+          const warningIcon = document.createElement('span');
+          warningIcon.textContent = '⚠️ ';
+          warningIcon.style.marginRight = '4px';
+          label.appendChild(warningIcon);
+        }
+        
+        const nameText = document.createTextNode(node.name || 'Item');
+        label.appendChild(nameText);
+        
+        if (isIncomplete) {
+          const badge = document.createElement('span');
+          badge.className = 'graph-tree-incomplete-badge';
+          badge.textContent = '[Chưa hoàn tất]';
+          label.appendChild(badge);
+        }
+        
+        contentDiv.appendChild(label);
+        nodeDiv.appendChild(contentDiv);
+        
+        if (node.children && node.children.length > 0) {
+          const childrenDiv = document.createElement('div');
+          childrenDiv.className = 'graph-tree-children';
+          
+          if (depth === 0) {
+            childrenDiv.classList.add('level-1');
+          } else {
+            childrenDiv.classList.add('level-2');
+          }
+          
+          if (graphExpandedPanels.has(node.panel_id)) {
+            childrenDiv.classList.add('expanded');
+            expandIcon.textContent = '▼';
+          }
+          
+          node.children.forEach(child => {
+            childrenDiv.appendChild(createGraphTreeNode(child, depth + 1));
+          });
+          nodeDiv.appendChild(childrenDiv);
+          
+          expandIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            childrenDiv.classList.toggle('expanded');
+            expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
+            
+            if (childrenDiv.classList.contains('expanded')) {
+              graphExpandedPanels.add(node.panel_id);
+            } else {
+              graphExpandedPanels.delete(node.panel_id);
+            }
+          });
+        }
+        
+        contentDiv.addEventListener('click', async () => {
+          // Remove selected class from all nodes
+          const treeContainer = document.getElementById('graphPanelLogTree');
+          if (treeContainer) {
+            treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
+              el.classList.remove('selected');
+            });
+          }
+          contentDiv.classList.add('selected');
+          
+          if (node.item_category === 'PANEL') {
+            // Find node in graph and show panel info
+            if (window.graphNodesData) {
+              const graphNode = window.graphNodesData.find(n => 
+                n.data && n.data.itemId === node.panel_id
+              );
+              if (graphNode && graphNode.data && window.showPanelInfoGraph) {
+                await window.showPanelInfoGraph(graphNode.data);
+              }
+            }
+          } else if (node.item_category === 'ACTION') {
+            // Find edge in graph and show step info
+            if (window.graphEdgesData && window.graphNodesData) {
+              const graphEdge = window.graphEdgesData.find(e => 
+                e.data && e.data.actionId === node.panel_id
+              );
+              if (graphEdge && graphEdge.data && window.showStepInfoGraph) {
+                await window.showStepInfoGraph(graphEdge.data, window.graphNodesData);
+              }
+            }
+          }
+        });
+        
+        return nodeDiv;
+      }
+
+      // Graph Panel Log Tree Resizer
+      const graphPanelLogTreeResizer = document.getElementById('graphPanelLogTreeResizer');
+      if (graphPanelLogTreeResizer) {
+        const graphPanelLogTreeContainer = document.getElementById('graphPanelLogTreeContainer');
+        if (graphPanelLogTreeContainer) {
+          let isResizing = false;
+          let startX = 0;
+          let startWidth = 0;
+
+          graphPanelLogTreeResizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = parseInt(window.getComputedStyle(graphPanelLogTreeContainer).width, 10);
+            graphPanelLogTreeResizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+          });
+
+          document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const diff = e.clientX - startX;
+            const newWidth = startWidth + diff;
+            const minWidth = 200;
+            const maxWidth = window.innerWidth * 0.4;
+            if (newWidth >= minWidth && newWidth <= maxWidth) {
+              graphPanelLogTreeContainer.style.width = newWidth + 'px';
+            }
+          });
+
+          document.addEventListener('mouseup', () => {
+            if (isResizing) {
+              isResizing = false;
+              graphPanelLogTreeResizer.classList.remove('resizing');
+              document.body.style.cursor = '';
+              document.body.style.userSelect = '';
+            }
+          });
+        }
       }
 
       const checkpointBtn = document.getElementById("checkpointBtn");

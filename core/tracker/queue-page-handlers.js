@@ -5136,6 +5136,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const viewGraphHandler = async () => {
         try {
+            // Load panel tree data in Node.js context
+            let panelTreeData = [];
+            if (tracker.panelLogManager) {
+                panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+            }
+            
             // Load data in Node.js context
             const { nodes, edges, itemMap, stepMap } = await buildGraphStructure();
 
@@ -5206,7 +5212,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }));
 
             // Render graph in browser context
-            await tracker.queuePage.evaluate(async (nodesData, edgesData) => {
+            await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData) => {
                 const graphContainer = document.getElementById('graphContainer');
                 if (!graphContainer) {
                     console.error('graphContainer not found');
@@ -5579,7 +5585,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         const infoItem = document.createElement('div');
                         infoItem.className = 'context-menu-item';
                         infoItem.style.cssText = 'padding: 8px 16px; cursor: pointer; font-size: 13px;';
-                        infoItem.textContent = 'ℹ️ Show Info';
+                        infoItem.textContent = 'ℹ️ Panel Info';
                         infoItem.onmouseover = () => infoItem.style.background = '#f0f0f0';
                         infoItem.onmouseout = () => infoItem.style.background = '';
                         
@@ -5719,7 +5725,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         console.log('[Graph] No node found for context menu. Try clicking on a node first, then right-click.');
                     }
                 });
-            }, nodesData, edgesData);
+                
+                // Store panel tree data and nodes/edges data globally for tree click handlers
+                window.graphPanelTreeData = panelTreeData;
+                window.graphNodesData = nodesData;
+                window.graphEdgesData = edgesData;
+                
+                // Load and render panel tree
+                if (window.loadGraphPanelTree) {
+                    await window.loadGraphPanelTree();
+                }
+            }, nodesData, edgesData, panelTreeData);
 
         } catch (err) {
             console.error('Failed to render graph:', err);
