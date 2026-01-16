@@ -296,9 +296,16 @@ export class PanelScreenTracker {
         try {
             const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
             if (!enable) {
+                console.log(`[RECORD] ⏸️  Recording disabled (RECORD_PANEL=${ENV.RECORD_PANEL})`);
                 return;
             }
+            
+            console.log(`[RECORD] 🔍 Checking recording status for panel: ${panelId}`);
+            console.log(`[RECORD]    Current recording: ${this.isRecordingPanel ? 'YES' : 'NO'}`);
+            console.log(`[RECORD]    Current recording ID: ${this.recordingPanelId || 'NONE'}`);
+            
             if (this.isRecordingPanel && this.recordingPanelId !== panelId) {
+                console.log(`[RECORD] ⚠️  Another recording in progress (${this.recordingPanelId}), cancelling...`);
                 await this.cancelPanelRecording();
             }
             
@@ -306,6 +313,7 @@ export class PanelScreenTracker {
                 const { promises: fsp } = await import('fs');
                 this.panelRecordFolder = path.join(this.sessionFolder, 'panel_record');
                 await fsp.mkdir(this.panelRecordFolder, { recursive: true });
+                console.log(`[RECORD] 📁 Created recording folder: ${this.panelRecordFolder}`);
             }
             
             const { PuppeteerScreenRecorder } = await import('puppeteer-screen-recorder');
@@ -321,23 +329,38 @@ export class PanelScreenTracker {
                 highlightStyle: 'highlight',
             };
             
+            console.log(`[RECORD] ⚙️  Video options:`, JSON.stringify(videoOptions, null, 2));
+            
             this.panelRecorder = new PuppeteerScreenRecorder(this.page, videoOptions);
             const panelVideoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
+            
+            console.log(`[RECORD] 🎬 Starting recording...`);
+            console.log(`[RECORD]    Panel ID: ${panelId}`);
+            console.log(`[RECORD]    Video path: ${panelVideoPath}`);
             
             await this.panelRecorder.start(panelVideoPath);
             this.isRecordingPanel = true;
             this.recordingPanelId = panelId;
             this.panelRecordingStartTime = Date.now();
-            console.log(`🎬 Start recording user action for this panel: ${panelId}`);
+            
+            const startTimeStr = new Date(this.panelRecordingStartTime).toISOString();
+            console.log(`[RECORD] ✅ Recording started successfully`);
+            console.log(`[RECORD]    Start time: ${startTimeStr} (${this.panelRecordingStartTime})`);
+            console.log(`[RECORD]    Status: isRecordingPanel=${this.isRecordingPanel}, recordingPanelId=${this.recordingPanelId}`);
         } catch (err) {
-            console.error('Failed to start panel recording:', err);
+            console.error(`[RECORD] ❌ Failed to start panel recording for ${panelId}:`, err);
+            console.error(`[RECORD]    Error details:`, err.message, err.stack);
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
         }
     }
     
     async stopPanelRecording() {
+        console.log(`[RECORD] 🛑 Stop recording requested`);
+        console.log(`[RECORD]    Status check: isRecordingPanel=${this.isRecordingPanel}, hasRecorder=${!!this.panelRecorder}, recordingPanelId=${this.recordingPanelId || 'NONE'}`);
+        
         if (!this.isRecordingPanel || !this.panelRecorder || !this.recordingPanelId) {
+            console.log(`[RECORD] ⏭️  No active recording to stop`);
             return null;
         }
         
@@ -345,19 +368,43 @@ export class PanelScreenTracker {
             const sessionStart = this.panelRecordingStartTime;
             const sessionEnd = Date.now();
             const panelId = this.recordingPanelId;
+            const duration = sessionEnd - sessionStart;
+            const durationSeconds = (duration / 1000).toFixed(2);
             
+            console.log(`[RECORD] 📊 Recording info:`);
+            console.log(`[RECORD]    Panel ID: ${panelId}`);
+            console.log(`[RECORD]    Start time: ${new Date(sessionStart).toISOString()} (${sessionStart})`);
+            console.log(`[RECORD]    End time: ${new Date(sessionEnd).toISOString()} (${sessionEnd})`);
+            console.log(`[RECORD]    Duration: ${durationSeconds}s (${duration}ms)`);
+            
+            console.log(`[RECORD] ⏹️  Stopping recorder...`);
             await this.panelRecorder.stop();
+            
             const videoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
+            console.log(`[RECORD]    Video path: ${videoPath}`);
+            
+            // Check if file exists
+            const { promises: fsp } = await import('fs');
+            try {
+                const stats = await fsp.stat(videoPath);
+                const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+                console.log(`[RECORD]    File size: ${fileSizeMB} MB (${stats.size} bytes)`);
+            } catch (statErr) {
+                console.warn(`[RECORD] ⚠️  Could not get file stats: ${statErr.message}`);
+            }
             
             this.panelRecorder = null;
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
             this.panelRecordingStartTime = null;
             
-            console.log(`✅ Record user action for this panel done! ${panelId}`);
+            console.log(`[RECORD] ✅ Recording stopped successfully`);
+            console.log(`[RECORD]    Status reset: isRecordingPanel=${this.isRecordingPanel}`);
+            
             return { panelId, videoPath, sessionStart, sessionEnd };
         } catch (err) {
-            console.error('Failed to stop panel recording:', err);
+            console.error(`[RECORD] ❌ Failed to stop panel recording:`, err);
+            console.error(`[RECORD]    Error details:`, err.message, err.stack);
             this.panelRecorder = null;
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
@@ -367,27 +414,50 @@ export class PanelScreenTracker {
     }
     
     async cancelPanelRecording() {
+        console.log(`[RECORD] 🚫 Cancel recording requested`);
+        console.log(`[RECORD]    Status check: isRecordingPanel=${this.isRecordingPanel}, hasRecorder=${!!this.panelRecorder}`);
+        
         if (!this.isRecordingPanel || !this.panelRecorder) {
+            console.log(`[RECORD] ⏭️  No active recording to cancel`);
             return;
         }
         
         try {
-            await this.panelRecorder.stop();
             const panelId = this.recordingPanelId;
+            const sessionStart = this.panelRecordingStartTime;
+            const cancelTime = Date.now();
+            const duration = sessionStart ? cancelTime - sessionStart : 0;
+            const durationSeconds = (duration / 1000).toFixed(2);
+            
+            console.log(`[RECORD] 📊 Cancelling recording:`);
+            console.log(`[RECORD]    Panel ID: ${panelId || 'NONE'}`);
+            if (sessionStart) {
+                console.log(`[RECORD]    Was recording for: ${durationSeconds}s (${duration}ms)`);
+            }
+            
+            console.log(`[RECORD] ⏹️  Stopping recorder...`);
+            await this.panelRecorder.stop();
+            
             const videoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
+            console.log(`[RECORD]    Video path to delete: ${videoPath}`);
             
             const { promises: fsp } = await import('fs');
             try {
                 await fsp.unlink(videoPath);
-                console.log(`🗑️ Cancelled panel recording: ${panelId}`);
-            } catch (err) {
+                console.log(`[RECORD] 🗑️  Video file deleted successfully`);
+            } catch (unlinkErr) {
+                console.warn(`[RECORD] ⚠️  Could not delete video file: ${unlinkErr.message}`);
             }
+            
+            console.log(`[RECORD] ✅ Recording cancelled successfully`);
         } catch (err) {
-            console.error('Failed to cancel panel recording:', err);
+            console.error(`[RECORD] ❌ Failed to cancel panel recording:`, err);
+            console.error(`[RECORD]    Error details:`, err.message, err.stack);
         } finally {
             this.panelRecorder = null;
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
+            console.log(`[RECORD]    Status reset: isRecordingPanel=${this.isRecordingPanel}`);
         }
     }
 

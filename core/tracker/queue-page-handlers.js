@@ -1184,6 +1184,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                     for (const actionItem of toDelete) {
                         if (tracker.isRecordingPanel && tracker.recordingPanelId === actionItem.item_id) {
+                            console.log(`[RECORD] 🗑️  Deleting action ${actionItem.item_id} that is currently recording, cancelling...`);
                             await tracker.cancelPanelRecording();
                         }
 
@@ -1300,22 +1301,40 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
+            console.log(`[RECORD] 📤 Complete action - checking for recording...`);
             const recordingInfo = await tracker.stopPanelRecording();
             let videoUrl = null;
 
             if (recordingInfo && recordingInfo.panelId) {
+                console.log(`[RECORD] 📹 Recording found, preparing upload:`);
+                console.log(`[RECORD]    Panel ID: ${recordingInfo.panelId}`);
+                console.log(`[RECORD]    Video path: ${recordingInfo.videoPath}`);
+                console.log(`[RECORD]    Session: ${new Date(recordingInfo.sessionStart).toISOString()} → ${new Date(recordingInfo.sessionEnd).toISOString()}`);
+                
                 try {
                     const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
                     const { ENV } = await import('../config/env.js');
+                    
+                    console.log(`[RECORD] 🔍 Checking if video file exists...`);
                     const exists = await fsp.access(recordingInfo.videoPath).then(() => true).catch(() => false);
+                    console.log(`[RECORD]    File exists: ${exists}`);
+                    
                     if (exists) {
+                        console.log(`[RECORD] ⬆️  Starting upload...`);
+                        console.log(`[RECORD]    Video code: ${recordingInfo.panelId}`);
+                        console.log(`[RECORD]    Upload endpoint: https://upload.clevai.edu.vn/admin/video`);
+                        
                         videoUrl = await uploadVideoAndGetUrl(
                             recordingInfo.videoPath,
                             recordingInfo.panelId,
                             ENV.API_TOKEN
                         );
+                        
                         if (videoUrl) {
-                            console.log(`📹 Video URL: ${videoUrl}`);
+                            console.log(`[RECORD] ✅ Upload successful!`);
+                            console.log(`[RECORD]    Video URL: ${videoUrl}`);
+                            console.log(`[RECORD] 💾 Saving metadata to action: ${tracker.selectedPanelId}`);
+                            
                             await tracker.dataItemManager.updateItem(tracker.selectedPanelId, {
                                 metadata: {
                                     ...actionItem.metadata,
@@ -1324,14 +1343,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                     session_end: recordingInfo.sessionEnd
                                 }
                             });
+                            
+                            console.log(`[RECORD] ✅ Metadata saved successfully`);
                             await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
+                        } else {
+                            console.error(`[RECORD] ❌ Upload returned no URL`);
                         }
                     } else {
-                        console.warn('⚠️ Recording file not found, skip upload:', recordingInfo.videoPath);
+                        console.warn(`[RECORD] ⚠️  Recording file not found, skip upload: ${recordingInfo.videoPath}`);
                     }
                 } catch (uploadErr) {
-                    console.error('Failed to upload panel recording:', uploadErr);
+                    console.error(`[RECORD] ❌ Failed to upload panel recording:`, uploadErr);
+                    console.error(`[RECORD]    Error details:`, uploadErr.message, uploadErr.stack);
                 }
+            } else {
+                console.log(`[RECORD] ⏭️  No recording info to upload`);
             }
 
             if (mode === 'USE_BEFORE') {
@@ -1616,6 +1642,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             tracker.geminiAsking = false;
 
             if (tracker.isRecordingPanel) {
+                console.log(`[RECORD] 🚫 Gemini asking finished, cancelling active recording...`);
                 await tracker.cancelPanelRecording();
             }
 
@@ -1775,6 +1802,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (!targetItemId) return;
 
             if (tracker.isRecordingPanel && tracker.recordingPanelId === targetItemId) {
+                console.log(`[RECORD] 🗑️  Deleting item ${targetItemId} that is currently recording, cancelling...`);
                 await tracker.cancelPanelRecording();
             }
 
@@ -1947,6 +1975,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log('🤖 Gemini AI capture on PAGE triggered');
+            console.log(`[RECORD] 📤 Gemini AI capture (PAGE) - checking for recording...`);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -2041,16 +2070,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('✅ Screenshot added to Gemini queue');
 
             if (recordingResult && tracker.dataItemManager) {
+                console.log(`[RECORD] 📹 Recording found, preparing upload:`);
+                console.log(`[RECORD]    Panel ID: ${recordingResult.panelId}`);
+                console.log(`[RECORD]    Video path: ${recordingResult.videoPath}`);
+                console.log(`[RECORD]    Session: ${new Date(recordingResult.sessionStart).toISOString()} → ${new Date(recordingResult.sessionEnd).toISOString()}`);
+                
                 const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
                 const { ENV } = await import('../config/env.js');
                 const videoCode = `panel_${recordingResult.panelId}_${Date.now()}`;
+                console.log(`[RECORD]    Video code: ${videoCode}`);
 
                 try {
+                    console.log(`[RECORD] ⬆️  Starting upload...`);
+                    console.log(`[RECORD]    Upload endpoint: https://upload.clevai.edu.vn/admin/video`);
+                    
                     const sessionUrl = await uploadVideoAndGetUrl(recordingResult.videoPath, videoCode, ENV.API_TOKEN);
-                    console.log(`✅ Uploaded panel recording: ${sessionUrl}`);
+                    console.log(`[RECORD] ✅ Upload successful!`);
+                    console.log(`[RECORD]    Video URL: ${sessionUrl}`);
 
                     const actionItem = await tracker.dataItemManager.getItem(recordingResult.panelId);
                     if (actionItem && actionItem.item_category === 'ACTION') {
+                        console.log(`[RECORD] 💾 Saving metadata to action: ${recordingResult.panelId}`);
                         const updatedMetadata = {
                             ...(actionItem.metadata || {}),
                             session_url: sessionUrl,
@@ -2061,6 +2101,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         await tracker.dataItemManager.updateItem(recordingResult.panelId, {
                             metadata: updatedMetadata
                         });
+                        console.log(`[RECORD] ✅ Metadata saved successfully`);
+                    } else {
+                        console.warn(`[RECORD] ⚠️  Action item not found or not ACTION category: ${recordingResult.panelId}`);
                     }
 
                     await tracker._broadcast({
@@ -2068,12 +2111,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         message: '✅ Recorded!'
                     });
                 } catch (uploadErr) {
-                    console.error('Failed to upload panel recording:', uploadErr);
+                    console.error(`[RECORD] ❌ Failed to upload panel recording:`, uploadErr);
+                    console.error(`[RECORD]    Error details:`, uploadErr.message, uploadErr.stack);
                     await tracker._broadcast({
                         type: 'show_toast',
                         message: '❌ Upload fail!'
                     });
                 }
+            } else {
+                console.log(`[RECORD] ⏭️  No recording result to upload`);
             }
         } catch (err) {
             console.error('Failed to manual capture AI:', err);
@@ -2944,6 +2990,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log('📸 DOM Capture triggered');
+            console.log(`[RECORD] 📤 DOM Capture - checking for recording...`);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -3149,6 +3196,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log('🤖 Gemini AI capture (SCROLLING) triggered');
+            console.log(`[RECORD] 📤 Gemini AI capture (SCROLLING) - checking for recording...`);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -3448,6 +3496,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             console.log('📸 DOM Capture (SCROLLING) triggered');
+            console.log(`[RECORD] 📤 DOM Capture (SCROLLING) - checking for recording...`);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -3568,6 +3617,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             if (tracker.isRecordingPanel && tracker.recordingPanelId !== itemId) {
+                console.log(`[RECORD] 🔄 Switching from recording ${tracker.recordingPanelId} to ${itemId}, cancelling current recording...`);
                 await tracker.cancelPanelRecording();
             }
 
@@ -3587,13 +3637,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (item.item_category === 'ACTION' && item.status === 'pending' && !item.metadata?.session_url) {
                 const { ENV } = await import('../config/env.js');
                 const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
+                console.log(`[RECORD] 🔍 Checking if should start recording for ACTION ${itemId}:`);
+                console.log(`[RECORD]    Status: ${item.status}`);
+                console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
+                console.log(`[RECORD]    RECORD_PANEL enabled: ${enable}`);
+                
                 if (enable) {
+                    console.log(`[RECORD] ▶️  Starting recording for ACTION: ${itemId}`);
                     await tracker.startPanelRecording(itemId);
                     await tracker._broadcast({
                         type: 'show_toast',
                         message: '🎬 Recording...'
                     });
+                } else {
+                    console.log(`[RECORD] ⏸️  Recording disabled, skipping start`);
                 }
+            } else {
+                console.log(`[RECORD] ⏭️  Not starting recording for item ${itemId}:`);
+                console.log(`[RECORD]    Category: ${item.item_category}`);
+                console.log(`[RECORD]    Status: ${item.status}`);
+                console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
             }
 
             let screenshot = null;
@@ -4255,34 +4318,59 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
+            console.log(`[RECORD] 📤 USE_BEFORE handler - checking for recording...`);
             const recordingInfo = await tracker.stopPanelRecording();
 
             if (recordingInfo && recordingInfo.panelId) {
+                console.log(`[RECORD] 📹 Recording found, preparing upload:`);
+                console.log(`[RECORD]    Panel ID: ${recordingInfo.panelId}`);
+                console.log(`[RECORD]    Action ID: ${actionItemId}`);
+                console.log(`[RECORD]    Video path: ${recordingInfo.videoPath}`);
+                console.log(`[RECORD]    Session: ${new Date(recordingInfo.sessionStart).toISOString()} → ${new Date(recordingInfo.sessionEnd).toISOString()}`);
+                
                 const { uploadVideoAndGetUrl } = await import('../media/uploader.js');
                 const { ENV } = await import('../config/env.js');
-                const videoUrl = await uploadVideoAndGetUrl(
-                    recordingInfo.videoPath,
-                    recordingInfo.panelId,
-                    ENV.API_TOKEN
-                );
+                
+                try {
+                    console.log(`[RECORD] ⬆️  Starting upload...`);
+                    console.log(`[RECORD]    Video code: ${recordingInfo.panelId}`);
+                    console.log(`[RECORD]    Upload endpoint: https://upload.clevai.edu.vn/admin/video`);
+                    
+                    const videoUrl = await uploadVideoAndGetUrl(
+                        recordingInfo.videoPath,
+                        recordingInfo.panelId,
+                        ENV.API_TOKEN
+                    );
 
-                if (videoUrl) {
-                    console.log(`📹 Video URL: ${videoUrl}`);
-                    const actionItem = await tracker.dataItemManager.getItem(actionItemId);
-                    if (actionItem) {
-                        await tracker.dataItemManager.updateItem(actionItemId, {
-                            metadata: {
-                                ...actionItem.metadata,
-                                session_url: videoUrl,
-                                session_start: recordingInfo.sessionStart,
-                                session_end: recordingInfo.sessionEnd
-                            }
-                        });
-                        await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
+                    if (videoUrl) {
+                        console.log(`[RECORD] ✅ Upload successful!`);
+                        console.log(`[RECORD]    Video URL: ${videoUrl}`);
+                        console.log(`[RECORD] 💾 Saving metadata to action: ${actionItemId}`);
+                        
+                        const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+                        if (actionItem) {
+                            await tracker.dataItemManager.updateItem(actionItemId, {
+                                metadata: {
+                                    ...actionItem.metadata,
+                                    session_url: videoUrl,
+                                    session_start: recordingInfo.sessionStart,
+                                    session_end: recordingInfo.sessionEnd
+                                }
+                            });
+                            console.log(`[RECORD] ✅ Metadata saved successfully`);
+                            await tracker._broadcast({ type: 'show_toast', message: '✅ Video saved' });
+                        } else {
+                            console.warn(`[RECORD] ⚠️  Action item not found: ${actionItemId}`);
+                        }
+                    } else {
+                        console.error(`[RECORD] ❌ Video upload failed - no URL returned for USE_BEFORE action`);
                     }
-                } else {
-                    console.error('❌ Video upload failed for USE_BEFORE action');
+                } catch (uploadErr) {
+                    console.error(`[RECORD] ❌ Video upload failed for USE_BEFORE action:`, uploadErr);
+                    console.error(`[RECORD]    Error details:`, uploadErr.message, uploadErr.stack);
                 }
+            } else {
+                console.log(`[RECORD] ⏭️  No recording info to upload for USE_BEFORE`);
             }
 
             const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
