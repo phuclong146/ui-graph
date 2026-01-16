@@ -5144,6 +5144,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             // Load data in Node.js context
             const { nodes, edges, itemMap, stepMap } = await buildGraphStructure();
+            
+            // Load steps data for backward tracing
+            const graphData = await loadGraphData();
+            const stepsData = (graphData.steps || []).map(step => ({
+                step_id: step.step_id,
+                panel_before: step.panel_before ? { item_id: step.panel_before.item_id } : null,
+                action: step.action ? { item_id: step.action.item_id } : null,
+                panel_after: step.panel_after ? { item_id: step.panel_after.item_id } : null
+            }));
 
             if (nodes.length === 0) {
                 await tracker.queuePage.evaluate(() => {
@@ -5212,7 +5221,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }));
 
             // Render graph in browser context
-            await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData) => {
+            await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData) => {
                 const graphContainer = document.getElementById('graphContainer');
                 if (!graphContainer) {
                     console.error('graphContainer not found');
@@ -5598,6 +5607,175 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     // Physics đã tắt, không cần bật lại
                 };
                 
+                // Store original states for reset
+                let originalStates = {
+                    nodes: new Map(),
+                    edges: new Map()
+                };
+                
+                // Function to find all paths to a target node by tracing back through steps
+                const findAllPathsToNode = (targetNodeId, steps, edgesData) => {
+                    const pathNodes = new Set([targetNodeId]);
+                    const pathEdges = new Set();
+                    const pathSteps = [];
+                    const processed = new Set(); // Track nodes we've processed to avoid infinite loops
+                    
+                    const traceBack = (nodeId) => {
+                        // Avoid infinite loops in circular graphs
+                        // We use a check: if we've already processed this node, we still collect edges
+                        // but don't recursively trace back again
+                        const alreadyProcessed = processed.has(nodeId);
+                        if (!alreadyProcessed) {
+                            processed.add(nodeId);
+                        }
+                        
+                        // Find all steps where panel_after = nodeId
+                        const stepsToThisNode = steps.filter(step => 
+                            step.panel_after && 
+                            step.panel_after.item_id === nodeId
+                        );
+                        
+                        if (stepsToThisNode.length === 0) {
+                            // No steps lead to this node - it's a root node
+                            return;
+                        }
+                        
+                        stepsToThisNode.forEach(step => {
+                            pathSteps.push(step);
+                            const panelBeforeId = step.panel_before?.item_id;
+                            const actionId = step.action?.item_id;
+                            
+                            if (panelBeforeId) {
+                                pathNodes.add(panelBeforeId);
+                                
+                                // Find the edge corresponding to this step
+                                // Edge should go from panelBeforeId to nodeId (panel_after)
+                                // and have the same actionId
+                                const correspondingEdge = edgesData.find(edge => {
+                                    if (edge.from !== panelBeforeId || edge.to !== nodeId) {
+                                        return false;
+                                    }
+                                    // Check if edge has matching action
+                                    if (edge.data && edge.data.actionId === actionId) {
+                                        return true;
+                                    }
+                                    // Also check edge ID format: edge_${panelBeforeId}_${actionId}
+                                    if (edge.id === `edge_${panelBeforeId}_${actionId}`) {
+                                        return true;
+                                    }
+                                    return false;
+                                });
+                                
+                                if (correspondingEdge) {
+                                    pathEdges.add(correspondingEdge.id);
+                                }
+                                
+                                // Only recursively trace back if we haven't processed this node before
+                                if (!alreadyProcessed) {
+                                    // Recursively trace back from panel_before
+                                    traceBack(panelBeforeId);
+                                }
+                            }
+                        });
+                    };
+                    
+                    // Start tracing back from target node
+                    traceBack(targetNodeId);
+                    
+                    // Also find edges that lead directly to target node
+                    edgesData.forEach(edge => {
+                        if (edge.to === targetNodeId && pathNodes.has(edge.from)) {
+                            pathEdges.add(edge.id);
+                        }
+                    });
+                    
+                    return {
+                        pathNodes: Array.from(pathNodes),
+                        pathEdges: Array.from(pathEdges),
+                        pathSteps: pathSteps
+                    };
+                };
+                
+                // Function to highlight path nodes and edges
+                const highlightPath = (pathNodes, pathEdges, data, network) => {
+                    // First, reset any previous highlighting
+                    resetHighlight(originalStates, data);
+                    
+                    // Save original states and highlight nodes
+                    pathNodes.forEach(nodeId => {
+                        const node = data.nodes.get(nodeId);
+                        if (node) {
+                            // Save original state
+                            originalStates.nodes.set(nodeId, {
+                                color: node.color,
+                                borderColor: node.borderColor || node.color
+                            });
+                            
+                            // Highlight node with yellow color
+                            data.nodes.update({
+                                id: nodeId,
+                                color: {
+                                    background: '#ffc107',
+                                    border: '#ff9800',
+                                    highlight: {
+                                        background: '#ffd54f',
+                                        border: '#ff9800'
+                                    }
+                                }
+                            });
+                        }
+                    });
+                    
+                    // Save original states and highlight edges
+                    pathEdges.forEach(edgeId => {
+                        const edge = data.edges.get(edgeId);
+                        if (edge) {
+                            // Save original state
+                            originalStates.edges.set(edgeId, {
+                                color: edge.color,
+                                width: edge.width || 2
+                            });
+                            
+                            // Highlight edge with red color and increased width
+                            data.edges.update({
+                                id: edgeId,
+                                color: {
+                                    color: '#ff6b6b',
+                                    highlight: '#ff4444'
+                                },
+                                width: 4
+                            });
+                        }
+                    });
+                    
+                    console.log(`[Graph] Highlighted ${pathNodes.length} nodes and ${pathEdges.length} edges`);
+                };
+                
+                // Function to reset highlighting
+                const resetHighlight = (originalStates, data) => {
+                    // Reset nodes
+                    originalStates.nodes.forEach((originalState, nodeId) => {
+                        data.nodes.update({
+                            id: nodeId,
+                            color: originalState.color,
+                            borderColor: originalState.borderColor
+                        });
+                    });
+                    
+                    // Reset edges
+                    originalStates.edges.forEach((originalState, edgeId) => {
+                        data.edges.update({
+                            id: edgeId,
+                            color: originalState.color,
+                            width: originalState.width
+                        });
+                    });
+                    
+                    // Clear original states
+                    originalStates.nodes.clear();
+                    originalStates.edges.clear();
+                };
+                
                 // Handle edge selection - keep labels hidden
                 network.on('selectEdge', (params) => {
                     hideAllEdgeLabels();
@@ -5767,8 +5945,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 });
                 
-                // Handle click events (left click - show panel info)
+                // Handle click events (left click - highlight path)
                 network.on('click', async (params) => {
+                    console.log('[Graph] Click event triggered:', params);
+                    
                     // Keep all edge labels hidden
                     hideAllEdgeLabels();
                     
@@ -5777,8 +5957,52 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         currentNodeUnderCursor = params.nodes[0];
                     }
                     
-                    if (params.edges && params.edges.length > 0) {
+                    // IMPORTANT: Check nodes first, as clicking a node may also include edges
+                    // Priority: Node click > Edge click > Empty space
+                    if (params.nodes && params.nodes.length > 0) {
+                        // Node clicked - highlight path from steps (skip virtual nodes)
+                        console.log('[Graph] Node clicked, highlighting path');
+                        const nodeId = params.nodes[0];
+                        const node = nodesData.find(n => n.id === nodeId);
+                        
+                        console.log('[Graph] Clicked node:', nodeId, 'Node data:', node?.data);
+                        
+                        if (node && node.data && !node.data.isVirtual) {
+                            // Get steps data from global variable
+                            const steps = window.graphStepsData || [];
+                            console.log('[Graph] Steps data available:', steps.length, 'steps');
+                            
+                            if (steps.length > 0) {
+                                // Find all paths to this node by tracing back through steps
+                                const pathInfo = findAllPathsToNode(nodeId, steps, edgesData);
+                                console.log('[Graph] Path info:', pathInfo);
+                                
+                                // pathNodes always includes the target node, so check if we have more than just the target
+                                // or if we have edges leading to it
+                                if (pathInfo.pathNodes.length > 1 || pathInfo.pathEdges.length > 0) {
+                                    // Highlight the path (has nodes before this one or edges)
+                                    console.log('[Graph] Highlighting path with', pathInfo.pathNodes.length, 'nodes and', pathInfo.pathEdges.length, 'edges');
+                                    highlightPath(pathInfo.pathNodes, pathInfo.pathEdges, data, network);
+                                    console.log(`[Graph] Highlighted path to node ${nodeId}: ${pathInfo.pathNodes.length} nodes, ${pathInfo.pathEdges.length} edges`);
+                                } else {
+                                    // No paths found - just highlight the clicked node (root node)
+                                    console.log('[Graph] No paths found, highlighting only the clicked node');
+                                    highlightPath([nodeId], [], data, network);
+                                    console.log(`[Graph] No paths found to node ${nodeId}, highlighting only the node (root node)`);
+                                }
+                            } else {
+                                // No steps data - just highlight the clicked node
+                                console.log('[Graph] No steps data, highlighting only the clicked node');
+                                highlightPath([nodeId], [], data, network);
+                                console.log(`[Graph] No steps data available, highlighting only node ${nodeId}`);
+                            }
+                        } else {
+                            console.log('[Graph] Node is virtual or has no data, skipping');
+                        }
+                    } else if (params.edges && params.edges.length > 0) {
                         // Edge clicked - show step info but keep label hidden
+                        // Only handle edge click if no node was clicked
+                        console.log('[Graph] Edge clicked (no node), showing step info');
                         const edgeId = params.edges[0];
                         const edge = edgesData.find(e => e.id === edgeId);
                         if (edge && edge.data) {
@@ -5786,16 +6010,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 await window.showStepInfoGraph(edge.data, nodesData);
                             }
                         }
-                    } else if (params.nodes && params.nodes.length > 0) {
-                        // Node clicked - show panel info (skip virtual nodes)
-                        const nodeId = params.nodes[0];
-                        const node = nodesData.find(n => n.id === nodeId);
-                        
-                        if (node && node.data && !node.data.isVirtual) {
-                            if (window.showPanelInfoGraph) {
-                                await window.showPanelInfoGraph(node.data);
-                            }
-                        }
+                    } else {
+                        // Clicked on empty space - reset highlight
+                        console.log('[Graph] Clicked on empty space, resetting highlight');
+                        resetHighlight(originalStates, data);
                     }
                 });
                 
@@ -5823,12 +6041,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 window.graphPanelTreeData = panelTreeData;
                 window.graphNodesData = nodesData;
                 window.graphEdgesData = edgesData;
+                window.graphStepsData = stepsData;
                 
                 // Load and render panel tree
                 if (window.loadGraphPanelTree) {
                     await window.loadGraphPanelTree();
                 }
-            }, nodesData, edgesData, panelTreeData);
+            }, nodesData, edgesData, panelTreeData, stepsData);
 
         } catch (err) {
             console.error('Failed to render graph:', err);
