@@ -386,12 +386,12 @@ export class ParentPanelManager {
         
         //1. Load panel info
         const panelParent = await this.getPanelEntry(panelParentId);
-        if (!panelParent || panelParent.child_actions.length === 0) {
+        if (!panelParent) {
             console.log('makeChild: Khong tim thay Panel', panelParentId);
             return;
         }
         const panelChild = await this.getPanelEntry(panelChildId);
-        if (!panelChild || panelChild.child_actions.length === 0) {
+        if (!panelChild) {
             console.log('makeChild: Khong tim thay Panel', panelChildId);
             return;
         }
