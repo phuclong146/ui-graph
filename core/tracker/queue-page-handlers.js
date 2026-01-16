@@ -5255,7 +5255,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         shape: 'box',
                         font: { color: '#fff', size: 14 },
                         borderWidth: 2,
-                        shadow: true
+                        shadow: true,
+                        margin: 20,  // Thêm margin cho mỗi node
+                        widthConstraint: {
+                            maximum: 200  // Giới hạn chiều rộng node
+                        }
                     },
                     edges: {
                         arrows: {
@@ -5280,7 +5284,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     },
                     physics: {
                         enabled: true,
-                        stabilization: { iterations: 200 }
+                        barnesHut: {
+                            gravitationalConstant: -2000,
+                            centralGravity: 0.3,
+                            springLength: 200,
+                            springConstant: 0.04,
+                            damping: 0.09,
+                            avoidOverlap: 1
+                        },
+                        stabilization: {
+                            iterations: 250,
+                            fit: true
+                        },
+                        timestep: 0.5
                     },
                     interaction: {
                         dragNodes: true,
