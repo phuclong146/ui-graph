@@ -512,11 +512,16 @@ export async function setupTracking(tracker) {
                     return clicks;
                 });
 
+                if (clicks.length > 0) {
+                    console.log(`[CLICK] 🎯 Poller found ${clicks.length} click(s) in queue`);
+                }
+
                 for (const clickData of clicks) {
                     if (tracker.selectedPanelId && tracker.clickManager && tracker.dataItemManager) {
                         const selectedItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
                         if (selectedItem && selectedItem.item_category === 'ACTION') {
+                            console.log(`[CLICK] ✅ Processing click for ACTION ${tracker.selectedPanelId}`);
                             await tracker.clickManager.logClick(tracker.selectedPanelId, clickData);
 
                             await tracker._broadcast({
@@ -528,10 +533,29 @@ export async function setupTracking(tracker) {
                                 element_name: clickData.element_name,
                                 element_tag: clickData.element_tag
                             });
+                            
+                            console.log(`[CLICK] 📡 Broadcasted click event to queue browser`);
+                        } else {
+                            if (!tracker.selectedPanelId) {
+                                console.log(`[CLICK] ⏭️  Skipping click - no selected panel`);
+                            } else if (!selectedItem) {
+                                console.log(`[CLICK] ⏭️  Skipping click - selected item not found: ${tracker.selectedPanelId}`);
+                            } else {
+                                console.log(`[CLICK] ⏭️  Skipping click - selected item is not ACTION (category: ${selectedItem.item_category})`);
+                            }
+                        }
+                    } else {
+                        if (!tracker.selectedPanelId) {
+                            console.log(`[CLICK] ⏭️  Skipping click - no selected panel ID`);
+                        } else if (!tracker.clickManager) {
+                            console.log(`[CLICK] ⏭️  Skipping click - clickManager not initialized`);
+                        } else if (!tracker.dataItemManager) {
+                            console.log(`[CLICK] ⏭️  Skipping click - dataItemManager not initialized`);
                         }
                     }
                 }
             } catch (err) {
+                console.error(`[CLICK] ❌ Error in click poller:`, err);
             }
         }, 30);
     }

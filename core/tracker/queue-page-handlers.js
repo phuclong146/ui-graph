@@ -1189,6 +1189,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         }
 
                         await removeActionFromItem(tracker.selectedPanelId, panelItem.item_category, actionItem.item_id);
+                        console.log(`[CLICK] 🗑️  Deleting clicks for action ${actionItem.item_id} (from edit actions)`);
                         await tracker.clickManager.deleteClicksForAction(actionItem.item_id);
                         await tracker.stepManager.deleteStepsForAction(actionItem.item_id);
                     }
@@ -1662,6 +1663,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const childPage = parentPanelEntry.child_pages?.find(p => p.page_id === targetItemId);
                     if (childPage && childPage.child_actions) {
                         await tracker.dataItemManager.deleteItems(childPage.child_actions);
+                        console.log(`[CLICK] 🗑️  Deleting clicks for ${childPage.child_actions.length} actions in page ${targetItemId} (from reset panel)`);
                         await tracker.clickManager.deleteClicksForActions(childPage.child_actions);
                         await tracker.stepManager.deleteStepsForItems(childPage.child_actions);
 
@@ -1683,6 +1685,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const descendants = await tracker.parentPanelManager.getAllDescendants(targetItemId);
 
                 await tracker.dataItemManager.deleteItems(descendants);
+                console.log(`[CLICK] 🗑️  Deleting clicks for ${descendants.length} descendant items (from reset panel)`);
                 await tracker.clickManager.deleteClicksForActions(descendants);
                 await tracker.stepManager.deleteStepsForItems(descendants);
 
@@ -1889,6 +1892,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             await tracker.dataItemManager.deleteItems(itemsToDelete);
+            console.log(`[CLICK] 🗑️  Deleting clicks for ${itemsToDelete.length} items (from delete panel)`);
             await tracker.clickManager.deleteClicksForActions(itemsToDelete);
             await tracker.stepManager.deleteStepsForItems(itemsToDelete);
 
@@ -4258,9 +4262,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const getClickEventsForPanelHandler = async (actionItemId) => {
         try {
-            if (!actionItemId || !tracker.clickManager) return [];
+            if (!actionItemId || !tracker.clickManager) {
+                console.log(`[CLICK] ⏭️  getClickEventsForPanel: invalid actionItemId or clickManager not initialized`);
+                return [];
+            }
 
+            console.log(`[CLICK] 🔍 getClickEventsForPanel called for action ${actionItemId}`);
             const clicks = await tracker.clickManager.getClicksForAction(actionItemId);
+            console.log(`[CLICK] 📤 Returning ${clicks.length} click events`);
+            
             return clicks.map(c => ({
                 timestamp: c.timestamp,
                 click_x: c.pos.x,
@@ -4270,7 +4280,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 url: c.from_url
             }));
         } catch (err) {
-            console.error('Failed to get click events:', err);
+            console.error(`[CLICK] ❌ Failed to get click events for action ${actionItemId}:`, err);
+            console.error(`[CLICK]    Error details:`, err.message, err.stack);
             return [];
         }
     };
