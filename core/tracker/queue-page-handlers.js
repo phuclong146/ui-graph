@@ -5649,25 +5649,32 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 pathNodes.add(panelBeforeId);
                                 
                                 // Find the edge corresponding to this step
-                                // Edge should go from panelBeforeId to nodeId (panel_after)
-                                // and have the same actionId
-                                const correspondingEdge = edgesData.find(edge => {
-                                    if (edge.from !== panelBeforeId || edge.to !== nodeId) {
-                                        return false;
-                                    }
-                                    // Check if edge has matching action
-                                    if (edge.data && edge.data.actionId === actionId) {
-                                        return true;
-                                    }
-                                    // Also check edge ID format: edge_${panelBeforeId}_${actionId}
-                                    if (edge.id === `edge_${panelBeforeId}_${actionId}`) {
-                                        return true;
+                                // Try multiple matching strategies
+                                let correspondingEdge = edgesData.find(edge => {
+                                    // First try: exact match with actionId
+                                    if (edge.from === panelBeforeId && edge.to === nodeId) {
+                                        if (edge.data && edge.data.actionId === actionId) {
+                                            return true;
+                                        }
+                                        // Second try: match by edge ID format
+                                        if (edge.id === `edge_${panelBeforeId}_${actionId}`) {
+                                            return true;
+                                        }
                                     }
                                     return false;
                                 });
                                 
+                                // If not found, try finding any edge between these two nodes
+                                if (!correspondingEdge) {
+                                    correspondingEdge = edgesData.find(edge => 
+                                        edge.from === panelBeforeId && edge.to === nodeId
+                                    );
+                                }
+                                
                                 if (correspondingEdge) {
                                     pathEdges.add(correspondingEdge.id);
+                                } else {
+                                    console.log(`[Graph] Warning: Could not find edge from ${panelBeforeId} to ${nodeId} for action ${actionId}`);
                                 }
                                 
                                 // Only recursively trace back if we haven't processed this node before
@@ -5682,12 +5689,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     // Start tracing back from target node
                     traceBack(targetNodeId);
                     
-                    // Also find edges that lead directly to target node
-                    edgesData.forEach(edge => {
-                        if (edge.to === targetNodeId && pathNodes.has(edge.from)) {
-                            pathEdges.add(edge.id);
-                        }
+                    // After collecting all path nodes, find ALL edges between path nodes
+                    // This ensures we capture all edges in the path, even if step matching missed some
+                    const pathNodesArray = Array.from(pathNodes);
+                    console.log('[Graph] Finding edges between path nodes:', pathNodesArray);
+                    
+                    pathNodesArray.forEach(fromNodeId => {
+                        edgesData.forEach(edge => {
+                            // Only add edges that connect two nodes in our path
+                            if (pathNodes.has(edge.from) && pathNodes.has(edge.to)) {
+                                // Make sure this edge is part of the actual path (from -> to relationship)
+                                // Don't add reverse edges or unrelated edges
+                                pathEdges.add(edge.id);
+                                console.log(`[Graph] Added edge ${edge.id} from ${edge.from} to ${edge.to}`);
+                            }
+                        });
                     });
+                    
+                    console.log(`[Graph] findAllPathsToNode result: ${pathNodesArray.length} nodes, ${pathEdges.size} edges`);
                     
                     return {
                         pathNodes: Array.from(pathNodes),
@@ -5700,6 +5719,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const highlightPath = (pathNodes, pathEdges, data, network) => {
                     // First, reset any previous highlighting
                     resetHighlight(originalStates, data);
+                    
+                    // Deselect all nodes and edges to avoid selection state overriding highlight
+                    network.unselectAll();
                     
                     // Save original states and highlight nodes
                     pathNodes.forEach(nodeId => {
@@ -5730,23 +5752,53 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     pathEdges.forEach(edgeId => {
                         const edge = data.edges.get(edgeId);
                         if (edge) {
-                            // Save original state
+                            // Save original state (need to get the actual color object structure)
+                            const originalColor = edge.color || { color: '#848484' };
+                            const originalWidth = edge.width || 2;
+                            
                             originalStates.edges.set(edgeId, {
-                                color: edge.color,
-                                width: edge.width || 2
+                                color: typeof originalColor === 'string' 
+                                    ? { color: originalColor } 
+                                    : originalColor,
+                                width: originalWidth
                             });
                             
                             // Highlight edge with red color and increased width
-                            data.edges.update({
+                            // Use selectionWidth to override selection state
+                            const updateData = {
                                 id: edgeId,
                                 color: {
                                     color: '#ff6b6b',
-                                    highlight: '#ff4444'
+                                    highlight: '#ff4444',
+                                    hover: '#ff4444'
                                 },
-                                width: 4
-                            });
+                                width: 4,
+                                selectionWidth: 4  // Force width even when selected
+                            };
+                            
+                            data.edges.update(updateData);
                         }
                     });
+                    
+                    // Force network to update and prevent selection from overriding
+                    // Wait a bit and update again to ensure highlight persists
+                    setTimeout(() => {
+                        pathEdges.forEach(edgeId => {
+                            const edge = data.edges.get(edgeId);
+                            if (edge) {
+                                data.edges.update({
+                                    id: edgeId,
+                                    color: {
+                                        color: '#ff6b6b',
+                                        highlight: '#ff4444',
+                                        hover: '#ff4444'
+                                    },
+                                    width: 4,
+                                    selectionWidth: 4
+                                });
+                            }
+                        });
+                    }, 50);
                     
                     console.log(`[Graph] Highlighted ${pathNodes.length} nodes and ${pathEdges.length} edges`);
                 };
