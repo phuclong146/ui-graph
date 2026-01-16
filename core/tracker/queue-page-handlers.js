@@ -5295,29 +5295,54 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return baseNode;
             });
 
-            const edgesData = edges.map(e => ({
-                id: e.id,
-                from: e.from,
-                to: e.to,
-                label: '', // Đảm bảo label luôn rỗng khi khởi tạo
-                color: e.color,
-                dashes: e.dashes,
-                font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' },
-                data: {
-                    actionId: e.data.actionId,
-                    actionName: e.data.actionItem.name,
-                    actionType: e.data.actionItem.type,
-                    actionVerb: e.data.actionItem.verb,
-                    actionPurpose: e.data.actionItem.purpose,
-                    actionImage_base64: e.data.actionItem.image_base64,
-                    actionMetadata: e.data.actionItem.metadata,
-                    step: e.data.step ? {
-                        step_id: e.data.step.step_id,
-                        panel_before: e.data.step.panel_before,
-                        panel_after: e.data.step.panel_after
-                    } : null
+            // Build a set of node IDs that have child nodes
+            const nodesWithChildren = new Set();
+            const buildNodesWithChildren = (treeNodes) => {
+                if (!Array.isArray(treeNodes)) return;
+                treeNodes.forEach(node => {
+                    if (node.children && node.children.length > 0) {
+                        nodesWithChildren.add(node.panel_id);
+                        buildNodesWithChildren(node.children);
+                    }
+                });
+            };
+            buildNodesWithChildren(panelTreeData);
+
+            const edgesData = edges.map(e => {
+                const edgeData = {
+                    id: e.id,
+                    from: e.from,
+                    to: e.to,
+                    label: '', // Đảm bảo label luôn rỗng khi khởi tạo
+                    color: e.color,
+                    dashes: e.dashes,
+                    font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' },
+                    data: {
+                        actionId: e.data.actionId,
+                        actionName: e.data.actionItem.name,
+                        actionType: e.data.actionItem.type,
+                        actionVerb: e.data.actionItem.verb,
+                        actionPurpose: e.data.actionItem.purpose,
+                        actionImage_base64: e.data.actionItem.image_base64,
+                        actionMetadata: e.data.actionItem.metadata,
+                        step: e.data.step ? {
+                            step_id: e.data.step.step_id,
+                            panel_before: e.data.step.panel_before,
+                            panel_after: e.data.step.panel_after
+                        } : null
+                    }
+                };
+                
+                // Set edge length: 2x (400) if target node has children, 1x (200) if not
+                // Check if target node has children
+                if (nodesWithChildren.has(e.to)) {
+                    edgeData.length = 400; // 2x the default springLength of 200
+                } else {
+                    edgeData.length = 200; // 1x the default springLength
                 }
-            }));
+                
+                return edgeData;
+            });
 
             // Render graph in browser context
             await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData) => {
@@ -5334,23 +5359,48 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     return;
                 }
 
+                // Build a set of node IDs that have child nodes (in browser context)
+                const nodesWithChildren = new Set();
+                const buildNodesWithChildren = (treeNodes) => {
+                    if (!Array.isArray(treeNodes)) return;
+                    treeNodes.forEach(node => {
+                        if (node.children && node.children.length > 0) {
+                            nodesWithChildren.add(node.panel_id);
+                            buildNodesWithChildren(node.children);
+                        }
+                    });
+                };
+                buildNodesWithChildren(panelTreeData);
+
                 // Create vis-network data - đảm bảo tất cả edges có label rỗng
                 const edgesForVis = edgesData.map(e => ({
                     ...e,
                     label: '' // Force empty label
                 }));
                 
-                // Add collapse/expand icons to nodes that have outgoing edges
+                // Add collapse/expand icons and set mass for nodes that have children
+                // Nodes with children get higher mass to form separate clusters
                 const nodesWithIcons = nodesData.map(node => {
                     const hasOutgoingEdges = edgesData.some(e => e.from === node.id);
+                    const hasChildren = nodesWithChildren.has(node.id);
+                    
+                    const nodeData = { ...node };
+                    
                     if (hasOutgoingEdges && !node.data?.isVirtual) {
                         // Add ▼ icon to indicate node can be collapsed (expanded by default)
-                        return {
-                            ...node,
-                            label: `▼ ${node.label}`
-                        };
+                        nodeData.label = `▼ ${node.label}`;
                     }
-                    return node;
+                    
+                    // Set higher mass for nodes with children to create separate clusters
+                    if (hasChildren && !node.data?.isVirtual) {
+                        nodeData.mass = 5; // Higher mass = stronger repulsion, forms separate cluster
+                        nodeData.group = 'hasChildren'; // Group for styling/clustering
+                    } else if (!node.data?.isVirtual) {
+                        nodeData.mass = 1; // Normal mass for nodes without children
+                        nodeData.group = 'noChildren';
+                    }
+                    
+                    return nodeData;
                 });
                 
                 const data = {
@@ -5393,15 +5443,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     physics: {
                         enabled: true,
                         barnesHut: {
-                            gravitationalConstant: -1500,
-                            centralGravity: 0.2,
+                            gravitationalConstant: -3000, // Tăng repulsion (giá trị âm hơn) để tách các cụm xa hơn
+                            centralGravity: 0.1, // Giảm central gravity để các cụm tự do tách xa
                             springLength: 200,
                             springConstant: 0.03,
                             damping: 0.25,
                             avoidOverlap: 1
                         },
                         stabilization: {
-                            iterations: 300,
+                            iterations: 500, // Tăng iterations để đảm bảo clustering tốt hơn
                             fit: true,
                             updateInterval: 50
                         },
