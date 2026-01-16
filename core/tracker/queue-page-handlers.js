@@ -5516,6 +5516,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     // Show immediate target nodes by adding them back
                     const nodesToAdd = [];
+                    const nodesToPosition = []; // Nodes that need positioning
                     targetNodeIds.forEach(targetId => {
                         const originalNode = nodesWithIcons.find(n => n.id === targetId);
                         if (originalNode) {
@@ -5523,6 +5524,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             const existingNode = data.nodes.get(targetId);
                             if (!existingNode) {
                                 nodesToAdd.push(originalNode);
+                                nodesToPosition.push(targetId);
+                            } else {
+                                // Node exists, check if it needs repositioning
+                                const existingPos = network.getPositions([targetId]);
+                                if (!existingPos || !existingPos[targetId]) {
+                                    nodesToPosition.push(targetId);
+                                }
                             }
                         }
                     });
@@ -5530,6 +5538,47 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     if (nodesToAdd.length > 0) {
                         console.log(`[Graph] Adding ${nodesToAdd.length} nodes:`, nodesToAdd.map(n => n.id));
                         data.nodes.add(nodesToAdd);
+                    }
+                    
+                    // Position child nodes around parent node in radial layout
+                    if (nodesToPosition.length > 0) {
+                        // Get parent node position
+                        const parentPositions = network.getPositions([nodeId]);
+                        const parentPos = parentPositions[nodeId];
+                        
+                        if (parentPos) {
+                            const radius = 250; // Distance from parent to child nodes
+                            const angleStep = (2 * Math.PI) / nodesToPosition.length; // Divide 360 degrees evenly
+                            
+                            const positionUpdates = [];
+                            nodesToPosition.forEach((targetId, index) => {
+                                // Calculate angle for this node (start from top, clockwise)
+                                const angle = index * angleStep - Math.PI / 2; // Start from top (-90 degrees)
+                                
+                                // Calculate position
+                                const x = parentPos.x + radius * Math.cos(angle);
+                                const y = parentPos.y + radius * Math.sin(angle);
+                                
+                                positionUpdates.push({
+                                    id: targetId,
+                                    x: x,
+                                    y: y,
+                                    fixed: {
+                                        x: true,
+                                        y: true
+                                    }
+                                });
+                                
+                                console.log(`[Graph] Positioning node ${targetId} at (${x.toFixed(2)}, ${y.toFixed(2)}) with angle ${(angle * 180 / Math.PI).toFixed(2)}°`);
+                            });
+                            
+                            if (positionUpdates.length > 0) {
+                                console.log(`[Graph] Positioning ${positionUpdates.length} child nodes around parent node ${nodeId}`);
+                                data.nodes.update(positionUpdates);
+                            }
+                        } else {
+                            console.warn(`[Graph] Could not get parent position for node ${nodeId}, skipping radial positioning`);
+                        }
                     }
                     
                     // If target nodes are not collapsed, recursively expand them
