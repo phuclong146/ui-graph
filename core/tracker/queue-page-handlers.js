@@ -5310,6 +5310,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
                 
+                // Tắt physics sau khi stabilization xong để đồ thị ổn định
+                network.once('stabilizationEnd', () => {
+                    network.setOptions({ physics: false });
+                    console.log('[Graph] Physics disabled after stabilization');
+                });
+                
                 // Log info about collapsible nodes
                 const collapsibleNodes = nodesWithIcons.filter(n => {
                     const hasOutgoingEdges = edgesData.some(e => e.from === n.id);
@@ -5400,6 +5406,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`[Graph] NodeId received: ${nodeId}`);
                     console.log(`[Graph] NodeId type: ${typeof nodeId}`);
                     
+                    // Tắt physics trước khi collapse để tránh dao động
+                    network.setOptions({ physics: false });
+                    
                     const { edges, targetNodeIds } = getOutgoingEdgesAndNodes(nodeId);
                     
                     console.log(`[Graph] Found ${edges.length} outgoing edges from node ${nodeId}`);
@@ -5451,6 +5460,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     collapsedNodes.add(nodeId);
                     console.log(`[Graph] Node ${nodeId} collapsed successfully`);
+                    
+                    // Physics đã tắt, không cần bật lại
                 };
                 
                 // Function to expand a node (show outgoing edges and target nodes)
@@ -5458,6 +5469,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`[Graph] ===== EXPAND NODE CALLED =====`);
                     console.log(`[Graph] NodeId received: ${nodeId}`);
                     console.log(`[Graph] NodeId type: ${typeof nodeId}`);
+                    
+                    // Tắt physics trước khi expand để tránh dao động
+                    network.setOptions({ physics: false });
                     
                     const { edges, targetNodeIds } = getOutgoingEdgesAndNodes(nodeId);
                     
@@ -5519,6 +5533,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     collapsedNodes.delete(nodeId);
                     console.log(`[Graph] Node ${nodeId} expanded successfully`);
+                    
+                    // Physics đã tắt, không cần bật lại
                 };
                 
                 // Handle edge selection - keep labels hidden
