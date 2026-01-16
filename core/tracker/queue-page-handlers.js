@@ -5285,18 +5285,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     physics: {
                         enabled: true,
                         barnesHut: {
-                            gravitationalConstant: -2000,
-                            centralGravity: 0.3,
+                            gravitationalConstant: -1500,
+                            centralGravity: 0.2,
                             springLength: 200,
-                            springConstant: 0.04,
-                            damping: 0.09,
+                            springConstant: 0.03,
+                            damping: 0.25,
                             avoidOverlap: 1
                         },
                         stabilization: {
-                            iterations: 250,
-                            fit: true
+                            iterations: 300,
+                            fit: true,
+                            updateInterval: 50
                         },
-                        timestep: 0.5
+                        timestep: 0.35
                     },
                     interaction: {
                         dragNodes: true,
@@ -5310,11 +5311,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
                 
+                let stabilizationCompleted = false;
+                
                 // Tắt physics sau khi stabilization xong để đồ thị ổn định
                 network.once('stabilizationEnd', () => {
+                    stabilizationCompleted = true;
                     network.setOptions({ physics: false });
                     console.log('[Graph] Physics disabled after stabilization');
                 });
+                
+                // Fallback: Đảm bảo physics tắt sau 3 giây nếu stabilizationEnd không kích hoạt
+                setTimeout(() => {
+                    if (!stabilizationCompleted) {
+                        network.setOptions({ physics: false });
+                        console.log('[Graph] Physics disabled after timeout (stabilization may still be running)');
+                    }
+                }, 3000);
                 
                 // Log info about collapsible nodes
                 const collapsibleNodes = nodesWithIcons.filter(n => {
