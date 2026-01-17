@@ -1297,7 +1297,7 @@ export const QUEUE_BROWSER_HTML = `
               <video id="videoValidationTrackingVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
                 Your browser does not support the video tag.
               </video>
-              <div id="videoValidationTrackingSubtitle" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; max-width:90%; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
+              <div id="videoValidationTrackingSubtitle" style="position:absolute; bottom:30px; left:120px; right:100px; background:rgba(0,0,0,0.5); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
               </div>
             </div>
           </div>
@@ -1309,7 +1309,7 @@ export const QUEUE_BROWSER_HTML = `
               <video id="videoValidationStepVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
                 Your browser does not support the video tag.
               </video>
-              <div id="videoValidationStepSubtitle" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; max-width:90%; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
+              <div id="videoValidationStepSubtitle" style="position:absolute; bottom:30px; left:120px; right:100px; background:rgba(0,0,0,0.5); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
               </div>
             </div>
           </div>
@@ -2466,11 +2466,12 @@ export const QUEUE_BROWSER_HTML = `
           videoValidationSubtitlesEnabled = !videoValidationSubtitlesEnabled;
           videoValidationSubtitleToggleBtn.textContent = videoValidationSubtitlesEnabled ? '📝 Subtitle ON' : '📝 Subtitle OFF';
           
-          if (videoValidationTrackingSubtitle) {
-            videoValidationTrackingSubtitle.style.display = videoValidationSubtitlesEnabled ? 'block' : 'none';
+          // Update subtitle overlays immediately based on current video time
+          if (videoValidationTrackingVideo && videoValidationTrackingSubtitle) {
+            updateSubtitleOverlay(videoValidationTrackingVideo, videoValidationTrackingSubtitle, []);
           }
-          if (videoValidationStepSubtitle) {
-            videoValidationStepSubtitle.style.display = videoValidationSubtitlesEnabled ? 'block' : 'none';
+          if (videoValidationStepVideo && videoValidationStepSubtitle) {
+            updateSubtitleOverlay(videoValidationStepVideo, videoValidationStepSubtitle, videoValidationStepSubtitles);
           }
         });
       }
