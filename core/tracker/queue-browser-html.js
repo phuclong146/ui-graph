@@ -2373,6 +2373,10 @@ export const QUEUE_BROWSER_HTML = `
       };
 
       const syncVideoPlayPause = () => {
+        // Only sync when View RawVideo is NOT checked
+        if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+          return; // Don't sync when raw video is selected
+        }
         if (videoValidationTrackingVideo && videoValidationStepVideo) {
           if (videoValidationTrackingVideo.paused) {
             videoValidationStepVideo.pause();
@@ -2381,6 +2385,18 @@ export const QUEUE_BROWSER_HTML = `
           }
         }
       };
+
+      const updateSyncedPlayButtonState = () => {
+        if (videoValidationPlayPauseBtn && videoValidationRawVideoToggle) {
+          const isRawVideoChecked = videoValidationRawVideoToggle.checked;
+          videoValidationPlayPauseBtn.disabled = isRawVideoChecked;
+          videoValidationPlayPauseBtn.style.opacity = isRawVideoChecked ? '0.5' : '1';
+          videoValidationPlayPauseBtn.style.cursor = isRawVideoChecked ? 'not-allowed' : 'pointer';
+        }
+      };
+
+      // Expose to window for access from evaluate context
+      window.updateSyncedPlayButtonState = updateSyncedPlayButtonState;
 
       const updateSubtitleOverlay = (video, subtitleElement, subtitles) => {
         if (!videoValidationSubtitlesEnabled || !subtitles || subtitles.length === 0) {
@@ -2413,6 +2429,9 @@ export const QUEUE_BROWSER_HTML = `
 
       if (videoValidationPlayPauseBtn) {
         videoValidationPlayPauseBtn.addEventListener('click', () => {
+          if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+            return; // Disabled when raw video is checked
+          }
           if (videoValidationTrackingVideo) {
             if (videoValidationTrackingVideo.paused) {
               videoValidationTrackingVideo.play();
@@ -2460,6 +2479,7 @@ export const QUEUE_BROWSER_HTML = `
               videoValidationTrackingVideo.src = videoValidationTrackingVideoUrl;
             }
           }
+          updateSyncedPlayButtonState();
         });
       }
 
@@ -2476,14 +2496,22 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
 
-      // Sync video playback
+      // Sync video playback (only when View RawVideo is NOT checked)
       if (videoValidationTrackingVideo) {
         videoValidationTrackingVideo.addEventListener('play', () => {
+          // Only sync if View RawVideo is NOT checked
+          if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+            return; // Don't sync when raw video is selected
+          }
           if (videoValidationStepVideo && videoValidationStepVideo.paused) {
             videoValidationStepVideo.play();
           }
         });
         videoValidationTrackingVideo.addEventListener('pause', () => {
+          // Only sync if View RawVideo is NOT checked
+          if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+            return; // Don't sync when raw video is selected
+          }
           if (videoValidationStepVideo && !videoValidationStepVideo.paused) {
             videoValidationStepVideo.pause();
           }
@@ -2492,11 +2520,19 @@ export const QUEUE_BROWSER_HTML = `
 
       if (videoValidationStepVideo) {
         videoValidationStepVideo.addEventListener('play', () => {
+          // Only sync if View RawVideo is NOT checked
+          if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+            return; // Don't sync when raw video is selected
+          }
           if (videoValidationTrackingVideo && videoValidationTrackingVideo.paused) {
             videoValidationTrackingVideo.play();
           }
         });
         videoValidationStepVideo.addEventListener('pause', () => {
+          // Only sync if View RawVideo is NOT checked
+          if (videoValidationRawVideoToggle && videoValidationRawVideoToggle.checked) {
+            return; // Don't sync when raw video is selected
+          }
           if (videoValidationTrackingVideo && !videoValidationTrackingVideo.paused) {
             videoValidationTrackingVideo.pause();
           }
@@ -2975,6 +3011,11 @@ export const QUEUE_BROWSER_HTML = `
                   trackingVideo.src = '';
                 }
               }
+              
+              // Update SyncedPlay button state after loading video
+              if (window.updateSyncedPlayButtonState) {
+                window.updateSyncedPlayButtonState();
+              }
             } else {
               // No step data for this action - clear videos
               const trackingVideo = document.getElementById('videoValidationTrackingVideo');
@@ -2991,6 +3032,11 @@ export const QUEUE_BROWSER_HTML = `
               videoValidationStepSubtitles = [];
               videoValidationTrackingVideoUrl = null;
               videoValidationRawVideoUrl = null;
+              
+              // Update SyncedPlay button state
+              if (window.updateSyncedPlayButtonState) {
+                window.updateSyncedPlayButtonState();
+              }
             }
           }
         });

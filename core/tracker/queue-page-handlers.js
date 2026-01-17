@@ -6620,6 +6620,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 // Store step data for later use
                 window.videoValidationStepData = stepData;
+
+                // Update SyncedPlay button state based on raw video toggle
+                if (window.updateSyncedPlayButtonState) {
+                    window.updateSyncedPlayButtonState();
+                }
             }, panelTreeData, stepData);
 
         } catch (err) {
