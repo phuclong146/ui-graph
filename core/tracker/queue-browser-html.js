@@ -1270,7 +1270,7 @@ export const QUEUE_BROWSER_HTML = `
           Verify Steps with Video
         </h3>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button id="videoValidationPlayPauseBtn" style="background:#28a745; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">⏯ SyncedPlay</button>
+          <button id="videoValidationPlayPauseBtn" style="background:#28a745; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">⏯ Play</button>
           <button id="videoValidationSubtitleToggleBtn" style="background:#17a2b8; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">📝 Subtitle OFF</button>
           <button id="videoValidationRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;"><ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/><line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/><line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/><line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/></svg> RaiseBug</button>
           <button id="closeVideoValidationBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
@@ -2398,6 +2398,16 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.updateSyncedPlayButtonState = updateSyncedPlayButtonState;
 
+      // Update Play button text based on video playing state
+      const updatePlayButtonText = () => {
+        if (videoValidationPlayPauseBtn) {
+          const trackingVideo = videoValidationTrackingVideo;
+          const stepVideo = videoValidationStepVideo;
+          const isPlaying = (trackingVideo && !trackingVideo.paused) || (stepVideo && !stepVideo.paused);
+          videoValidationPlayPauseBtn.textContent = isPlaying ? '⏯ Playing' : '⏯ Play';
+        }
+      };
+
       const updateSubtitleOverlay = (video, subtitleElement, subtitles) => {
         if (!videoValidationSubtitlesEnabled || !subtitles || subtitles.length === 0) {
           subtitleElement.style.display = 'none';
@@ -2434,11 +2444,19 @@ export const QUEUE_BROWSER_HTML = `
           }
           if (videoValidationTrackingVideo) {
             if (videoValidationTrackingVideo.paused) {
+              // Reset both videos to start before playing
+              if (videoValidationTrackingVideo) {
+                videoValidationTrackingVideo.currentTime = 0;
+              }
+              if (videoValidationStepVideo) {
+                videoValidationStepVideo.currentTime = 0;
+              }
               videoValidationTrackingVideo.play();
             } else {
               videoValidationTrackingVideo.pause();
             }
             syncVideoPlayPause();
+            // Button text will be updated by play/pause event listeners
           }
         });
       }
@@ -2506,6 +2524,7 @@ export const QUEUE_BROWSER_HTML = `
           if (videoValidationStepVideo && videoValidationStepVideo.paused) {
             videoValidationStepVideo.play();
           }
+          updatePlayButtonText();
         });
         videoValidationTrackingVideo.addEventListener('pause', () => {
           // Only sync if View RawVideo is NOT checked
@@ -2515,6 +2534,10 @@ export const QUEUE_BROWSER_HTML = `
           if (videoValidationStepVideo && !videoValidationStepVideo.paused) {
             videoValidationStepVideo.pause();
           }
+          updatePlayButtonText();
+        });
+        videoValidationTrackingVideo.addEventListener('ended', () => {
+          updatePlayButtonText();
         });
       }
 
@@ -2527,6 +2550,7 @@ export const QUEUE_BROWSER_HTML = `
           if (videoValidationTrackingVideo && videoValidationTrackingVideo.paused) {
             videoValidationTrackingVideo.play();
           }
+          updatePlayButtonText();
         });
         videoValidationStepVideo.addEventListener('pause', () => {
           // Only sync if View RawVideo is NOT checked
@@ -2536,6 +2560,10 @@ export const QUEUE_BROWSER_HTML = `
           if (videoValidationTrackingVideo && !videoValidationTrackingVideo.paused) {
             videoValidationTrackingVideo.pause();
           }
+          updatePlayButtonText();
+        });
+        videoValidationStepVideo.addEventListener('ended', () => {
+          updatePlayButtonText();
         });
       }
 
