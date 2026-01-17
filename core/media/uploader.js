@@ -31,7 +31,27 @@ export async function uploadPictureAndGetUrl(filePath, pictureCode, apiKey) {
 
     const responseText = await response.text();
     console.log('Upload xong:', responseText);
-    return responseText;
+    
+    // Check if HTTP response is ok
+    if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}: ${response.statusText} - ${responseText}`);
+    }
+    
+    // Parse JSON response and return only the link (message field)
+    try {
+        const responseData = JSON.parse(responseText);
+        if (responseData.status === 200 && responseData.message) {
+            return responseData.message;
+        } else {
+            throw new Error(`Upload failed: ${responseText}`);
+        }
+    } catch (e) {
+        // If not JSON or parsing fails, throw error
+        if (e instanceof Error && e.message.includes('Upload failed')) {
+            throw e;
+        }
+        throw new Error(`Failed to parse upload response: ${responseText}`);
+    }
 }
 
 export async function uploadVideo(filePath, videoCode, apiKey) {

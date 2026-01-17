@@ -52,10 +52,8 @@ export async function saveResults(tracker) {
                     const filePath = saveBase64AsFile(imageBase64, "./screenshots", fname);
                     console.log(`Save screenshot to: ${filePath}`);
                     if (filePath) {
-                        const resp = await uploadPictureAndGetUrl(filePath, picCode, ENV.API_TOKEN);
-                        const jsonData = JSON.parse(resp);
-                        if (jsonData?.status === 200) {
-                            const imageUrl = jsonData.message;
+                        const imageUrl = await uploadPictureAndGetUrl(filePath, picCode, ENV.API_TOKEN);
+                        if (imageUrl) {
                             console.log(`✅ Uploaded screenshot for panel ${item.name}`);
 
                             await tracker.dataItemManager.updateItem(item.item_id, { image_url: imageUrl });

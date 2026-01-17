@@ -200,10 +200,8 @@ export class MySQLExporter {
                     
                     if (tempFilePath) {
                         try {
-                            const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                            const jsonData = JSON.parse(resp);
-                            if (jsonData?.status === 200) {
-                                screenshotUrl = jsonData.message;
+                            const screenshotUrl = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                            if (screenshotUrl) {
                                 console.log(`  ✅ Uploaded page ${pageNo}/${numPages}: ${screenshotUrl}`);
                                 hasUpdates = true;
                             } else {
@@ -398,11 +396,9 @@ export class MySQLExporter {
                                 const tempFilePath = saveBase64AsFile(base64Content, "./screenshots", fname);
                                 
                                 if (tempFilePath) {
-                                    const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                                    const jsonData = JSON.parse(resp);
+                                    const imageUrl = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
                                     
-                                    if (jsonData?.status === 200) {
-                                        imageUrl = jsonData.message;
+                                    if (imageUrl) {
                                         console.log(`✅ Uploaded image for ${item.item_category} "${item.name}"`);
                                         
                                         item.image_url = imageUrl;
@@ -444,11 +440,9 @@ export class MySQLExporter {
                                 const tempFilePath = saveBase64AsFile(fullscreenBase64, "./screenshots", fname);
 
                                 if (tempFilePath) {
-                                    const resp = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
-                                    const jsonData = JSON.parse(resp);
+                                    const fullscreenUrl = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
 
-                                    if (jsonData?.status === 200) {
-                                        fullscreenUrl = jsonData.message;
+                                    if (fullscreenUrl) {
                                         console.log(`✅ Uploaded fullscreen image for ${item.item_category} "${item.name}"`);
 
                                         item.fullscreen_url = fullscreenUrl;
