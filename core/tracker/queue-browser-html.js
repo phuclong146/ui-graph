@@ -1272,7 +1272,7 @@ export const QUEUE_BROWSER_HTML = `
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="videoValidationPlayPauseBtn" style="background:#28a745; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">⏯ SyncedPlay</button>
           <button id="videoValidationSubtitleToggleBtn" style="background:#17a2b8; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">📝 Subtitle OFF</button>
-          <button id="videoValidationRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🐛 RaiseBug</button>
+          <button id="videoValidationRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;"><ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/><line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/><line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/><line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/></svg> RaiseBug</button>
           <button id="closeVideoValidationBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
       </div>
@@ -2772,6 +2772,78 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.renderPanelTreeForValidation = renderPanelTreeForValidation;
 
+      // Function to load video data for a specific action
+      function loadVideoDataForAction(actionId) {
+        const stepData = window.videoValidationStepData || [];
+        const stepInfo = stepData.find(s => s.action_id === actionId);
+        
+        if (stepInfo) {
+          const trackingVideo = document.getElementById('videoValidationTrackingVideo');
+          const stepVideo = document.getElementById('videoValidationStepVideo');
+          const rawVideoToggle = document.getElementById('videoValidationRawVideoToggle');
+          
+          // Store URLs for later use
+          videoValidationCurrentActionId = actionId;
+          videoValidationStepSubtitles = stepInfo.step_video_subtitles || [];
+          videoValidationTrackingVideoUrl = stepInfo.tracking_video_url;
+          videoValidationRawVideoUrl = stepInfo.session_url;
+          
+          // Load StepVideo
+          if (stepVideo && stepInfo.step_video_url) {
+            stepVideo.src = stepInfo.step_video_url;
+            stepVideo.load();
+          } else if (stepVideo) {
+            stepVideo.src = '';
+          }
+          
+          // Load TrackingVideo (default, not raw)
+          if (trackingVideo) {
+            if (stepInfo.tracking_video_url) {
+              trackingVideo.src = stepInfo.tracking_video_url;
+              trackingVideo.load();
+              if (rawVideoToggle) {
+                rawVideoToggle.checked = false;
+              }
+            } else if (stepInfo.session_url) {
+              // Fallback to raw video if tracking video not available
+              trackingVideo.src = stepInfo.session_url;
+              trackingVideo.load();
+              if (rawVideoToggle) {
+                rawVideoToggle.checked = true;
+              }
+            } else {
+              trackingVideo.src = '';
+            }
+          }
+          
+          // Update SyncedPlay button state after loading video
+          if (window.updateSyncedPlayButtonState) {
+            window.updateSyncedPlayButtonState();
+          }
+        } else {
+          // No step data for this action - clear videos
+          const trackingVideo = document.getElementById('videoValidationTrackingVideo');
+          const stepVideo = document.getElementById('videoValidationStepVideo');
+          
+          if (trackingVideo) {
+            trackingVideo.src = '';
+          }
+          if (stepVideo) {
+            stepVideo.src = '';
+          }
+          
+          videoValidationCurrentActionId = null;
+          videoValidationStepSubtitles = [];
+          videoValidationTrackingVideoUrl = null;
+          videoValidationRawVideoUrl = null;
+          
+          // Update SyncedPlay button state
+          if (window.updateSyncedPlayButtonState) {
+            window.updateSyncedPlayButtonState();
+          }
+        }
+      }
+
       function createVideoValidationTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
@@ -2854,6 +2926,34 @@ export const QUEUE_BROWSER_HTML = `
           badge.className = 'graph-tree-incomplete-badge';
           badge.textContent = '[Chưa hoàn tất]';
           label.appendChild(badge);
+        }
+        
+        // Add bug icon for actions with bug_flag (after name)
+        if (node.item_category === 'ACTION') {
+          // Debug: log to check bug_flag
+          if (node.bug_flag || node.bug_flag === true) {
+            const bugIcon = document.createElement('span');
+            bugIcon.style.marginLeft = '4px';
+            bugIcon.style.display = 'inline-block';
+            bugIcon.style.verticalAlign = 'middle';
+            bugIcon.style.width = '14px';
+            bugIcon.style.height = '14px';
+            bugIcon.style.color = '#dc3545';
+            bugIcon.title = node.bug_note || 'Bug reported';
+            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
+              <ellipse cx="32" cy="36" rx="14" ry="18"/>
+              <circle cx="32" cy="20" r="8"/>
+              <line x1="28" y1="12" x2="22" y2="4"/>
+              <line x1="36" y1="12" x2="42" y2="4"/>
+              <line x1="18" y1="42" x2="8" y2="48"/>
+              <line x1="18" y1="36" x2="8" y2="36"/>
+              <line x1="18" y1="30" x2="8" y2="24"/>
+              <line x1="46" y1="42" x2="56" y2="48"/>
+              <line x1="46" y1="36" x2="56" y2="36"/>
+              <line x1="46" y1="30" x2="56" y2="24"/>
+            </svg>\`;
+            label.appendChild(bugIcon);
+          }
         }
         
         contentDiv.appendChild(label);

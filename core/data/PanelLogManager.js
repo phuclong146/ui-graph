@@ -105,6 +105,8 @@ export class PanelLogManager {
                     status: item.status,
                     action_pos: item.metadata?.global_pos,
                     draw_flow_state: item.metadata?.draw_flow_state || null,
+                    bug_flag: item.metadata?.bug_flag || false,
+                    bug_note: item.metadata?.bug_note || null,
                     children: []
                 });
             });
@@ -201,6 +203,8 @@ export class PanelLogManager {
                     status: item.status,
                     action_pos: item.metadata?.global_pos,
                     draw_flow_state: item.metadata?.draw_flow_state || null,
+                    bug_flag: item.metadata?.bug_flag || false,
+                    bug_note: item.metadata?.bug_note || null,
                     children: []
                 });
             });

@@ -6656,6 +6656,48 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log(`✅ Bug raised for action ${actionItemId}: ${note || 'No note'}`);
             await tracker._broadcast({ type: 'show_toast', message: '✅ Bug raised successfully' });
+
+            // Helper function to find node in tree
+            const findNodeInTree = (nodes, nodeId) => {
+                for (const node of nodes) {
+                    if (node.panel_id === nodeId) return node;
+                    if (node.children && node.children.length > 0) {
+                        const found = findNodeInTree(node.children, nodeId);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            // Refresh video validation tree if modal is open
+            const isModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('videoValidationModal');
+                return modal && modal.style.display === 'flex';
+            });
+
+            if (isModalOpen && tracker.panelLogManager) {
+                // Small delay to ensure file is written
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Reload tree structure with updated bug info
+                const panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                
+                // Debug: log to verify bug_flag is in tree data
+                const actionNode = findNodeInTree(panelTreeData, actionItemId);
+                if (actionNode) {
+                    console.log(`🔍 Debug: Action node bug_flag = ${actionNode.bug_flag}, bug_note = ${actionNode.bug_note}`);
+                } else {
+                    console.warn(`⚠️ Action node not found in tree: ${actionItemId}`);
+                }
+                
+                // Re-render the tree in the video validation modal
+                await tracker.queuePage.evaluate((panelTreeData) => {
+                    const panelLogTree = document.getElementById('videoValidationPanelLogTree');
+                    if (panelLogTree && window.renderPanelTreeForValidation) {
+                        window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
+                    }
+                }, panelTreeData);
+            }
         } catch (err) {
             console.error('Failed to raise bug:', err);
             await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to raise bug' });
