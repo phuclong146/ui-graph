@@ -438,6 +438,15 @@ export async function setupTracking(tracker) {
     if (!tracker._keyboardPoller) {
         tracker._keyboardPoller = setInterval(async () => {
             try {
+                // Check if page is closed or browser is closing
+                if (!tracker.page || tracker.page.isClosed()) {
+                    if (tracker._keyboardPoller) {
+                        clearInterval(tracker._keyboardPoller);
+                        tracker._keyboardPoller = null;
+                    }
+                    return;
+                }
+
                 const keyboardActions = await tracker.page.evaluate(() => {
                     if (!window.__keyboardQueue || window.__keyboardQueue.length === 0) {
                         return [];
@@ -496,13 +505,39 @@ export async function setupTracking(tracker) {
                         }
                     }
                 }
-            } catch (err) { }
+            } catch (err) {
+                // Check if it's a detached frame error or page closed error
+                const isDetachedFrame = err.message && (
+                    err.message.includes('detached Frame') ||
+                    err.message.includes('Target closed') ||
+                    err.message.includes('Execution context was destroyed') ||
+                    err.message.includes('Session closed')
+                );
+                
+                if (isDetachedFrame) {
+                    // Page is closing, stop the poller silently
+                    if (tracker._keyboardPoller) {
+                        clearInterval(tracker._keyboardPoller);
+                        tracker._keyboardPoller = null;
+                    }
+                    return;
+                }
+            }
         }, 30);
     }
 
     if (!tracker._clickPoller) {
         tracker._clickPoller = setInterval(async () => {
             try {
+                // Check if page is closed or browser is closing
+                if (!tracker.page || tracker.page.isClosed()) {
+                    if (tracker._clickPoller) {
+                        clearInterval(tracker._clickPoller);
+                        tracker._clickPoller = null;
+                    }
+                    return;
+                }
+
                 const clicks = await tracker.page.evaluate(() => {
                     if (!window.__clickQueue || window.__clickQueue.length === 0) {
                         return [];
@@ -555,6 +590,24 @@ export async function setupTracking(tracker) {
                     }
                 }
             } catch (err) {
+                // Check if it's a detached frame error or page closed error
+                const isDetachedFrame = err.message && (
+                    err.message.includes('detached Frame') ||
+                    err.message.includes('Target closed') ||
+                    err.message.includes('Execution context was destroyed') ||
+                    err.message.includes('Session closed')
+                );
+                
+                if (isDetachedFrame) {
+                    // Page is closing, stop the poller silently
+                    if (tracker._clickPoller) {
+                        clearInterval(tracker._clickPoller);
+                        tracker._clickPoller = null;
+                    }
+                    return;
+                }
+                
+                // Only log non-detached errors
                 console.error(`[CLICK] ❌ Error in click poller:`, err);
             }
         }, 30);

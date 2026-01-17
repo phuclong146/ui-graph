@@ -505,6 +505,19 @@ export class PanelScreenTracker {
             console.error('❌ Failed to cancel panel recording:', err);
         }
         
+        // Clean up pollers before closing browsers
+        if (this._keyboardPoller) {
+            clearInterval(this._keyboardPoller);
+            this._keyboardPoller = null;
+        }
+        if (this._clickPoller) {
+            clearInterval(this._clickPoller);
+            this._clickPoller = null;
+        }
+        
+        // Small delay to let pollers finish their current iteration
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         // Safely close tracking browser (puppeteer-real-browser)
         await this._safeCloseBrowser(this.browser, 'tracking browser');
         
