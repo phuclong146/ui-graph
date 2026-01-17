@@ -6425,6 +6425,231 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const generateVideoForActionHandler = async (actionId) => {
+        try {
+            const actionItem = await tracker.dataItemManager.getItem(actionId);
+            if (!actionItem || actionItem.item_category !== 'ACTION') {
+                throw new Error(`Action not found: ${actionId}`);
+            }
+
+            const step = await tracker.stepManager.getStepForAction(actionId);
+            if (!step) {
+                throw new Error(`Step not found for action: ${actionId}`);
+            }
+
+            // Import video generators
+            const { createStepVideo, createTrackingVideo } = await import('../media/video-generator.js');
+
+            const results = {};
+
+            // 1. Create StepVideo if not exists
+            if (!actionItem.metadata?.step_video_url) {
+                const panelBeforeId = step.panel_before?.item_id;
+                const panelAfterId = step.panel_after?.item_id;
+
+                if (panelBeforeId && panelAfterId) {
+                    const panelBefore = await tracker.dataItemManager.getItem(panelBeforeId);
+                    const panelAfter = await tracker.dataItemManager.getItem(panelAfterId);
+
+                    let panelBeforeImage = null;
+                    if (panelBefore?.fullscreen_base64) {
+                        panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.fullscreen_base64);
+                    } else if (panelBefore?.image_base64) {
+                        panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.image_base64);
+                    }
+
+                    let panelAfterImage = null;
+                    if (panelAfter?.fullscreen_base64) {
+                        panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.fullscreen_base64);
+                    } else if (panelAfter?.image_base64) {
+                        panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.image_base64);
+                    }
+
+                    if (panelBeforeImage && panelAfterImage) {
+                        const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };
+                        const panelInfo = {
+                            name: panelBefore.name || 'Panel',
+                            type: panelBefore.type || 'screen',
+                            verb: panelBefore.verb || 'view'
+                        };
+                        const actionInfo = {
+                            name: actionItem.name || 'Action',
+                            type: actionItem.type || 'button',
+                            verb: actionItem.verb || 'click'
+                        };
+
+                        const stepVideoResult = await createStepVideo(
+                            panelBeforeImage,
+                            panelAfterImage,
+                            actionPos,
+                            panelInfo,
+                            actionInfo,
+                            tracker.sessionFolder,
+                            actionId
+                        );
+
+                        await tracker.dataItemManager.updateItem(actionId, {
+                            metadata: {
+                                ...actionItem.metadata,
+                                step_video_url: stepVideoResult.videoUrl,
+                                step_video_subtitles: stepVideoResult.subtitles
+                            }
+                        });
+
+                        results.step_video_url = stepVideoResult.videoUrl;
+                        results.step_video_subtitles = stepVideoResult.subtitles;
+                        console.log(`✅ StepVideo created for action ${actionId}: ${stepVideoResult.videoUrl}`);
+                    }
+                }
+            } else {
+                results.step_video_url = actionItem.metadata.step_video_url;
+                results.step_video_subtitles = actionItem.metadata.step_video_subtitles || [];
+            }
+
+            // 2. Create TrackingVideo if not exists
+            if (!actionItem.metadata?.tracking_video_url && actionItem.metadata?.session_url) {
+                const sessionUrl = actionItem.metadata.session_url;
+                const sessionStart = actionItem.metadata.session_start || Date.now();
+                
+                // Get clicks for action
+                let clicks = null;
+                if (tracker.clickManager) {
+                    clicks = await tracker.clickManager.getClicksForAction(actionId);
+                }
+
+                if (clicks && clicks.length > 0) {
+                    const trackingVideoResult = await createTrackingVideo(
+                        sessionUrl,
+                        sessionStart,
+                        actionId,
+                        clicks,
+                        tracker
+                    );
+
+                    await tracker.dataItemManager.updateItem(actionId, {
+                        metadata: {
+                            ...actionItem.metadata,
+                            tracking_video_url: trackingVideoResult.videoUrl,
+                            tracking_action_url: trackingVideoResult.trackingActionUrl,
+                            tracking_panel_after_url: trackingVideoResult.trackingPanelAfterUrl
+                        }
+                    });
+
+                    results.tracking_video_url = trackingVideoResult.videoUrl;
+                    results.tracking_action_url = trackingVideoResult.trackingActionUrl;
+                    results.tracking_panel_after_url = trackingVideoResult.trackingPanelAfterUrl;
+                    console.log(`✅ TrackingVideo created for action ${actionId}: ${trackingVideoResult.videoUrl}`);
+                }
+            } else {
+                results.tracking_video_url = actionItem.metadata?.tracking_video_url || null;
+                results.session_url = actionItem.metadata?.session_url || null;
+            }
+
+            return results;
+        } catch (err) {
+            console.error(`Failed to generate video for action ${actionId}:`, err);
+            throw err;
+        }
+    };
+
+    const validateStepHandler = async () => {
+        try {
+            // Load panel tree (TreeMode)
+            let panelTreeData = [];
+            if (tracker.panelLogManager) {
+                panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+            }
+
+            // Get all actions with steps
+            const allItems = await tracker.dataItemManager.getAllItems();
+            const actionItems = allItems.filter(item => item.item_category === 'ACTION');
+            const steps = await tracker.stepManager.getAllSteps();
+
+            // Build step data with video URLs
+            const stepData = [];
+            for (const step of steps) {
+                const actionId = step.action?.item_id;
+                if (!actionId) continue;
+
+                const actionItem = actionItems.find(a => a.item_id === actionId);
+                if (!actionItem) continue;
+
+                const stepInfo = {
+                    step_id: step.step_id,
+                    action_id: actionId,
+                    action_name: actionItem.name,
+                    action_type: actionItem.type,
+                    action_verb: actionItem.verb,
+                    step_video_url: actionItem.metadata?.step_video_url || null,
+                    step_video_subtitles: actionItem.metadata?.step_video_subtitles || [],
+                    tracking_video_url: actionItem.metadata?.tracking_video_url || null,
+                    session_url: actionItem.metadata?.session_url || null,
+                    tracking_action_url: actionItem.metadata?.tracking_action_url || null,
+                    tracking_panel_after_url: actionItem.metadata?.tracking_panel_after_url || null,
+                    bug_flag: actionItem.metadata?.bug_flag || false,
+                    bug_note: actionItem.metadata?.bug_note || null,
+                    panel_before_id: step.panel_before?.item_id || null,
+                    panel_after_id: step.panel_after?.item_id || null
+                };
+
+                stepData.push(stepInfo);
+            }
+
+            // Show VideoValidationScreen
+            await tracker.queuePage.evaluate((panelTreeData, stepData) => {
+                const modal = document.getElementById('videoValidationModal');
+                if (!modal) {
+                    console.error('videoValidationModal not found');
+                    return;
+                }
+
+                modal.style.display = 'flex';
+
+                // Render panel tree
+                const panelLogTree = document.getElementById('videoValidationPanelLogTree');
+                if (panelLogTree && window.renderPanelTreeForValidation) {
+                    window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
+                }
+
+                // Store step data for later use
+                window.videoValidationStepData = stepData;
+            }, panelTreeData, stepData);
+
+        } catch (err) {
+            console.error('Failed to validate step:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to load validation data' });
+        }
+    };
+
+    const raiseBugHandler = async (actionItemId, note) => {
+        try {
+            if (!actionItemId) {
+                console.warn('⚠️ No actionItemId provided for raiseBug');
+                return;
+            }
+
+            const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+            if (!actionItem) {
+                console.warn(`⚠️ Action item not found: ${actionItemId}`);
+                return;
+            }
+
+            await tracker.dataItemManager.updateItem(actionItemId, {
+                metadata: {
+                    ...actionItem.metadata,
+                    bug_flag: true,
+                    bug_note: note || ''
+                }
+            });
+
+            console.log(`✅ Bug raised for action ${actionItemId}: ${note || 'No note'}`);
+            await tracker._broadcast({ type: 'show_toast', message: '✅ Bug raised successfully' });
+        } catch (err) {
+            console.error('Failed to raise bug:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to raise bug' });
+        }
+    };
+
     const showStepInfoHandler = async (edgeData, nodesData) => {
         // Load images in Node.js context
         let panelBeforeImage = null;
@@ -6954,6 +7179,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         handleSaveReminderResponse: handleSaveReminderResponse,
         viewGraph: viewGraphHandler,
         showPanelInfoGraph: showPanelInfoHandler,
-        showStepInfoGraph: showStepInfoHandler
+        showStepInfoGraph: showStepInfoHandler,
+        validateStep: validateStepHandler,
+        raiseBug: raiseBugHandler,
+        generateVideoForAction: generateVideoForActionHandler
     };
 }

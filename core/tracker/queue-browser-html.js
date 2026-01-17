@@ -1075,6 +1075,7 @@ export const QUEUE_BROWSER_HTML = `
         </svg>
         View Graph
       </button>
+      <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
       <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -1258,6 +1259,59 @@ export const QUEUE_BROWSER_HTML = `
             <button id="closeGraphInfoBtn" style="background:none; border:none; font-size:20px; cursor:pointer; color:#fff; padding:0; width:24px; height:24px; line-height:1;">&times;</button>
           </div>
           <div id="graphInfoContent" style="flex:1; overflow:auto; padding:15px; color:#fff;">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="videoValidationModal" style="display:none; position:fixed; z-index:20006; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.95); flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#1a1a1a; border-bottom:1px solid #333;">
+        <h3 style="margin:0; font-size:18px; color:#fff; display:flex; align-items:center; gap:8px;">
+          Verify Steps with Video
+        </h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="videoValidationPlayPauseBtn" style="background:#28a745; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">⏯ Play/Pause</button>
+          <button id="videoValidationSubtitleToggleBtn" style="background:#17a2b8; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">📝 Subtitle OFF</button>
+          <button id="videoValidationRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🐛 RaiseBug</button>
+          <button id="closeVideoValidationBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
+        </div>
+      </div>
+      <div style="flex:1; display:flex; overflow:hidden; position:relative;">
+        <div id="videoValidationPanelLogContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+            <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
+          </div>
+          <div id="videoValidationPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
+          </div>
+        </div>
+        <div style="flex:1; display:flex; background:#1a1a1a; overflow:hidden;">
+          <div style="flex:1; display:flex; flex-direction:column; padding:20px; border-right:1px solid #333;">
+            <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+              <label style="color:#fff; font-size:14px; font-weight:600;">A - Tracking Video</label>
+              <label style="color:#fff; font-size:12px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <input type="checkbox" id="videoValidationRawVideoToggle" style="cursor:pointer;">
+                <span>View RawVideo</span>
+              </label>
+            </div>
+            <div style="flex:1; position:relative; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+              <video id="videoValidationTrackingVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
+                Your browser does not support the video tag.
+              </video>
+              <div id="videoValidationTrackingSubtitle" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; max-width:90%; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
+              </div>
+            </div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; padding:20px;">
+            <div style="margin-bottom:10px;">
+              <label style="color:#fff; font-size:14px; font-weight:600;">B - Step Video</label>
+            </div>
+            <div style="flex:1; position:relative; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+              <video id="videoValidationStepVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
+                Your browser does not support the video tag.
+              </video>
+              <div id="videoValidationStepSubtitle" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.75); color:#fff; padding:8px 16px; border-radius:4px; font-size:14px; max-width:90%; text-align:center; display:none; pointer-events:none; white-space:pre-line;">
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2217,6 +2271,18 @@ export const QUEUE_BROWSER_HTML = `
         viewGraphBtn.addEventListener('click', openGraphView);
       }
 
+      // Validate Step handler
+      const validateBtn = document.getElementById('validateBtn');
+      const openValidateView = async () => {
+        if (window.validateStep) {
+          await window.validateStep();
+        }
+      };
+
+      if (validateBtn) {
+        validateBtn.addEventListener('click', openValidateView);
+      }
+
       if (closeGraphViewBtn) {
         closeGraphViewBtn.addEventListener('click', closeGraphView);
       }
@@ -2270,6 +2336,169 @@ export const QUEUE_BROWSER_HTML = `
         graphFitToScreenBtn.addEventListener('click', () => {
           if (window.graphNetwork) {
             window.graphNetwork.fit();
+          }
+        });
+      }
+
+      // Video Validation Modal handlers
+      const videoValidationModal = document.getElementById('videoValidationModal');
+      const closeVideoValidationBtn = document.getElementById('closeVideoValidationBtn');
+      const videoValidationPlayPauseBtn = document.getElementById('videoValidationPlayPauseBtn');
+      const videoValidationSubtitleToggleBtn = document.getElementById('videoValidationSubtitleToggleBtn');
+      const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
+      const videoValidationRawVideoToggle = document.getElementById('videoValidationRawVideoToggle');
+      const videoValidationTrackingVideo = document.getElementById('videoValidationTrackingVideo');
+      const videoValidationStepVideo = document.getElementById('videoValidationStepVideo');
+      const videoValidationTrackingSubtitle = document.getElementById('videoValidationTrackingSubtitle');
+      const videoValidationStepSubtitle = document.getElementById('videoValidationStepSubtitle');
+      const videoValidationPanelLogTree = document.getElementById('videoValidationPanelLogTree');
+
+      let videoValidationSubtitlesEnabled = false;
+      let videoValidationCurrentActionId = null;
+      let videoValidationStepSubtitles = [];
+      let videoValidationTrackingVideoUrl = null;
+      let videoValidationRawVideoUrl = null;
+
+      const closeVideoValidationView = () => {
+        if (videoValidationModal) {
+          videoValidationModal.style.display = 'none';
+          // Pause videos
+          if (videoValidationTrackingVideo) {
+            videoValidationTrackingVideo.pause();
+          }
+          if (videoValidationStepVideo) {
+            videoValidationStepVideo.pause();
+          }
+        }
+      };
+
+      const syncVideoPlayPause = () => {
+        if (videoValidationTrackingVideo && videoValidationStepVideo) {
+          if (videoValidationTrackingVideo.paused) {
+            videoValidationStepVideo.pause();
+          } else {
+            videoValidationStepVideo.play();
+          }
+        }
+      };
+
+      const updateSubtitleOverlay = (video, subtitleElement, subtitles) => {
+        if (!videoValidationSubtitlesEnabled || !subtitles || subtitles.length === 0) {
+          subtitleElement.style.display = 'none';
+          return;
+        }
+
+        const currentTime = video.currentTime;
+        const currentSubtitle = subtitles.find(s => currentTime >= s.startTime && currentTime <= s.endTime);
+        
+        if (currentSubtitle) {
+          subtitleElement.textContent = currentSubtitle.text;
+          subtitleElement.style.display = 'block';
+        } else {
+          subtitleElement.style.display = 'none';
+        }
+      };
+
+      if (closeVideoValidationBtn) {
+        closeVideoValidationBtn.addEventListener('click', closeVideoValidationView);
+      }
+
+      if (videoValidationModal) {
+        videoValidationModal.addEventListener('click', (e) => {
+          if (e.target === videoValidationModal) {
+            closeVideoValidationView();
+          }
+        });
+      }
+
+      if (videoValidationPlayPauseBtn) {
+        videoValidationPlayPauseBtn.addEventListener('click', () => {
+          if (videoValidationTrackingVideo) {
+            if (videoValidationTrackingVideo.paused) {
+              videoValidationTrackingVideo.play();
+            } else {
+              videoValidationTrackingVideo.pause();
+            }
+            syncVideoPlayPause();
+          }
+        });
+      }
+
+      if (videoValidationSubtitleToggleBtn) {
+        videoValidationSubtitleToggleBtn.addEventListener('click', () => {
+          videoValidationSubtitlesEnabled = !videoValidationSubtitlesEnabled;
+          videoValidationSubtitleToggleBtn.textContent = videoValidationSubtitlesEnabled ? '📝 Subtitle ON' : '📝 Subtitle OFF';
+          
+          if (videoValidationTrackingSubtitle) {
+            videoValidationTrackingSubtitle.style.display = videoValidationSubtitlesEnabled ? 'block' : 'none';
+          }
+          if (videoValidationStepSubtitle) {
+            videoValidationStepSubtitle.style.display = videoValidationSubtitlesEnabled ? 'block' : 'none';
+          }
+        });
+      }
+
+      if (videoValidationRaiseBugBtn) {
+        videoValidationRaiseBugBtn.addEventListener('click', () => {
+          if (!videoValidationCurrentActionId) {
+            alert('Please select an action first');
+            return;
+          }
+          const note = prompt('Enter bug note (optional):');
+          if (note !== null && window.raiseBug) {
+            window.raiseBug(videoValidationCurrentActionId, note || '');
+          }
+        });
+      }
+
+      if (videoValidationRawVideoToggle) {
+        videoValidationRawVideoToggle.addEventListener('change', () => {
+          if (videoValidationTrackingVideo) {
+            if (videoValidationRawVideoToggle.checked && videoValidationRawVideoUrl) {
+              videoValidationTrackingVideo.src = videoValidationRawVideoUrl;
+            } else if (videoValidationTrackingVideoUrl) {
+              videoValidationTrackingVideo.src = videoValidationTrackingVideoUrl;
+            }
+          }
+        });
+      }
+
+      // Update subtitles on timeupdate
+      if (videoValidationTrackingVideo) {
+        videoValidationTrackingVideo.addEventListener('timeupdate', () => {
+          updateSubtitleOverlay(videoValidationTrackingVideo, videoValidationTrackingSubtitle, []);
+        });
+      }
+
+      if (videoValidationStepVideo) {
+        videoValidationStepVideo.addEventListener('timeupdate', () => {
+          updateSubtitleOverlay(videoValidationStepVideo, videoValidationStepSubtitle, videoValidationStepSubtitles);
+        });
+      }
+
+      // Sync video playback
+      if (videoValidationTrackingVideo) {
+        videoValidationTrackingVideo.addEventListener('play', () => {
+          if (videoValidationStepVideo && videoValidationStepVideo.paused) {
+            videoValidationStepVideo.play();
+          }
+        });
+        videoValidationTrackingVideo.addEventListener('pause', () => {
+          if (videoValidationStepVideo && !videoValidationStepVideo.paused) {
+            videoValidationStepVideo.pause();
+          }
+        });
+      }
+
+      if (videoValidationStepVideo) {
+        videoValidationStepVideo.addEventListener('play', () => {
+          if (videoValidationTrackingVideo && videoValidationTrackingVideo.paused) {
+            videoValidationTrackingVideo.play();
+          }
+        });
+        videoValidationStepVideo.addEventListener('pause', () => {
+          if (videoValidationTrackingVideo && !videoValidationTrackingVideo.paused) {
+            videoValidationTrackingVideo.pause();
           }
         });
       }
@@ -2482,6 +2711,286 @@ export const QUEUE_BROWSER_HTML = `
               if (graphEdge && graphEdge.data && window.showStepInfoGraph) {
                 await window.showStepInfoGraph(graphEdge.data, window.graphNodesData);
               }
+            }
+          }
+        });
+        
+        return nodeDiv;
+      }
+
+      // Video Validation Panel Log Tree functions
+      let videoValidationPanelTreeData = [];
+      let videoValidationExpandedPanels = new Set();
+
+      function renderPanelTreeForValidation(panelTreeData, treeContainer) {
+        if (!treeContainer) return;
+        
+        videoValidationPanelTreeData = panelTreeData || [];
+        treeContainer.innerHTML = '';
+        
+        videoValidationPanelTreeData.forEach(node => {
+          treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
+        });
+      }
+
+      // Expose to window for access from evaluate context
+      window.renderPanelTreeForValidation = renderPanelTreeForValidation;
+
+      function createVideoValidationTreeNode(node, depth) {
+        const nodeDiv = document.createElement('div');
+        nodeDiv.className = 'graph-tree-node';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'graph-tree-node-content';
+        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        
+        // Add padding-left for child panels (20px per level)
+        if (depth > 0) {
+          contentDiv.style.paddingLeft = (20 * depth) + 'px';
+        }
+        
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'graph-tree-expand';
+        if (node.item_category === 'PANEL') {
+          if (node.children && node.children.length > 0) {
+            expandIcon.textContent = '▶';
+          } else {
+            expandIcon.textContent = '';
+            expandIcon.style.visibility = 'hidden';
+          }
+        } else {
+          expandIcon.textContent = '';
+          expandIcon.style.visibility = 'hidden';
+        }
+        contentDiv.appendChild(expandIcon);
+        
+        const nodeDot = document.createElement('span');
+        nodeDot.className = 'graph-tree-node-dot';
+        if (node.item_category === 'ACTION') {
+          nodeDot.style.marginLeft = '8px';
+        }
+        
+        let dotColor;
+        if (node.item_category === 'PANEL') {
+          const isIncomplete = node.draw_flow_state !== null && 
+                              node.draw_flow_state !== undefined && 
+                              node.draw_flow_state !== 'completed';
+          dotColor = isIncomplete ? '#ff9800' : '#4caf50';
+        } else {
+          const hasIntersections = node.hasIntersections || false;
+          dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        }
+        
+        let originalDotHTML;
+        if (node.status === 'completed') {
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
+            '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+            '</svg>';
+        } else {
+          originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
+            '</svg>';
+        }
+        nodeDot.innerHTML = originalDotHTML;
+        contentDiv.appendChild(nodeDot);
+        
+        const label = document.createElement('span');
+        label.className = 'graph-tree-label';
+        
+        const isIncomplete = node.item_category === 'PANEL' && 
+                            node.draw_flow_state !== null && 
+                            node.draw_flow_state !== undefined && 
+                            node.draw_flow_state !== 'completed';
+        
+        if (isIncomplete) {
+          const warningIcon = document.createElement('span');
+          warningIcon.textContent = '⚠️ ';
+          warningIcon.style.marginRight = '4px';
+          label.appendChild(warningIcon);
+        }
+        
+        const nameText = document.createTextNode(node.name || 'Item');
+        label.appendChild(nameText);
+        
+        if (isIncomplete) {
+          const badge = document.createElement('span');
+          badge.className = 'graph-tree-incomplete-badge';
+          badge.textContent = '[Chưa hoàn tất]';
+          label.appendChild(badge);
+        }
+        
+        contentDiv.appendChild(label);
+        nodeDiv.appendChild(contentDiv);
+        
+        if (node.children && node.children.length > 0) {
+          const childrenDiv = document.createElement('div');
+          childrenDiv.className = 'graph-tree-children';
+          
+          if (depth === 0) {
+            childrenDiv.classList.add('level-1');
+          } else {
+            childrenDiv.classList.add('level-2');
+          }
+          
+          if (videoValidationExpandedPanels.has(node.panel_id)) {
+            childrenDiv.classList.add('expanded');
+            expandIcon.textContent = '▼';
+          }
+          
+          node.children.forEach(child => {
+            childrenDiv.appendChild(createVideoValidationTreeNode(child, depth + 1));
+          });
+          nodeDiv.appendChild(childrenDiv);
+          
+          expandIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            childrenDiv.classList.toggle('expanded');
+            expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
+            
+            if (childrenDiv.classList.contains('expanded')) {
+              videoValidationExpandedPanels.add(node.panel_id);
+            } else {
+              videoValidationExpandedPanels.delete(node.panel_id);
+            }
+          });
+        }
+        
+        contentDiv.addEventListener('click', async () => {
+          // Remove selected class from all nodes
+          const treeContainer = document.getElementById('videoValidationPanelLogTree');
+          if (treeContainer) {
+            treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
+              el.classList.remove('selected');
+            });
+          }
+          contentDiv.classList.add('selected');
+          
+          if (node.item_category === 'ACTION') {
+            // Load video URLs for this action
+            const stepData = window.videoValidationStepData || [];
+            let stepInfo = stepData.find(s => s.action_id === node.panel_id);
+            
+            // If video doesn't exist, generate it on-demand
+            if (stepInfo && (!stepInfo.step_video_url || !stepInfo.tracking_video_url)) {
+              const loadingMsg = document.getElementById('videoValidationStepVideo');
+              if (loadingMsg && !stepInfo.step_video_url) {
+                loadingMsg.previousElementSibling?.remove();
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'video-validation-loading-msg';
+                loadingDiv.style.cssText = 'position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:#fff; font-size:14px;';
+                loadingDiv.textContent = '⏳ Creating StepVideo...';
+                loadingMsg.parentElement.appendChild(loadingDiv);
+              }
+              
+              const loadingMsg2 = document.getElementById('videoValidationTrackingVideo');
+              let loadingDiv2 = null;
+              if (loadingMsg2 && !stepInfo.tracking_video_url && stepInfo.session_url) {
+                loadingMsg2.previousElementSibling?.remove();
+                loadingDiv2 = document.createElement('div');
+                loadingDiv2.className = 'video-validation-loading-msg';
+                loadingDiv2.style.cssText = 'position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:#fff; font-size:14px;';
+                loadingDiv2.textContent = '⏳ Creating TrackingVideo...';
+                loadingMsg2.parentElement.appendChild(loadingDiv2);
+              }
+              
+              try {
+                if (window.generateVideoForAction) {
+                  const videoResult = await window.generateVideoForAction(node.panel_id);
+                  
+                  // Update stepInfo with new URLs
+                  if (videoResult.step_video_url) {
+                    stepInfo.step_video_url = videoResult.step_video_url;
+                    stepInfo.step_video_subtitles = videoResult.step_video_subtitles || [];
+                  }
+                  if (videoResult.tracking_video_url) {
+                    stepInfo.tracking_video_url = videoResult.tracking_video_url;
+                  }
+                  if (videoResult.tracking_action_url) {
+                    stepInfo.tracking_action_url = videoResult.tracking_action_url;
+                  }
+                  if (videoResult.tracking_panel_after_url) {
+                    stepInfo.tracking_panel_after_url = videoResult.tracking_panel_after_url;
+                  }
+                  
+                  // Update window.videoValidationStepData
+                  const dataIndex = window.videoValidationStepData.findIndex(s => s.action_id === node.panel_id);
+                  if (dataIndex >= 0) {
+                    window.videoValidationStepData[dataIndex] = stepInfo;
+                  }
+                  
+                  // Remove loading messages
+                  const loadingMsgs = document.querySelectorAll('.video-validation-loading-msg');
+                  loadingMsgs.forEach(msg => msg.remove());
+                  
+                  // Reload videos if URLs are available
+                  if (stepInfo.step_video_url || stepInfo.tracking_video_url) {
+                    loadVideoDataForAction(node.panel_id);
+                  }
+                }
+              } catch (err) {
+                console.error('Failed to generate video:', err);
+                // Remove loading messages
+                const loadingMsgs = document.querySelectorAll('.video-validation-loading-msg');
+                loadingMsgs.forEach(msg => msg.remove());
+                alert('Failed to generate video: ' + (err.message || err));
+              }
+            }
+            
+            if (stepInfo) {
+              const trackingVideo = document.getElementById('videoValidationTrackingVideo');
+              const stepVideo = document.getElementById('videoValidationStepVideo');
+              const rawVideoToggle = document.getElementById('videoValidationRawVideoToggle');
+              
+              // Store URLs for later use
+              videoValidationCurrentActionId = node.panel_id;
+              videoValidationStepSubtitles = stepInfo.step_video_subtitles || [];
+              videoValidationTrackingVideoUrl = stepInfo.tracking_video_url;
+              videoValidationRawVideoUrl = stepInfo.session_url;
+              
+              // Load StepVideo
+              if (stepVideo && stepInfo.step_video_url) {
+                stepVideo.src = stepInfo.step_video_url;
+                stepVideo.load();
+              } else if (stepVideo) {
+                stepVideo.src = '';
+              }
+              
+              // Load TrackingVideo (default, not raw)
+              if (trackingVideo) {
+                if (stepInfo.tracking_video_url) {
+                  trackingVideo.src = stepInfo.tracking_video_url;
+                  trackingVideo.load();
+                  if (rawVideoToggle) {
+                    rawVideoToggle.checked = false;
+                  }
+                } else if (stepInfo.session_url) {
+                  // Fallback to raw video if tracking video not available
+                  trackingVideo.src = stepInfo.session_url;
+                  trackingVideo.load();
+                  if (rawVideoToggle) {
+                    rawVideoToggle.checked = true;
+                  }
+                } else {
+                  trackingVideo.src = '';
+                }
+              }
+            } else {
+              // No step data for this action - clear videos
+              const trackingVideo = document.getElementById('videoValidationTrackingVideo');
+              const stepVideo = document.getElementById('videoValidationStepVideo');
+              
+              if (trackingVideo) {
+                trackingVideo.src = '';
+              }
+              if (stepVideo) {
+                stepVideo.src = '';
+              }
+              
+              videoValidationCurrentActionId = null;
+              videoValidationStepSubtitles = [];
+              videoValidationTrackingVideoUrl = null;
+              videoValidationRawVideoUrl = null;
             }
           }
         });

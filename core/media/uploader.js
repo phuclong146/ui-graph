@@ -53,7 +53,23 @@ export async function uploadVideo(filePath, videoCode, apiKey) {
     formData.append('file', blob, fileName);
     formData.append('content_type', 'video/mp4');
 
-    const response = await fetch('https://upload.clevai.edu.vn/admin/video', {
+    const uploadUrl = 'https://upload.clevai.edu.vn/admin/video';
+    
+    // Log request details for Postman testing
+    console.log('[UPLOAD VIDEO] Request details:');
+    console.log('  URL:', uploadUrl);
+    console.log('  Method: POST');
+    console.log('  Headers:');
+    console.log('    accept: application/json');
+    console.log('    authorization:', apiKey ? `${apiKey.substring(0, 20)}...` : '(empty)');
+    console.log('  FormData fields:');
+    console.log('    source_name:', videoCode);
+    console.log('    source_code:', videoCode);
+    console.log('    file:', fileName, `(${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+    console.log('    content_type: video/mp4');
+    console.log('[UPLOAD VIDEO] Sending request...');
+
+    const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
             'accept': 'application/json',
@@ -64,6 +80,39 @@ export async function uploadVideo(filePath, videoCode, apiKey) {
 
     const responseText = await response.text();
     console.log('Upload xong:', responseText);
+    
+    // Check if upload was successful - check both response.ok and status field in JSON
+    let isError = !response.ok;
+    let errorMessage = '';
+    
+    try {
+        const responseData = JSON.parse(responseText);
+        // Also check if response JSON has status !== 200
+        if (responseData.status && responseData.status !== 200) {
+            isError = true;
+            errorMessage = `Upload failed with status ${responseData.status}`;
+            if (responseData.message) {
+                errorMessage += ` - ${responseData.message}`;
+            }
+        }
+    } catch (e) {
+        // If response is not JSON, check response.ok
+        if (!response.ok) {
+            isError = true;
+            errorMessage = `Upload failed with status ${response.status}: ${response.statusText}`;
+            if (responseText) {
+                errorMessage += ` - ${responseText}`;
+            }
+        }
+    }
+    
+    if (isError) {
+        if (!errorMessage) {
+            errorMessage = `Upload failed with status ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+    }
+    
     return responseText;
 }
 
