@@ -366,16 +366,126 @@ async function getVideoDuration(videoPath) {
 }
 
 /**
+ * Cut video segment from source video
+ * @param {string} inputVideoPath - Path to input video file
+ * @param {number} startSeconds - Start time in seconds
+ * @param {number} durationSeconds - Duration in seconds
+ * @param {string} outputVideoPath - Path to output video file
+ * @returns {Promise<string>} Path to output video file
+ */
+async function cutVideoSegment(inputVideoPath, startSeconds, durationSeconds, outputVideoPath) {
+    return new Promise((resolve, reject) => {
+        const inputPathNormalized = path.resolve(inputVideoPath).replace(/\\/g, '/');
+        const outputPathNormalized = path.resolve(outputVideoPath).replace(/\\/g, '/');
+        
+        console.log(`[VIDEO] Cutting video segment: ${startSeconds}s for ${durationSeconds}s`);
+        
+        ffmpegLib(inputPathNormalized)
+            .seekInput(startSeconds)
+            .outputOptions([
+                '-t', String(durationSeconds),
+                '-c:v', 'libx264',
+                '-c:a', 'copy',
+                '-avoid_negative_ts', 'make_zero'
+            ])
+            .output(outputPathNormalized)
+            .on('start', (commandLine) => {
+                console.log('[VIDEO] Cut command:', commandLine);
+            })
+            .on('stderr', (stderrLine) => {
+                console.log('[VIDEO] Cut stderr:', stderrLine);
+            })
+            .on('end', () => {
+                console.log(`[VIDEO] Video segment cut successfully: ${outputPathNormalized}`);
+                resolve(outputPathNormalized);
+            })
+            .on('error', (err) => {
+                console.error('[VIDEO] Cut video segment error:', err);
+                reject(err);
+            })
+            .run();
+    });
+}
+
+/**
+ * Concatenate two video files
+ * @param {string} video1Path - Path to first video file
+ * @param {string} video2Path - Path to second video file
+ * @param {string} outputVideoPath - Path to output video file
+ * @returns {Promise<string>} Path to output video file
+ */
+async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
+    return new Promise((resolve, reject) => {
+        const video1Normalized = path.resolve(video1Path).replace(/\\/g, '/');
+        const video2Normalized = path.resolve(video2Path).replace(/\\/g, '/');
+        const outputNormalized = path.resolve(outputVideoPath).replace(/\\/g, '/');
+        
+        // Create a temporary file list for ffmpeg concat
+        const listFilePath = outputVideoPath.replace('.mp4', '_concat_list.txt');
+        const listContent = `file '${video1Normalized}'\nfile '${video2Normalized}'`;
+        
+        fsp.writeFile(listFilePath, listContent)
+            .then(() => {
+                const listFilePathNormalized = path.resolve(listFilePath).replace(/\\/g, '/');
+                
+                console.log(`[VIDEO] Concatenating videos: ${video1Normalized} + ${video2Normalized}`);
+                
+                ffmpegLib()
+                    .input(listFilePathNormalized)
+                    .inputOptions(['-f', 'concat', '-safe', '0'])
+                    .outputOptions([
+                        '-c', 'copy',
+                        '-avoid_negative_ts', 'make_zero'
+                    ])
+                    .output(outputNormalized)
+                    .on('start', (commandLine) => {
+                        console.log('[VIDEO] Concat command:', commandLine);
+                    })
+                    .on('stderr', (stderrLine) => {
+                        console.log('[VIDEO] Concat stderr:', stderrLine);
+                    })
+                    .on('end', async () => {
+                        // Cleanup list file
+                        try {
+                            await fsp.unlink(listFilePath);
+                        } catch (err) {
+                            console.warn('[VIDEO] Failed to cleanup concat list file:', err);
+                        }
+                        console.log(`[VIDEO] Videos concatenated successfully: ${outputNormalized}`);
+                        resolve(outputNormalized);
+                    })
+                    .on('error', async (err) => {
+                        // Cleanup list file on error
+                        try {
+                            await fsp.unlink(listFilePath);
+                        } catch (cleanupErr) {
+                            console.warn('[VIDEO] Failed to cleanup concat list file on error:', cleanupErr);
+                        }
+                        console.error('[VIDEO] Concatenate videos error:', err);
+                        reject(err);
+                    })
+                    .run();
+            })
+            .catch(reject);
+    });
+}
+
+/**
  * Create TrackingVideo from session video
  * @param {string} sessionUrl - URL of original session video
  * @param {number} sessionStart - Session start timestamp
  * @param {string} actionItemId - Action item ID
  * @param {Array} clicks - Array of click objects from click.jsonl
  * @param {Object} tracker - Tracker instance
- * @returns {Promise<{videoUrl: string, trackingActionUrl: string, trackingPanelAfterUrl: string}>}
+ * @returns {Promise<{videoUrl: string}>}
  */
 export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId, clicks, tracker) {
     const sessionFolder = tracker?.sessionFolder || null;
+    let tempVideoPath = null;
+    let panelBeforePath = null;
+    let panelAfterPath = null;
+    let trackingVideoPath = null;
+    
     try {
         console.log('[VIDEO] 🎬 Creating TrackingVideo...');
         
@@ -392,7 +502,7 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         // 2. Get last click (assumed to be the action click)
         const lastClick = actionClicks.sort((a, b) => b.timestamp - a.timestamp)[0];
         
-        // 3. Calculate action_clicked_at in seconds
+        // 3. Calculate action_clicked_at in seconds (ms = click.timestamp - session_start)
         const actionClickedAtMs = lastClick.timestamp - sessionStart;
         const actionClickedAtSeconds = actionClickedAtMs / 1000;
         
@@ -402,7 +512,7 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         const baseDir = sessionFolder ? path.join(sessionFolder, 'validate', 'temp') : tmpdir();
         await fsp.mkdir(baseDir, { recursive: true });
         const videoId = randomUUID();
-        const tempVideoPath = path.join(baseDir, `${videoId}.mp4`);
+        tempVideoPath = path.join(baseDir, `${videoId}.mp4`);
         
         console.log('[VIDEO] Downloading video from:', sessionUrl);
         const videoResponse = await fetch(sessionUrl);
@@ -414,71 +524,155 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         await fsp.writeFile(tempVideoPath, videoBuffer);
         console.log('[VIDEO] Video downloaded to:', tempVideoPath);
         
-        try {
-            // 5. Get video duration first
-            const videoDuration = await getVideoDuration(tempVideoPath);
-            console.log(`[VIDEO] Video duration: ${videoDuration}s`);
-            
-            // 6. Snapshot at action_clicked_at - 1 second → tracking_action image
-            const actionTimestamp = Math.min(actionClickedAtSeconds, videoDuration - 0.1);
-            const trackingActionBuffer = await snapshotVideoAtTimestamp(tempVideoPath, Math.max(0, actionTimestamp - 1.0), sessionFolder);
-            const trackingActionPath = path.join(baseDir, `tracking_action_${videoId}.png`);
-            await fsp.writeFile(trackingActionPath, trackingActionBuffer);
-            
-            // 7. Snapshot last frame → tracking_panel_after image (use second-to-last second to avoid edge issues)
-            const lastFrameTimestamp = Math.max(0, videoDuration - 1.0);
-            console.log(`[VIDEO] Snapshotting last frame at ${lastFrameTimestamp}s (duration: ${videoDuration}s)`);
-            const trackingPanelAfterBuffer = await snapshotVideoAtTimestamp(tempVideoPath, lastFrameTimestamp, sessionFolder);
-            const trackingPanelAfterPath = path.join(baseDir, `tracking_panel_after_${videoId}.png`);
-            await fsp.writeFile(trackingPanelAfterPath, trackingPanelAfterBuffer);
-            
-            // 7. Resize images to 640x480
-            const resizedAction = await resizeImage(trackingActionBuffer.toString('base64'), 640, 480);
-            const resizedAfter = await resizeImage(trackingPanelAfterBuffer.toString('base64'), 640, 480);
-            
-            // 8. Upload images
-            const actionImageCode = `tracking_action_${actionItemId}_${randomUUID().replace(/-/g, '')}`;
-            const afterImageCode = `tracking_panel_after_${actionItemId}_${randomUUID().replace(/-/g, '')}`;
-            
-            const trackingActionUrl = await uploadPictureAndGetUrl(trackingActionPath, actionImageCode, ENV.API_TOKEN);
-            const trackingPanelAfterUrl = await uploadPictureAndGetUrl(trackingPanelAfterPath, afterImageCode, ENV.API_TOKEN);
-            
-            console.log('[VIDEO] Tracking images uploaded:', { trackingActionUrl, trackingPanelAfterUrl });
-            
-            // 9. Generate video from images (6 seconds: 3s action + 3s after)
-            const images = [resizedAction, resizedAfter];
-            const videoPath = await generateVideoFromImages(images, 1, 3, '640x480', sessionFolder);
-            
-            // 10. Upload video
-            const videoCode = `${actionItemId}_tracking_video`;
-            const videoUrl = await uploadVideoAndGetUrl(videoPath, videoCode, ENV.API_TOKEN);
-            
-            // Cleanup temp files
-            try {
-                await fsp.unlink(tempVideoPath);
-                await fsp.unlink(trackingActionPath);
-                await fsp.unlink(trackingPanelAfterPath);
-                await fsp.unlink(videoPath);
-            } catch (err) {
-                console.warn('Failed to cleanup temp files:', err);
-            }
-            
-            console.log('[VIDEO] ✅ TrackingVideo created:', videoUrl);
-            return {
-                videoUrl,
-                trackingActionUrl,
-                trackingPanelAfterUrl
-            };
-        } catch (err) {
-            // Cleanup temp video file on error
-            try {
-                await fsp.unlink(tempVideoPath);
-            } catch (cleanupErr) {
-                console.warn('Failed to cleanup temp video file:', cleanupErr);
-            }
-            throw err;
+        // 5. Get video duration
+        const videoDuration = await getVideoDuration(tempVideoPath);
+        console.log(`[VIDEO] Video duration: ${videoDuration}s`);
+        
+        // Validate action_clicked_at is within video duration
+        // If action_clicked_at exceeds video duration, clamp it to video duration
+        const validActionClickedAtSeconds = Math.min(actionClickedAtSeconds, videoDuration);
+        if (validActionClickedAtSeconds < actionClickedAtSeconds) {
+            console.warn(`[VIDEO] Warning: action_clicked_at (${actionClickedAtSeconds}s) exceeds video duration (${videoDuration}s), using ${validActionClickedAtSeconds}s instead`);
         }
+        
+        // 6. Cut panel_before: 3 seconds before action_clicked_at
+        // Clamp to video duration to ensure we don't cut beyond video bounds
+        const panelBeforeStart = Math.max(0, validActionClickedAtSeconds - 3);
+        const panelBeforeEnd = Math.min(validActionClickedAtSeconds, videoDuration);
+        let actualPanelBeforeDuration = Math.max(0, panelBeforeEnd - panelBeforeStart);
+        panelBeforePath = path.join(baseDir, `panel_before_${videoId}.mp4`);
+        
+        if (actualPanelBeforeDuration > 0 && panelBeforeStart < videoDuration) {
+            // Ensure we don't exceed video duration
+            actualPanelBeforeDuration = Math.min(actualPanelBeforeDuration, videoDuration - panelBeforeStart);
+            await cutVideoSegment(tempVideoPath, panelBeforeStart, actualPanelBeforeDuration, panelBeforePath);
+            
+            // Verify panel_before was created and has content
+            const panelBeforeFileSize = (await fsp.stat(panelBeforePath)).size;
+            if (panelBeforeFileSize === 0) {
+                throw new Error(`Panel before video is empty (${panelBeforeStart}s for ${actualPanelBeforeDuration}s from ${videoDuration}s video)`);
+            }
+            
+            console.log(`[VIDEO] Panel before cut: ${panelBeforeStart}s for ${actualPanelBeforeDuration}s (file size: ${panelBeforeFileSize} bytes)`);
+        } else {
+            // If action happens at the very beginning or invalid, use first frame or throw error
+            throw new Error(`Cannot cut panel_before: action_clicked_at=${validActionClickedAtSeconds}s, video_duration=${videoDuration}s, panel_before_start=${panelBeforeStart}s`);
+        }
+        
+        // 7. Cut panel_after: last 3 seconds of original video
+        const panelAfterStart = Math.max(0, videoDuration - 3);
+        let actualPanelAfterDuration = Math.min(3, videoDuration);
+        panelAfterPath = path.join(baseDir, `panel_after_${videoId}.mp4`);
+        
+        await cutVideoSegment(tempVideoPath, panelAfterStart, actualPanelAfterDuration, panelAfterPath);
+        
+        // Verify panel_after was created and has content
+        const panelAfterFileSize = (await fsp.stat(panelAfterPath)).size;
+        if (panelAfterFileSize === 0) {
+            throw new Error(`Panel after video is empty (${panelAfterStart}s for ${actualPanelAfterDuration}s from ${videoDuration}s video)`);
+        }
+        
+        console.log(`[VIDEO] Panel after cut: ${panelAfterStart}s for ${actualPanelAfterDuration}s (file size: ${panelAfterFileSize} bytes)`);
+        
+        // 8. Calculate actual durations and adjust to ensure exactly 6 seconds total
+        const totalDuration = actualPanelBeforeDuration + actualPanelAfterDuration;
+        
+        console.log(`[VIDEO] Total duration: ${totalDuration}s (before: ${actualPanelBeforeDuration}s, after: ${actualPanelAfterDuration}s)`);
+        
+        // If total > 6s, trim panel_after
+        // If total < 6s, extend panel_after (by repeating frames or slowing down)
+        // Target: exactly 6 seconds total
+        let finalPanelAfterDuration = actualPanelAfterDuration;
+        
+        if (totalDuration > 6) {
+            // Trim panel_after to fit exactly 6 seconds
+            finalPanelAfterDuration = 6 - actualPanelBeforeDuration;
+            if (finalPanelAfterDuration > 0 && finalPanelAfterDuration < actualPanelAfterDuration) {
+                const trimmedPanelAfterPath = path.join(baseDir, `panel_after_trimmed_${videoId}.mp4`);
+                await cutVideoSegment(panelAfterPath, 0, finalPanelAfterDuration, trimmedPanelAfterPath);
+                await fsp.unlink(panelAfterPath); // Remove original
+                panelAfterPath = trimmedPanelAfterPath;
+                console.log(`[VIDEO] Trimmed panel_after to ${finalPanelAfterDuration}s to fit 6s total`);
+            }
+        } else if (totalDuration < 6) {
+            // Extend panel_after to fill remaining time
+            finalPanelAfterDuration = 6 - actualPanelBeforeDuration;
+            if (finalPanelAfterDuration > actualPanelAfterDuration) {
+                // Use setpts filter to slow down the video to extend duration
+                const extendedPanelAfterPath = path.join(baseDir, `panel_after_extended_${videoId}.mp4`);
+                const panelAfterPathNormalized = path.resolve(panelAfterPath).replace(/\\/g, '/');
+                const extendedPathNormalized = path.resolve(extendedPanelAfterPath).replace(/\\/g, '/');
+                
+                // Calculate PTS factor to extend: target_duration / original_duration
+                const ptsFactor = finalPanelAfterDuration / actualPanelAfterDuration;
+                
+                await new Promise((resolve, reject) => {
+                    ffmpegLib(panelAfterPathNormalized)
+                        .outputOptions([
+                            `-filter:v`, `setpts=${ptsFactor}*PTS`,
+                            `-t`, String(finalPanelAfterDuration),
+                            '-c:v', 'libx264',
+                            '-an' // Remove audio
+                        ])
+                        .output(extendedPathNormalized)
+                        .on('start', (commandLine) => {
+                            console.log('[VIDEO] Extend command:', commandLine);
+                        })
+                        .on('stderr', (stderrLine) => {
+                            console.log('[VIDEO] Extend stderr:', stderrLine);
+                        })
+                        .on('end', () => {
+                            resolve();
+                        })
+                        .on('error', (err) => {
+                            console.error('[VIDEO] Extend video error:', err);
+                            reject(err);
+                        })
+                        .run();
+                });
+                
+                await fsp.unlink(panelAfterPath); // Remove original
+                panelAfterPath = extendedPanelAfterPath;
+                console.log(`[VIDEO] Extended panel_after to ${finalPanelAfterDuration}s to fill 6s total`);
+            }
+        }
+        
+        // 9. Concatenate panel_before + panel_after → tracking_video
+        trackingVideoPath = path.join(baseDir, `tracking_video_${videoId}.mp4`);
+        await concatenateVideos(panelBeforePath, panelAfterPath, trackingVideoPath);
+        console.log(`[VIDEO] Videos concatenated: ${trackingVideoPath}`);
+        
+        // 10. Upload tracking_video
+        const videoCode = `${actionItemId}_tracking_video`;
+        const videoUrl = await uploadVideoAndGetUrl(trackingVideoPath, videoCode, ENV.API_TOKEN);
+        
+        // Cleanup temp files
+        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath, trackingVideoPath];
+        for (const filePath of filesToCleanup) {
+            try {
+                if (filePath) {
+                    await fsp.unlink(filePath);
+                }
+            } catch (err) {
+                console.warn(`[VIDEO] Failed to cleanup temp file ${filePath}:`, err);
+            }
+        }
+        
+        console.log('[VIDEO] ✅ TrackingVideo created:', videoUrl);
+        return { videoUrl };
+        
     } catch (err) {
+        // Cleanup temp files on error
+        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath, trackingVideoPath];
+        for (const filePath of filesToCleanup) {
+            try {
+                if (filePath) {
+                    await fsp.unlink(filePath);
+                }
+            } catch (cleanupErr) {
+                console.warn(`[VIDEO] Failed to cleanup temp file ${filePath} on error:`, cleanupErr);
+            }
+        }
         console.error('[VIDEO] ❌ Failed to create TrackingVideo:', err);
         throw err;
     }

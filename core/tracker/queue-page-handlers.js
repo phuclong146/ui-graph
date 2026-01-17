@@ -6509,8 +6509,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // 2. Create TrackingVideo if not exists
             const existingTrackingVideoUrl = actionItem.metadata?.tracking_video_url || null;
-            const existingTrackingActionUrl = actionItem.metadata?.tracking_action_url || null;
-            const existingTrackingPanelAfterUrl = actionItem.metadata?.tracking_panel_after_url || null;
             
             if (!existingTrackingVideoUrl && actionItem.metadata?.session_url) {
                 const sessionUrl = actionItem.metadata.session_url;
@@ -6534,21 +6532,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await tracker.dataItemManager.updateItem(actionId, {
                         metadata: {
                             ...actionItem.metadata,
-                            tracking_video_url: trackingVideoResult.videoUrl,
-                            tracking_action_url: trackingVideoResult.trackingActionUrl,
-                            tracking_panel_after_url: trackingVideoResult.trackingPanelAfterUrl
+                            tracking_video_url: trackingVideoResult.videoUrl
                         }
                     });
 
                     results.tracking_video_url = trackingVideoResult.videoUrl;
-                    results.tracking_action_url = trackingVideoResult.trackingActionUrl;
-                    results.tracking_panel_after_url = trackingVideoResult.trackingPanelAfterUrl;
                     console.log(`✅ TrackingVideo created for action ${actionId}: ${trackingVideoResult.videoUrl}`);
                 }
             } else {
                 results.tracking_video_url = existingTrackingVideoUrl;
-                results.tracking_action_url = existingTrackingActionUrl;
-                results.tracking_panel_after_url = existingTrackingPanelAfterUrl;
                 results.session_url = actionItem.metadata?.session_url || null;
             }
 
