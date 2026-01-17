@@ -419,9 +419,9 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
             const videoDuration = await getVideoDuration(tempVideoPath);
             console.log(`[VIDEO] Video duration: ${videoDuration}s`);
             
-            // 6. Snapshot at action_clicked_at → tracking_action image
+            // 6. Snapshot at action_clicked_at - 1 second → tracking_action image
             const actionTimestamp = Math.min(actionClickedAtSeconds, videoDuration - 0.1);
-            const trackingActionBuffer = await snapshotVideoAtTimestamp(tempVideoPath, Math.max(0, actionTimestamp), sessionFolder);
+            const trackingActionBuffer = await snapshotVideoAtTimestamp(tempVideoPath, Math.max(0, actionTimestamp - 1.0), sessionFolder);
             const trackingActionPath = path.join(baseDir, `tracking_action_${videoId}.png`);
             await fsp.writeFile(trackingActionPath, trackingActionBuffer);
             
