@@ -6443,7 +6443,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const results = {};
 
             // 1. Create StepVideo if not exists
-            if (!actionItem.metadata?.step_video_url) {
+            const existingStepVideoUrl = actionItem.metadata?.step_video_url || null;
+            if (!existingStepVideoUrl) {
                 const panelBeforeId = step.panel_before?.item_id;
                 const panelAfterId = step.panel_after?.item_id;
 
@@ -6502,12 +6503,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
             } else {
-                results.step_video_url = actionItem.metadata.step_video_url;
+                results.step_video_url = existingStepVideoUrl;
                 results.step_video_subtitles = actionItem.metadata.step_video_subtitles || [];
             }
 
             // 2. Create TrackingVideo if not exists
-            if (!actionItem.metadata?.tracking_video_url && actionItem.metadata?.session_url) {
+            const existingTrackingVideoUrl = actionItem.metadata?.tracking_video_url || null;
+            const existingTrackingActionUrl = actionItem.metadata?.tracking_action_url || null;
+            const existingTrackingPanelAfterUrl = actionItem.metadata?.tracking_panel_after_url || null;
+            
+            if (!existingTrackingVideoUrl && actionItem.metadata?.session_url) {
                 const sessionUrl = actionItem.metadata.session_url;
                 const sessionStart = actionItem.metadata.session_start || Date.now();
                 
@@ -6541,7 +6546,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`✅ TrackingVideo created for action ${actionId}: ${trackingVideoResult.videoUrl}`);
                 }
             } else {
-                results.tracking_video_url = actionItem.metadata?.tracking_video_url || null;
+                results.tracking_video_url = existingTrackingVideoUrl;
+                results.tracking_action_url = existingTrackingActionUrl;
+                results.tracking_panel_after_url = existingTrackingPanelAfterUrl;
                 results.session_url = actionItem.metadata?.session_url || null;
             }
 
