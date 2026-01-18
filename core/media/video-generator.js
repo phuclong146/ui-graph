@@ -565,10 +565,14 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         console.log(`[VIDEO] Video duration: ${videoDuration}s`);
         
         // Validate action_clicked_at is within video duration
-        // If action_clicked_at exceeds video duration, clamp it to video duration
-        const validActionClickedAtSeconds = Math.min(actionClickedAtSeconds, videoDuration);
-        if (validActionClickedAtSeconds < actionClickedAtSeconds) {
-            console.warn(`[VIDEO] Warning: action_clicked_at (${actionClickedAtSeconds}s) exceeds video duration (${videoDuration}s), using ${validActionClickedAtSeconds}s instead`);
+        // Clamp to [0, videoDuration] to handle negative values or values exceeding video duration
+        const validActionClickedAtSeconds = Math.max(0, Math.min(actionClickedAtSeconds, videoDuration));
+        if (validActionClickedAtSeconds !== actionClickedAtSeconds) {
+            if (actionClickedAtSeconds < 0) {
+                console.warn(`[VIDEO] Warning: action_clicked_at (${actionClickedAtSeconds}s) is negative, using 0s instead`);
+            } else if (actionClickedAtSeconds > videoDuration) {
+                console.warn(`[VIDEO] Warning: action_clicked_at (${actionClickedAtSeconds}s) exceeds video duration (${videoDuration}s), using ${validActionClickedAtSeconds}s instead`);
+            }
         }
         
         // 6. Cut panel_before: 3 seconds before action_clicked_at
@@ -591,8 +595,22 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
             
             console.log(`[VIDEO] Panel before cut: ${panelBeforeStart}s for ${actualPanelBeforeDuration}s (file size: ${panelBeforeFileSize} bytes)`);
         } else {
-            // If action happens at the very beginning or invalid, use first frame or throw error
-            throw new Error(`Cannot cut panel_before: action_clicked_at=${validActionClickedAtSeconds}s, video_duration=${videoDuration}s, panel_before_start=${panelBeforeStart}s`);
+            // If action happens at the very beginning (0s or negative), use first 3 seconds of video
+            if (validActionClickedAtSeconds <= 0) {
+                const fallbackDuration = Math.min(3, videoDuration);
+                await cutVideoSegment(tempVideoPath, 0, fallbackDuration, panelBeforePath);
+                
+                // Verify panel_before was created and has content
+                const panelBeforeFileSize = (await fsp.stat(panelBeforePath)).size;
+                if (panelBeforeFileSize === 0) {
+                    throw new Error(`Panel before video is empty (0s for ${fallbackDuration}s from ${videoDuration}s video)`);
+                }
+                
+                actualPanelBeforeDuration = fallbackDuration;
+                console.log(`[VIDEO] Panel before cut (fallback for negative action_clicked_at): 0s for ${fallbackDuration}s (file size: ${panelBeforeFileSize} bytes)`);
+            } else {
+                throw new Error(`Cannot cut panel_before: action_clicked_at=${validActionClickedAtSeconds}s, video_duration=${videoDuration}s, panel_before_start=${panelBeforeStart}s`);
+            }
         }
         
         // 7. Cut panel_after: last 3 seconds of original video
