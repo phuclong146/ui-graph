@@ -2817,10 +2817,28 @@ export const QUEUE_BROWSER_HTML = `
           videoValidationTrackingVideoUrl = stepInfo.tracking_video_url;
           videoValidationRawVideoUrl = stepInfo.session_url;
           
+          // Helper function to reset video after metadata loaded
+          const resetVideoAfterLoad = (video) => {
+            if (!video) return;
+            const onLoadedMetadata = () => {
+              video.pause();
+              video.currentTime = 0;
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+            };
+            // If already loaded, reset immediately
+            if (video.readyState >= 1) {
+              video.pause();
+              video.currentTime = 0;
+            } else {
+              video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+            }
+          };
+          
           // Load StepVideo
           if (stepVideo && stepInfo.step_video_url) {
             stepVideo.src = stepInfo.step_video_url;
             stepVideo.load();
+            resetVideoAfterLoad(stepVideo);
           } else if (stepVideo) {
             stepVideo.src = '';
           }
@@ -2830,6 +2848,7 @@ export const QUEUE_BROWSER_HTML = `
             if (stepInfo.tracking_video_url) {
               trackingVideo.src = stepInfo.tracking_video_url;
               trackingVideo.load();
+              resetVideoAfterLoad(trackingVideo);
               if (rawVideoToggle) {
                 rawVideoToggle.checked = false;
               }
@@ -2837,6 +2856,7 @@ export const QUEUE_BROWSER_HTML = `
               // Fallback to raw video if tracking video not available
               trackingVideo.src = stepInfo.session_url;
               trackingVideo.load();
+              resetVideoAfterLoad(trackingVideo);
               if (rawVideoToggle) {
                 rawVideoToggle.checked = true;
               }
@@ -2849,6 +2869,9 @@ export const QUEUE_BROWSER_HTML = `
           if (window.updateSyncedPlayButtonState) {
             window.updateSyncedPlayButtonState();
           }
+          
+          // Update play button text to "Play"
+          updatePlayButtonText();
         } else {
           // No step data for this action - clear videos
           const trackingVideo = document.getElementById('videoValidationTrackingVideo');
@@ -3113,10 +3136,28 @@ export const QUEUE_BROWSER_HTML = `
               videoValidationTrackingVideoUrl = stepInfo.tracking_video_url;
               videoValidationRawVideoUrl = stepInfo.session_url;
               
+              // Helper function to reset video after metadata loaded
+              const resetVideoAfterLoad = (video) => {
+                if (!video) return;
+                const onLoadedMetadata = () => {
+                  video.pause();
+                  video.currentTime = 0;
+                  video.removeEventListener('loadedmetadata', onLoadedMetadata);
+                };
+                // If already loaded, reset immediately
+                if (video.readyState >= 1) {
+                  video.pause();
+                  video.currentTime = 0;
+                } else {
+                  video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+                }
+              };
+              
               // Load StepVideo
               if (stepVideo && stepInfo.step_video_url) {
                 stepVideo.src = stepInfo.step_video_url;
                 stepVideo.load();
+                resetVideoAfterLoad(stepVideo);
               } else if (stepVideo) {
                 stepVideo.src = '';
               }
@@ -3126,6 +3167,7 @@ export const QUEUE_BROWSER_HTML = `
                 if (stepInfo.tracking_video_url) {
                   trackingVideo.src = stepInfo.tracking_video_url;
                   trackingVideo.load();
+                  resetVideoAfterLoad(trackingVideo);
                   if (rawVideoToggle) {
                     rawVideoToggle.checked = false;
                   }
@@ -3133,6 +3175,7 @@ export const QUEUE_BROWSER_HTML = `
                   // Fallback to raw video if tracking video not available
                   trackingVideo.src = stepInfo.session_url;
                   trackingVideo.load();
+                  resetVideoAfterLoad(trackingVideo);
                   if (rawVideoToggle) {
                     rawVideoToggle.checked = true;
                   }
@@ -3145,6 +3188,9 @@ export const QUEUE_BROWSER_HTML = `
               if (window.updateSyncedPlayButtonState) {
                 window.updateSyncedPlayButtonState();
               }
+              
+              // Update play button text to "Play"
+              updatePlayButtonText();
             } else {
               // No step data for this action - clear videos
               const trackingVideo = document.getElementById('videoValidationTrackingVideo');
