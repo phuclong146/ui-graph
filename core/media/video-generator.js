@@ -508,21 +508,57 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         
         console.log(`[VIDEO] Action clicked at: ${actionClickedAtSeconds}s (${actionClickedAtMs}ms)`);
         
-        // 4. Download video from sessionUrl to validate/temp folder
+        // 4. Try to get video from panel_record first (by actionId), fallback to sessionUrl
         const baseDir = sessionFolder ? path.join(sessionFolder, 'validate', 'temp') : tmpdir();
         await fsp.mkdir(baseDir, { recursive: true });
         const videoId = randomUUID();
         tempVideoPath = path.join(baseDir, `${videoId}.mp4`);
         
-        console.log('[VIDEO] Downloading video from:', sessionUrl);
-        const videoResponse = await fetch(sessionUrl);
-        if (!videoResponse.ok) {
-            throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+        let videoSource = null;
+        let panelVideoPath = null;
+        
+        // Try to find video in panel_record folder by actionId (format: actionId.mp4)
+        if (sessionFolder) {
+            try {
+                const panelRecordFolder = path.join(sessionFolder, 'panel_record');
+                panelVideoPath = path.join(panelRecordFolder, `${actionItemId}.mp4`);
+                
+                try {
+                    await fsp.access(panelVideoPath);
+                    // Video file exists in panel_record
+                    videoSource = 'panel_record';
+                    console.log(`[VIDEO] Found video in panel_record: ${panelVideoPath}`);
+                } catch (err) {
+                    // Video file doesn't exist in panel_record
+                    console.log(`[VIDEO] Video not found in panel_record (${panelVideoPath}), will use session_url`);
+                }
+            } catch (err) {
+                console.warn(`[VIDEO] Failed to check panel_record: ${err.message}, will use session_url`);
+            }
         }
         
-        const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
-        await fsp.writeFile(tempVideoPath, videoBuffer);
-        console.log('[VIDEO] Video downloaded to:', tempVideoPath);
+        // Use panel_record video if found, otherwise download from sessionUrl
+        if (videoSource === 'panel_record' && panelVideoPath) {
+            // Copy video from panel_record to temp folder
+            const videoBuffer = await fsp.readFile(panelVideoPath);
+            await fsp.writeFile(tempVideoPath, videoBuffer);
+            console.log(`[VIDEO] Copied video from panel_record to: ${tempVideoPath}`);
+        } else {
+            // Download from sessionUrl
+            if (!sessionUrl) {
+                throw new Error(`No video source available: panel_record not found and session_url is missing`);
+            }
+            
+            console.log('[VIDEO] Downloading video from session_url:', sessionUrl);
+            const videoResponse = await fetch(sessionUrl);
+            if (!videoResponse.ok) {
+                throw new Error(`Failed to download video: ${videoResponse.statusText}`);
+            }
+            
+            const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+            await fsp.writeFile(tempVideoPath, videoBuffer);
+            console.log('[VIDEO] Video downloaded to:', tempVideoPath);
+        }
         
         // 5. Get video duration
         const videoDuration = await getVideoDuration(tempVideoPath);
