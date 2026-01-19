@@ -531,26 +531,38 @@ async function cutVideoSegment(inputVideoPath, startSeconds, durationSeconds, ou
  */
 async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
     return new Promise((resolve, reject) => {
-        const video1Normalized = path.resolve(video1Path).replace(/\\/g, '/');
-        const video2Normalized = path.resolve(video2Path).replace(/\\/g, '/');
+        const video1Resolved = path.resolve(video1Path);
+        const video2Resolved = path.resolve(video2Path);
         const outputNormalized = path.resolve(outputVideoPath).replace(/\\/g, '/');
         
         // Create a temporary file list for ffmpeg concat
         const listFilePath = outputVideoPath.replace('.mp4', '_concat_list.txt');
-        const listContent = `file '${video1Normalized}'\nfile '${video2Normalized}'`;
+        const listFileDir = path.dirname(listFilePath);
+        
+        // Use relative paths in concat list file to avoid path duplication issues on Windows
+        const video1Relative = path.relative(listFileDir, video1Resolved).replace(/\\/g, '/');
+        const video2Relative = path.relative(listFileDir, video2Resolved).replace(/\\/g, '/');
+        
+        // Escape single quotes in paths for ffmpeg concat format
+        const escapePath = (p) => p.replace(/'/g, "'\\''");
+        const listContent = `file '${escapePath(video1Relative)}'\nfile '${escapePath(video2Relative)}'`;
         
         fsp.writeFile(listFilePath, listContent)
             .then(() => {
                 const listFilePathNormalized = path.resolve(listFilePath).replace(/\\/g, '/');
                 
-                console.log(`[VIDEO] Concatenating videos: ${video1Normalized} + ${video2Normalized}`);
+                console.log(`[VIDEO] Concatenating videos: ${video1Resolved} + ${video2Resolved}`);
+                console.log(`[VIDEO] Using relative paths in concat list: ${video1Relative} + ${video2Relative}`);
                 
                 ffmpegLib()
                     .input(listFilePathNormalized)
                     .inputOptions(['-f', 'concat', '-safe', '0'])
                     .outputOptions([
-                        '-c', 'copy',
-                        '-avoid_negative_ts', 'make_zero'
+                        '-c:v', 'libx264',
+                        '-c:a', 'copy', // Copy audio if exists, otherwise no audio
+                        '-avoid_negative_ts', 'make_zero',
+                        '-vsync', 'cfr', // Constant frame rate to ensure proper timestamps
+                        '-fflags', '+genpts' // Generate new timestamps
                     ])
                     .output(outputNormalized)
                     .on('start', (commandLine) => {
@@ -810,6 +822,14 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         trackingVideoPath = path.join(baseDir, `tracking_video_${videoId}.mp4`);
         await concatenateVideos(panelBeforePath, panelAfterPath, trackingVideoPath);
         console.log(`[VIDEO] Videos concatenated: ${trackingVideoPath}`);
+        
+        // 9.1. Verify concatenated video duration
+        const finalVideoDuration = await getVideoDuration(trackingVideoPath);
+        const expectedDuration = actualPanelBeforeDuration + finalPanelAfterDuration;
+        console.log(`[VIDEO] Final video duration: ${finalVideoDuration}s (expected: ${expectedDuration}s)`);
+        if (Math.abs(finalVideoDuration - expectedDuration) > 0.5) {
+            console.warn(`[VIDEO] ⚠️ Warning: Final video duration (${finalVideoDuration}s) differs significantly from expected (${expectedDuration}s)`);
+        }
         
         // 10. Upload tracking_video
         const videoCode = `${actionItemId}_tracking_video`;
