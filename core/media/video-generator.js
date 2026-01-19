@@ -147,9 +147,10 @@ function findPageContainingAction(imageHeight, actionY, pageHeight = 1080) {
  * @param {number} durationPerImage - Duration per image in seconds (default: 3)
  * @param {string} resolution - Resolution like '640x480'
  * @param {string} sessionFolder - Session folder path (optional, uses temp if not provided)
+ * @param {string} actionId - Action ID for file naming prefix (optional)
  * @returns {Promise<string>} Path to generated video file
  */
-async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, resolution = '640x480', sessionFolder = null) {
+async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, resolution = '640x480', sessionFolder = null, actionId = null) {
     const [width, height] = resolution.split('x').map(Number);
     const videoId = randomUUID();
     
@@ -157,10 +158,12 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
     const baseDir = sessionFolder ? path.join(sessionFolder, 'validate', 'temp') : tmpdir();
     await fsp.mkdir(baseDir, { recursive: true });
     
-    const videoPath = path.join(baseDir, `${videoId}.mp4`);
+    // Add actionId prefix to file names
+    const prefix = actionId ? `[${actionId}]_` : '';
+    const videoPath = path.join(baseDir, `${prefix}${videoId}.mp4`);
     
     // Create directory for frames
-    const framesDir = path.join(baseDir, `frames_${videoId}`);
+    const framesDir = path.join(baseDir, `${prefix}frames_${videoId}`);
     await fsp.mkdir(framesDir, { recursive: true });
     
     // Store framesDir for cleanup later
@@ -264,34 +267,18 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
                 })
                 .on('end', async () => {
                     console.log('[VIDEO] FFmpeg completed successfully');
+                    console.log(`[VIDEO] Video saved at: ${videoPath}`);
+                    console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
                     
-                    // Cleanup frames directory after video is created
-                    try {
-                        const frames = await fsp.readdir(framesDirForCleanup);
-                        for (const frame of frames) {
-                            await fsp.unlink(path.join(framesDirForCleanup, frame));
-                        }
-                        await fsp.rmdir(framesDirForCleanup);
-                        console.log(`[VIDEO] Cleaned up frames directory: ${framesDirForCleanup}`);
-                    } catch (err) {
-                        console.warn('[VIDEO] Failed to cleanup frames directory:', err);
-                    }
+                    // Keep frames directory and video file for inspection (no cleanup)
                     
                     resolve(videoPath);
                 })
                 .on('error', async (err) => {
                     console.error('[VIDEO] FFmpeg error:', err);
+                    console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
                     
-                    // Cleanup frames directory on error too
-                    try {
-                        const frames = await fsp.readdir(framesDirForCleanup);
-                        for (const frame of frames) {
-                            await fsp.unlink(path.join(framesDirForCleanup, frame));
-                        }
-                        await fsp.rmdir(framesDirForCleanup);
-                    } catch (cleanupErr) {
-                        console.warn('[VIDEO] Failed to cleanup frames directory on error:', cleanupErr);
-                    }
+                    // Keep frames directory on error for debugging
                     
                     reject(err);
                 })
@@ -370,19 +357,36 @@ export async function createStepVideo(panelBeforeImage, panelAfterImage, actionP
             );
         }
         
-        // 3. Resize images to 640x480
+        // 3. Save temp images for inspection
+        const baseDir = sessionFolder ? path.join(sessionFolder, 'validate', 'temp') : tmpdir();
+        await fsp.mkdir(baseDir, { recursive: true });
+        const prefix = actionId ? `[${actionId}]_` : '';
+        
+        // Save image_to_create_frame_panel_before
+        const panelBeforeImagePath = path.join(baseDir, `${prefix}image_to_create_frame_panel_before.png`);
+        const panelBeforeBuffer = Buffer.from(image_to_create_frame_panel_before, 'base64');
+        await fsp.writeFile(panelBeforeImagePath, panelBeforeBuffer);
+        console.log(`[VIDEO] Saved temp image: ${panelBeforeImagePath}`);
+        
+        // Save image_to_create_frame_panel_after
+        const panelAfterImagePath = path.join(baseDir, `${prefix}image_to_create_frame_panel_after.png`);
+        const panelAfterBuffer = Buffer.from(image_to_create_frame_panel_after, 'base64');
+        await fsp.writeFile(panelAfterImagePath, panelAfterBuffer);
+        console.log(`[VIDEO] Saved temp image: ${panelAfterImagePath}`);
+        
+        // 4. Resize images to 640x480
         const resizedBefore = await resizeImage(image_to_create_frame_panel_before, 640, 480);
         const resizedAfter = await resizeImage(image_to_create_frame_panel_after, 640, 480);
         
-        // 4. Generate video from images (6 seconds: 3s before + 3s after)
+        // 5. Generate video from images (6 seconds: 3s before + 3s after)
         const images = [resizedBefore, resizedAfter];
-        const videoPath = await generateVideoFromImages(images, 1, 3, '640x480', sessionFolder);
+        const videoPath = await generateVideoFromImages(images, 1, 3, '640x480', sessionFolder, actionId);
         
-        // 5. Upload video
+        // 6. Upload video
         const videoCode = actionId ? `${actionId}_step_video` : `step_video_${randomUUID().replace(/-/g, '').substring(0, 32)}`;
         const videoUrl = await uploadVideoAndGetUrl(videoPath, videoCode, ENV.API_TOKEN);
         
-        // 6. Format subtitle data
+        // 7. Format subtitle data
         const subtitles = formatSubtitleData(
             panelInfo,
             actionInfo,
@@ -392,12 +396,8 @@ export async function createStepVideo(panelBeforeImage, panelAfterImage, actionP
             ]
         );
         
-        // Cleanup temp video file
-        try {
-            await fsp.unlink(videoPath);
-        } catch (err) {
-            console.warn('Failed to cleanup temp video file:', err);
-        }
+        // Keep temp video file for inspection (no cleanup)
+        console.log(`[VIDEO] Temp video file kept for inspection: ${videoPath}`);
         
         console.log('[VIDEO] ✅ StepVideo created:', videoUrl);
         return { videoUrl, subtitles };
