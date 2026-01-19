@@ -6504,6 +6504,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         results.step_video_url = stepVideoResult.videoUrl;
                         results.step_video_subtitles = stepVideoResult.subtitles;
                         console.log(`✅ StepVideo created for action ${actionId}: ${stepVideoResult.videoUrl}`);
+                        
+                        // Delay 1 second before creating TrackingVideo to avoid API returning same URL
+                        console.log(`[VIDEO] Waiting 1 second before creating TrackingVideo to avoid URL collision...`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                 }
             } else {
