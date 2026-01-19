@@ -184,11 +184,11 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
             }
         }
         
-        console.log(`[VIDEO] Created ${frameIndex} frames in ${framesDir}`);
+        // console.log(`[VIDEO] Created ${frameIndex} frames in ${framesDir}`);
         
         // Verify frames exist before running ffmpeg
         const frameFiles = await fsp.readdir(framesDir);
-        console.log(`[VIDEO] Frame files count: ${frameFiles.length}, expected: ${frameIndex}`);
+        // console.log(`[VIDEO] Frame files count: ${frameFiles.length}, expected: ${frameIndex}`);
         
         if (frameFiles.length === 0) {
             throw new Error(`No frames created in ${framesDir}`);
@@ -200,7 +200,7 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
         try {
             await fsp.access(firstFramePath);
             await fsp.access(lastFramePath);
-            console.log(`[VIDEO] Verified frames: ${firstFramePath} and ${lastFramePath} exist`);
+            // console.log(`[VIDEO] Verified frames: ${firstFramePath} and ${lastFramePath} exist`);
         } catch (err) {
             throw new Error(`Frames verification failed: ${err.message}`);
         }
@@ -215,20 +215,20 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
         const inputPattern = `${framesDirNormalized}/frame_%04d.png`;
         const videoPathNormalized = path.resolve(videoPath).replace(/\\/g, '/');
         
-        console.log(`[VIDEO] FFmpeg input pattern: ${inputPattern}`);
-        console.log(`[VIDEO] FFmpeg output path: ${videoPathNormalized}`);
-        console.log(`[VIDEO] Frames directory (absolute): ${framesDirAbsolute}`);
-        console.log(`[VIDEO] Total frames: ${frameIndex}`);
+        // console.log(`[VIDEO] FFmpeg input pattern: ${inputPattern}`);
+        // console.log(`[VIDEO] FFmpeg output path: ${videoPathNormalized}`);
+        // console.log(`[VIDEO] Frames directory (absolute): ${framesDirAbsolute}`);
+        // console.log(`[VIDEO] Total frames: ${frameIndex}`);
         
         // Try listing actual frame files to verify
         const actualFrameFiles = await fsp.readdir(framesDir);
-        console.log(`[VIDEO] Actual frame files: ${actualFrameFiles.slice(0, 3).join(', ')}... (total: ${actualFrameFiles.length})`);
+        // console.log(`[VIDEO] Actual frame files: ${actualFrameFiles.slice(0, 3).join(', ')}... (total: ${actualFrameFiles.length})`);
         
         // Verify a specific frame file exists using absolute path
         const testFramePath = path.resolve(framesDir, 'frame_0000.png');
         try {
             await fsp.access(testFramePath);
-            console.log(`[VIDEO] Test frame exists: ${testFramePath}`);
+            // console.log(`[VIDEO] Test frame exists: ${testFramePath}`);
         } catch (err) {
             throw new Error(`Test frame does not exist: ${testFramePath} - ${err.message}`);
         }
@@ -237,7 +237,7 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
         // But fluent-ffmpeg might convert it, so let's try a different approach
         // Use the first frame as input and let ffmpeg figure out the sequence
         const inputPatternWindows = path.join(framesDirAbsolute, 'frame_%04d.png');
-        console.log(`[VIDEO] FFmpeg input pattern (Windows native): ${inputPatternWindows}`);
+        // console.log(`[VIDEO] FFmpeg input pattern (Windows native): ${inputPatternWindows}`);
         
         // Generate video using ffmpeg with image2 demuxer
         return new Promise((resolve, reject) => {
@@ -260,15 +260,15 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
             // Add error handling with more details
             ffmpegCommand
                 .on('start', (commandLine) => {
-                    console.log('[VIDEO] FFmpeg command:', commandLine);
+                    // console.log('[VIDEO] FFmpeg command:', commandLine);
                 })
                 .on('stderr', (stderrLine) => {
-                    console.log('[VIDEO] FFmpeg stderr:', stderrLine);
+                    // console.log('[VIDEO] FFmpeg stderr:', stderrLine);
                 })
                 .on('end', async () => {
-                    console.log('[VIDEO] FFmpeg completed successfully');
-                    console.log(`[VIDEO] Video saved at: ${videoPath}`);
-                    console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
+                    // console.log('[VIDEO] FFmpeg completed successfully');
+                    // console.log(`[VIDEO] Video saved at: ${videoPath}`);
+                    // console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
                     
                     // Keep frames directory and video file for inspection (no cleanup)
                     
@@ -276,7 +276,7 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
                 })
                 .on('error', async (err) => {
                     console.error('[VIDEO] FFmpeg error:', err);
-                    console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
+                    // console.log(`[VIDEO] Frames directory kept for inspection: ${framesDirForCleanup}`);
                     
                     // Keep frames directory on error for debugging
                     
@@ -420,7 +420,7 @@ async function snapshotVideoAtTimestamp(videoPath, timestampSeconds, sessionFold
     await fsp.mkdir(baseDir, { recursive: true });
     const snapshotPath = path.join(baseDir, `snapshot_${randomUUID()}.png`);
     
-    console.log(`[VIDEO] Creating snapshot at ${timestampSeconds}s: ${snapshotPath}`);
+    // console.log(`[VIDEO] Creating snapshot at ${timestampSeconds}s: ${snapshotPath}`);
     
     return new Promise((resolve, reject) => {
         // Use forward slashes for video path on Windows
@@ -432,10 +432,10 @@ async function snapshotVideoAtTimestamp(videoPath, timestampSeconds, sessionFold
             .outputOptions(['-vframes', '1', '-update', '1'])
             .output(snapshotPathNormalized)
             .on('start', (commandLine) => {
-                console.log('[VIDEO] Snapshot command:', commandLine);
+                // console.log('[VIDEO] Snapshot command:', commandLine);
             })
             .on('stderr', (stderrLine) => {
-                console.log('[VIDEO] Snapshot stderr:', stderrLine);
+                // console.log('[VIDEO] Snapshot stderr:', stderrLine);
             })
             .on('end', async () => {
                 try {
@@ -444,7 +444,7 @@ async function snapshotVideoAtTimestamp(videoPath, timestampSeconds, sessionFold
                     
                     // Verify file exists before reading
                     await fsp.access(snapshotPath);
-                    console.log(`[VIDEO] Snapshot created successfully: ${snapshotPath}`);
+                    // console.log(`[VIDEO] Snapshot created successfully: ${snapshotPath}`);
                     
                     const buffer = await fsp.readFile(snapshotPath);
                     // Don't delete snapshot immediately - let caller handle cleanup
@@ -493,7 +493,7 @@ async function cutVideoSegment(inputVideoPath, startSeconds, durationSeconds, ou
         const inputPathNormalized = path.resolve(inputVideoPath).replace(/\\/g, '/');
         const outputPathNormalized = path.resolve(outputVideoPath).replace(/\\/g, '/');
         
-        console.log(`[VIDEO] Cutting video segment: ${startSeconds}s for ${durationSeconds}s`);
+        // console.log(`[VIDEO] Cutting video segment: ${startSeconds}s for ${durationSeconds}s`);
         
         ffmpegLib(inputPathNormalized)
             .seekInput(startSeconds)
@@ -505,13 +505,13 @@ async function cutVideoSegment(inputVideoPath, startSeconds, durationSeconds, ou
             ])
             .output(outputPathNormalized)
             .on('start', (commandLine) => {
-                console.log('[VIDEO] Cut command:', commandLine);
+                // console.log('[VIDEO] Cut command:', commandLine);
             })
             .on('stderr', (stderrLine) => {
-                console.log('[VIDEO] Cut stderr:', stderrLine);
+                // console.log('[VIDEO] Cut stderr:', stderrLine);
             })
             .on('end', () => {
-                console.log(`[VIDEO] Video segment cut successfully: ${outputPathNormalized}`);
+                // console.log(`[VIDEO] Video segment cut successfully: ${outputPathNormalized}`);
                 resolve(outputPathNormalized);
             })
             .on('error', (err) => {
@@ -551,8 +551,8 @@ async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
             .then(() => {
                 const listFilePathNormalized = path.resolve(listFilePath).replace(/\\/g, '/');
                 
-                console.log(`[VIDEO] Concatenating videos: ${video1Resolved} + ${video2Resolved}`);
-                console.log(`[VIDEO] Using relative paths in concat list: ${video1Relative} + ${video2Relative}`);
+                // console.log(`[VIDEO] Concatenating videos: ${video1Resolved} + ${video2Resolved}`);
+                // console.log(`[VIDEO] Using relative paths in concat list: ${video1Relative} + ${video2Relative}`);
                 
                 ffmpegLib()
                     .input(listFilePathNormalized)
@@ -566,10 +566,10 @@ async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
                     ])
                     .output(outputNormalized)
                     .on('start', (commandLine) => {
-                        console.log('[VIDEO] Concat command:', commandLine);
+                        // console.log('[VIDEO] Concat command:', commandLine);
                     })
                     .on('stderr', (stderrLine) => {
-                        console.log('[VIDEO] Concat stderr:', stderrLine);
+                        // console.log('[VIDEO] Concat stderr:', stderrLine);
                     })
                     .on('end', async () => {
                         // Cleanup list file
@@ -578,7 +578,7 @@ async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
                         } catch (err) {
                             console.warn('[VIDEO] Failed to cleanup concat list file:', err);
                         }
-                        console.log(`[VIDEO] Videos concatenated successfully: ${outputNormalized}`);
+                        // console.log(`[VIDEO] Videos concatenated successfully: ${outputNormalized}`);
                         resolve(outputNormalized);
                     })
                     .on('error', async (err) => {
@@ -797,10 +797,10 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
                         ])
                         .output(extendedPathNormalized)
                         .on('start', (commandLine) => {
-                            console.log('[VIDEO] Extend command:', commandLine);
+                            // console.log('[VIDEO] Extend command:', commandLine);
                         })
                         .on('stderr', (stderrLine) => {
-                            console.log('[VIDEO] Extend stderr:', stderrLine);
+                            // console.log('[VIDEO] Extend stderr:', stderrLine);
                         })
                         .on('end', () => {
                             resolve();
@@ -835,8 +835,8 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         const videoCode = `${actionItemId}_tracking_video`;
         const videoUrl = await uploadVideoAndGetUrl(trackingVideoPath, videoCode, ENV.API_TOKEN);
         
-        // Cleanup temp files
-        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath, trackingVideoPath];
+        // Cleanup temp files (keep trackingVideoPath for inspection)
+        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath];
         for (const filePath of filesToCleanup) {
             try {
                 if (filePath) {
@@ -846,13 +846,15 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
                 console.warn(`[VIDEO] Failed to cleanup temp file ${filePath}:`, err);
             }
         }
+        // Keep trackingVideoPath in temp for inspection
+        console.log(`[VIDEO] Tracking video kept in temp: ${trackingVideoPath}`);
         
         console.log('[VIDEO] ✅ TrackingVideo created:', videoUrl);
         return { videoUrl };
         
     } catch (err) {
-        // Cleanup temp files on error
-        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath, trackingVideoPath];
+        // Cleanup temp files on error (keep trackingVideoPath if created)
+        const filesToCleanup = [tempVideoPath, panelBeforePath, panelAfterPath];
         for (const filePath of filesToCleanup) {
             try {
                 if (filePath) {
@@ -860,6 +862,15 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
                 }
             } catch (cleanupErr) {
                 console.warn(`[VIDEO] Failed to cleanup temp file ${filePath} on error:`, cleanupErr);
+            }
+        }
+        // Keep trackingVideoPath if it was created before error
+        if (trackingVideoPath) {
+            try {
+                await fsp.access(trackingVideoPath);
+                console.log(`[VIDEO] Tracking video kept in temp (error case): ${trackingVideoPath}`);
+            } catch {
+                // File doesn't exist, ignore
             }
         }
         console.error('[VIDEO] ❌ Failed to create TrackingVideo:', err);
