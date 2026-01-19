@@ -2581,6 +2581,31 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Call makeChild
             await createPanelRelationFromStep(panelId);
             
+            // Generate tracking video and step video for the action in the step related to this panel
+            try {
+                // Find step with panel_after matching this panelId
+                const stepContent = await tracker.stepManager.getAllSteps();
+                const relatedStep = stepContent.find(step => step.panel_after?.item_id === panelId);
+                
+                if (relatedStep && relatedStep.action?.item_id) {
+                    const actionId = relatedStep.action.item_id;
+                    console.log(`🎬 Generating videos for action ${actionId} in step (panel_after=${panelId})...`);
+                    
+                    try {
+                        await generateVideoForActionHandler(actionId);
+                        console.log(`✅ Videos generated for action ${actionId}`);
+                    } catch (videoErr) {
+                        console.error(`❌ Failed to generate videos for action ${actionId}:`, videoErr);
+                        // Don't throw - continue with completion flow
+                    }
+                } else {
+                    console.log(`ℹ️ No step or action found for panel ${panelId}, skipping video generation`);
+                }
+            } catch (videoGenErr) {
+                console.error('❌ Error during video generation (non-blocking):', videoGenErr);
+                // Don't throw - continue with completion flow
+            }
+            
             // Set state to completed
             await setPanelDrawFlowState(panelId, 'completed');
             
