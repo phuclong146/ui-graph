@@ -1271,6 +1271,14 @@ export const QUEUE_BROWSER_HTML = `
         </h3>
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="videoValidationPlayPauseBtn" style="background:#28a745; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">⏯ Play</button>
+          <label style="color:#fff; font-size:13px; display:flex; align-items:center; gap:6px;">
+            <span>Speed:</span>
+            <select id="videoValidationPlaybackSpeed" style="background:#2a2a2a; color:#fff; border:1px solid #555; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:13px;">
+              <option value="1">Normal (1x)</option>
+              <option value="0.5" selected>Slow (0.5x)</option>
+              <option value="0.33">Very Slow (0.33x)</option>
+            </select>
+          </label>
           <button id="videoValidationSubtitleToggleBtn" style="background:#17a2b8; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">📝 Subtitle OFF</button>
           <button id="videoValidationRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;"><ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/><line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/><line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/><line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/></svg> RaiseBug</button>
           <button id="closeVideoValidationBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
@@ -2344,6 +2352,7 @@ export const QUEUE_BROWSER_HTML = `
       const videoValidationModal = document.getElementById('videoValidationModal');
       const closeVideoValidationBtn = document.getElementById('closeVideoValidationBtn');
       const videoValidationPlayPauseBtn = document.getElementById('videoValidationPlayPauseBtn');
+      const videoValidationPlaybackSpeed = document.getElementById('videoValidationPlaybackSpeed');
       const videoValidationSubtitleToggleBtn = document.getElementById('videoValidationSubtitleToggleBtn');
       const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
       const videoValidationRawVideoToggle = document.getElementById('videoValidationRawVideoToggle');
@@ -2358,6 +2367,7 @@ export const QUEUE_BROWSER_HTML = `
       let videoValidationStepSubtitles = [];
       let videoValidationTrackingVideoUrl = null;
       let videoValidationRawVideoUrl = null;
+      let videoValidationCurrentPlaybackSpeed = 0.5;
 
       const closeVideoValidationView = () => {
         if (videoValidationModal) {
@@ -2425,6 +2435,17 @@ export const QUEUE_BROWSER_HTML = `
         }
       };
 
+      // Apply playback speed to both videos
+      const applyPlaybackSpeed = (speed) => {
+        videoValidationCurrentPlaybackSpeed = parseFloat(speed);
+        if (videoValidationTrackingVideo) {
+          videoValidationTrackingVideo.playbackRate = videoValidationCurrentPlaybackSpeed;
+        }
+        if (videoValidationStepVideo) {
+          videoValidationStepVideo.playbackRate = videoValidationCurrentPlaybackSpeed;
+        }
+      };
+
       if (closeVideoValidationBtn) {
         closeVideoValidationBtn.addEventListener('click', closeVideoValidationView);
       }
@@ -2451,6 +2472,8 @@ export const QUEUE_BROWSER_HTML = `
               if (videoValidationStepVideo) {
                 videoValidationStepVideo.currentTime = 0;
               }
+              // Apply current playback speed before playing
+              applyPlaybackSpeed(videoValidationCurrentPlaybackSpeed);
               videoValidationTrackingVideo.play();
             } else {
               videoValidationTrackingVideo.pause();
@@ -2458,6 +2481,14 @@ export const QUEUE_BROWSER_HTML = `
             syncVideoPlayPause();
             // Button text will be updated by play/pause event listeners
           }
+        });
+      }
+
+      // Handle playback speed change
+      if (videoValidationPlaybackSpeed) {
+        videoValidationPlaybackSpeed.addEventListener('change', (e) => {
+          const speed = parseFloat(e.target.value);
+          applyPlaybackSpeed(speed);
         });
       }
 
@@ -2497,6 +2528,10 @@ export const QUEUE_BROWSER_HTML = `
             } else if (videoValidationTrackingVideoUrl) {
               videoValidationTrackingVideo.src = videoValidationTrackingVideoUrl;
             }
+            // Apply current playback speed after loading new video
+            videoValidationTrackingVideo.addEventListener('loadedmetadata', () => {
+              videoValidationTrackingVideo.playbackRate = videoValidationCurrentPlaybackSpeed;
+            }, { once: true });
           }
           updateSyncedPlayButtonState();
         });
@@ -2523,6 +2558,8 @@ export const QUEUE_BROWSER_HTML = `
             return; // Don't sync when raw video is selected
           }
           if (videoValidationStepVideo && videoValidationStepVideo.paused) {
+            // Apply current playback speed before playing
+            applyPlaybackSpeed(videoValidationCurrentPlaybackSpeed);
             videoValidationStepVideo.play();
           }
           updatePlayButtonText();
@@ -2549,6 +2586,8 @@ export const QUEUE_BROWSER_HTML = `
             return; // Don't sync when raw video is selected
           }
           if (videoValidationTrackingVideo && videoValidationTrackingVideo.paused) {
+            // Apply current playback speed before playing
+            applyPlaybackSpeed(videoValidationCurrentPlaybackSpeed);
             videoValidationTrackingVideo.play();
           }
           updatePlayButtonText();
@@ -2823,12 +2862,15 @@ export const QUEUE_BROWSER_HTML = `
             const onLoadedMetadata = () => {
               video.pause();
               video.currentTime = 0;
+              // Apply current playback speed
+              video.playbackRate = videoValidationCurrentPlaybackSpeed;
               video.removeEventListener('loadedmetadata', onLoadedMetadata);
             };
             // If already loaded, reset immediately
             if (video.readyState >= 1) {
               video.pause();
               video.currentTime = 0;
+              video.playbackRate = videoValidationCurrentPlaybackSpeed;
             } else {
               video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
             }
@@ -3142,12 +3184,15 @@ export const QUEUE_BROWSER_HTML = `
                 const onLoadedMetadata = () => {
                   video.pause();
                   video.currentTime = 0;
+                  // Apply current playback speed
+                  video.playbackRate = videoValidationCurrentPlaybackSpeed;
                   video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 };
                 // If already loaded, reset immediately
                 if (video.readyState >= 1) {
                   video.pause();
                   video.currentTime = 0;
+                  video.playbackRate = videoValidationCurrentPlaybackSpeed;
                 } else {
                   video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
                 }
