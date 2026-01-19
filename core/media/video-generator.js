@@ -504,7 +504,7 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         
         // 3. Calculate action_clicked_at in seconds (ms = click.timestamp - session_start)
         const actionClickedAtMs = lastClick.timestamp - sessionStart;
-        const actionClickedAtSeconds = actionClickedAtMs / 1000;
+        const actionClickedAtSeconds = Math.floor(actionClickedAtMs / 1000);
         
         console.log(`[VIDEO] Action clicked at: ${actionClickedAtSeconds}s (${actionClickedAtMs}ms)`);
         
