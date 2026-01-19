@@ -6468,6 +6468,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                     if (panelBeforeImage && panelAfterImage) {
                         const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };
+                        const panelBeforeGlobalPos = panelBefore.metadata?.global_pos || null;
+                        const panelAfterGlobalPos = panelAfter.metadata?.global_pos || null;
                         const panelInfo = {
                             name: panelBefore.name || 'Panel',
                             type: panelBefore.type || 'screen',
@@ -6486,7 +6488,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             panelInfo,
                             actionInfo,
                             tracker.sessionFolder,
-                            actionId
+                            actionId,
+                            panelBeforeGlobalPos,
+                            panelAfterGlobalPos
                         );
 
                         await tracker.dataItemManager.updateItem(actionId, {

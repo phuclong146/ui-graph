@@ -64,6 +64,83 @@ async function resizeImage(imageBase64, width, height) {
 }
 
 /**
+ * Draw crop frame (rectangle) on image
+ * @param {string} base64 - Base64 encoded image
+ * @param {Object} cropPos - Crop position {x, y, w, h}
+ * @param {string} color - Stroke color (default: "#00ff00" - green)
+ * @param {number} stroke - Stroke width (default: 3)
+ * @returns {Promise<string>} Base64 image with crop frame drawn
+ */
+async function drawCropFrame(base64, cropPos, color = "#00ff00", stroke = 3) {
+    if (!cropPos) return base64;
+    
+    const imgBuffer = Buffer.from(base64, "base64");
+    const metadata = await sharp(imgBuffer).metadata();
+    const w = metadata.width;
+    const h = metadata.height;
+    
+    const svg = `
+    <svg width="${w}" height="${h}">
+      <rect x="${cropPos.x}" y="${cropPos.y}" width="${cropPos.w}" height="${cropPos.h}" 
+            fill="none" stroke="${color}" stroke-width="${stroke}" />
+    </svg>
+    `;
+    
+    const out = await sharp(imgBuffer)
+        .composite([{ input: Buffer.from(svg), left: 0, top: 0 }])
+        .png()
+        .toBuffer();
+    
+    return out.toString("base64");
+}
+
+/**
+ * Extract a page from multi-page image
+ * @param {string} base64 - Base64 encoded image
+ * @param {number} pageIndex - Page index (0-based)
+ * @param {number} pageWidth - Page width (default: 1920)
+ * @param {number} pageHeight - Page height (default: 1080)
+ * @returns {Promise<string>} Base64 encoded page image
+ */
+async function extractPageFromImage(base64, pageIndex, pageWidth = 1920, pageHeight = 1080) {
+    const imgBuffer = Buffer.from(base64, "base64");
+    const metadata = await sharp(imgBuffer).metadata();
+    const imgHeight = metadata.height;
+    
+    const pageY = pageIndex * pageHeight;
+    if (pageY >= imgHeight) {
+        throw new Error(`Page ${pageIndex} is outside image bounds`);
+    }
+    
+    const actualPageHeight = Math.min(pageHeight, imgHeight - pageY);
+    
+    const pageBuffer = await sharp(imgBuffer)
+        .extract({
+            left: 0,
+            top: pageY,
+            width: pageWidth,
+            height: actualPageHeight
+        })
+        .png()
+        .toBuffer();
+    
+    return pageBuffer.toString("base64");
+}
+
+/**
+ * Find page index containing the action based on action Y position
+ * @param {number} imageHeight - Total image height
+ * @param {number} actionY - Action Y position
+ * @param {number} pageHeight - Page height (default: 1080)
+ * @returns {number} Page index (0-based)
+ */
+function findPageContainingAction(imageHeight, actionY, pageHeight = 1080) {
+    const pageIndex = Math.floor(actionY / pageHeight);
+    const maxPageIndex = Math.floor((imageHeight - 1) / pageHeight);
+    return Math.min(pageIndex, maxPageIndex);
+}
+
+/**
  * Generate video from array of images
  * @param {Array} images - Array of base64 images
  * @param {number} fps - Frames per second (default: 1)
@@ -224,50 +301,88 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
 
 /**
  * Create StepVideo from panel before and after images
- * @param {string} panelBeforeImage - Base64 image of panel before
- * @param {string} panelAfterImage - Base64 image of panel after
+ * @param {string} panelBeforeImage - Base64 image of panel before (fullscreen)
+ * @param {string} panelAfterImage - Base64 image of panel after (fullscreen)
  * @param {Object} actionPos - Action position {x, y, w, h}
  * @param {Object} panelInfo - Panel info {name, type, verb}
  * @param {Object} actionInfo - Action info {name, type, verb}
  * @param {string} sessionFolder - Session folder path (optional)
  * @param {string} actionId - Action item ID
+ * @param {Object} panelBeforeGlobalPos - Panel before global position {x, y, w, h} (optional)
+ * @param {Object} panelAfterGlobalPos - Panel after global position {x, y, w, h} (optional)
  * @returns {Promise<{videoUrl: string, subtitles: Array}>}
  */
-export async function createStepVideo(panelBeforeImage, panelAfterImage, actionPos, panelInfo, actionInfo, sessionFolder = null, actionId = null) {
+export async function createStepVideo(panelBeforeImage, panelAfterImage, actionPos, panelInfo, actionInfo, sessionFolder = null, actionId = null, panelBeforeGlobalPos = null, panelAfterGlobalPos = null) {
     try {
         console.log('[VIDEO] 🎬 Creating StepVideo...');
         
-        // 1. Draw bounding box on panel before image
-        const geminiResult = [{
-            panel_title: panelInfo?.name || 'Panel',
-            actions: [{
-                action_name: actionInfo?.name || 'Action',
-                action_type: actionInfo?.type || 'button',
-                action_verb: actionInfo?.verb || 'click',
-                action_pos: actionPos
-            }]
-        }];
+        // 1. Create image_to_create_frame_panel_before
+        let image_to_create_frame_panel_before = panelBeforeImage;
         
-        const panelBeforeWithBox = await drawPanelBoundingBoxes(
-            panelBeforeImage,
-            geminiResult,
-            '#00aaff',
-            2
-        );
+        // 1.1 Draw crop frame of panel_before (green)
+        if (panelBeforeGlobalPos) {
+            image_to_create_frame_panel_before = await drawCropFrame(
+                image_to_create_frame_panel_before,
+                panelBeforeGlobalPos,
+                '#00ff00', // Green color for crop frame
+                3
+            );
+        }
         
-        // 2. Resize images to 640x480
-        const resizedBefore = await resizeImage(panelBeforeWithBox, 640, 480);
-        const resizedAfter = await resizeImage(panelAfterImage, 640, 480);
+        // 1.2 Draw action frame (red)
+        if (actionPos) {
+            image_to_create_frame_panel_before = await drawCropFrame(
+                image_to_create_frame_panel_before,
+                actionPos,
+                '#ff0000', // Red color for action frame
+                3
+            );
+        }
         
-        // 3. Generate video from images (6 seconds: 3s before + 3s after)
+        // 1.3 Check if image is longer than 1 page (1080px)
+        const imgBuffer = Buffer.from(image_to_create_frame_panel_before, 'base64');
+        const metadata = await sharp(imgBuffer).metadata();
+        const imageHeight = metadata.height;
+        const pageHeight = 1080;
+        
+        if (imageHeight > pageHeight && actionPos) {
+            // Multi-page: find page containing action
+            const pageIndex = findPageContainingAction(imageHeight, actionPos.y, pageHeight);
+            console.log(`[VIDEO] Image is multi-page (${imageHeight}px), extracting page ${pageIndex} containing action at y=${actionPos.y}`);
+            image_to_create_frame_panel_before = await extractPageFromImage(
+                image_to_create_frame_panel_before,
+                pageIndex,
+                1920,
+                pageHeight
+            );
+        }
+        
+        // 2. Create image_to_create_frame_panel_after
+        let image_to_create_frame_panel_after = panelAfterImage;
+        
+        // 2.1 Draw crop frame of panel_after (green)
+        if (panelAfterGlobalPos) {
+            image_to_create_frame_panel_after = await drawCropFrame(
+                image_to_create_frame_panel_after,
+                panelAfterGlobalPos,
+                '#00ff00', // Green color for crop frame
+                3
+            );
+        }
+        
+        // 3. Resize images to 640x480
+        const resizedBefore = await resizeImage(image_to_create_frame_panel_before, 640, 480);
+        const resizedAfter = await resizeImage(image_to_create_frame_panel_after, 640, 480);
+        
+        // 4. Generate video from images (6 seconds: 3s before + 3s after)
         const images = [resizedBefore, resizedAfter];
         const videoPath = await generateVideoFromImages(images, 1, 3, '640x480', sessionFolder);
         
-        // 4. Upload video
+        // 5. Upload video
         const videoCode = actionId ? `${actionId}_step_video` : `step_video_${randomUUID().replace(/-/g, '').substring(0, 32)}`;
         const videoUrl = await uploadVideoAndGetUrl(videoPath, videoCode, ENV.API_TOKEN);
         
-        // 5. Format subtitle data
+        // 6. Format subtitle data
         const subtitles = formatSubtitleData(
             panelInfo,
             actionInfo,
@@ -504,7 +619,7 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         
         // 3. Calculate action_clicked_at in seconds (ms = click.timestamp - session_start)
         const actionClickedAtMs = lastClick.timestamp - sessionStart;
-        const actionClickedAtSeconds = Math.floor(actionClickedAtMs / 1000);
+        const actionClickedAtSeconds = actionClickedAtMs / 1000;
         
         console.log(`[VIDEO] Action clicked at: ${actionClickedAtSeconds}s (${actionClickedAtMs}ms)`);
         
