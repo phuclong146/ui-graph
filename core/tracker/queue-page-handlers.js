@@ -4024,6 +4024,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 status: 'pending',
                 metadata: {
                     ...(actionItem?.metadata || {}),
+                    session_url: null,
+                    session_start: null,
+                    session_end: null,                                        
                     step_video_url: null,
                     step_video_subtitles: null,
                     tracking_video_url: null
@@ -4039,6 +4042,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 type: 'tree_update',
                 data: await tracker.panelLogManager.buildTreeStructure()
             });
+
+            // Clear lastLoadedPanelId so re-selecting this action will trigger full reload
+            // This ensures tracking browser recording can restart after reset
+            if (tracker.selectedPanelId === actionItemId) {
+                lastLoadedPanelId = null;
+                await selectPanelHandler(actionItemId);
+            }
 
             console.log(`🔄 Reset step for action ${actionItemId}`);
             
