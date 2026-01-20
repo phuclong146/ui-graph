@@ -39,6 +39,8 @@ export class PanelScreenTracker {
         this.recordingPanelId = null;
         this.panelRecordFolder = null;
         this.panelRecordingStartTime = null;
+        this.panelRecordingParts = []; // Track video parts when switching tabs
+        this.recordingOriginalPage = null; // Store original page before switching recording to new tab
         this.clickManager = null;
         this.dataItemManager = null;
         this.parentPanelManager = null;
@@ -342,6 +344,8 @@ export class PanelScreenTracker {
             this.isRecordingPanel = true;
             this.recordingPanelId = panelId;
             this.panelRecordingStartTime = Date.now();
+            this.panelRecordingParts = []; // Reset parts array for new recording
+            this.recordingOriginalPage = null; // Reset original page for new recording
             
             const startTimeStr = new Date(this.panelRecordingStartTime).toISOString();
             console.log(`[RECORD] ✅ Recording started successfully`);
@@ -383,14 +387,61 @@ export class PanelScreenTracker {
             const videoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
             console.log(`[RECORD]    Video path: ${videoPath}`);
             
-            // Check if file exists
             const { promises: fsp } = await import('fs');
+            
+            // Check if there are multiple parts to merge (from tab switching)
+            if (this.panelRecordingParts && this.panelRecordingParts.length > 0) {
+                console.log(`[RECORD] 🔗 Merging ${this.panelRecordingParts.length + 1} video parts...`);
+                
+                try {
+                    // Add current video as the last part
+                    const lastPartPath = path.join(this.panelRecordFolder, `${panelId}_part${this.panelRecordingParts.length + 1}.mp4`);
+                    await fsp.rename(videoPath, lastPartPath);
+                    this.panelRecordingParts.push(lastPartPath);
+                    
+                    // Merge all parts using ffmpeg
+                    const { mergeVideoParts } = await import('../media/video-generator.js');
+                    await mergeVideoParts(this.panelRecordingParts, videoPath);
+                    console.log(`[RECORD] ✅ Merged ${this.panelRecordingParts.length} video parts into: ${videoPath}`);
+                    
+                    // Clean up part files
+                    for (const partPath of this.panelRecordingParts) {
+                        try {
+                            await fsp.unlink(partPath);
+                        } catch (unlinkErr) {
+                            console.warn(`[RECORD] ⚠️  Could not delete part file ${partPath}: ${unlinkErr.message}`);
+                        }
+                    }
+                } catch (mergeErr) {
+                    console.error(`[RECORD] ❌ Failed to merge video parts:`, mergeErr);
+                    // If merge fails, rename the last part back to original name
+                    try {
+                        const lastPartPath = this.panelRecordingParts[this.panelRecordingParts.length - 1];
+                        await fsp.rename(lastPartPath, videoPath);
+                    } catch (renameErr) {
+                        console.error(`[RECORD] ❌ Failed to restore video:`, renameErr);
+                    }
+                }
+                
+                // Reset parts array
+                this.panelRecordingParts = [];
+            }
+            
+            // Check if file exists
             try {
                 const stats = await fsp.stat(videoPath);
                 const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
                 console.log(`[RECORD]    File size: ${fileSizeMB} MB (${stats.size} bytes)`);
             } catch (statErr) {
                 console.warn(`[RECORD] ⚠️  Could not get file stats: ${statErr.message}`);
+            }
+            
+            // Restore original page if we switched to a new tab during recording
+            if (this.recordingOriginalPage) {
+                console.log(`[RECORD] 🔄 Restoring tracker.page to original page...`);
+                this.page = this.recordingOriginalPage;
+                this.recordingOriginalPage = null;
+                console.log(`[RECORD] ✅ Restored to original page`);
             }
             
             this.panelRecorder = null;
@@ -405,10 +456,19 @@ export class PanelScreenTracker {
         } catch (err) {
             console.error(`[RECORD] ❌ Failed to stop panel recording:`, err);
             console.error(`[RECORD]    Error details:`, err.message, err.stack);
+            
+            // Restore original page even on error
+            if (this.recordingOriginalPage) {
+                console.log(`[RECORD] 🔄 Restoring tracker.page to original page (error recovery)...`);
+                this.page = this.recordingOriginalPage;
+                this.recordingOriginalPage = null;
+            }
+            
             this.panelRecorder = null;
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
             this.panelRecordingStartTime = null;
+            this.panelRecordingParts = [];
             return null;
         }
     }
@@ -449,15 +509,131 @@ export class PanelScreenTracker {
                 console.warn(`[RECORD] ⚠️  Could not delete video file: ${unlinkErr.message}`);
             }
             
+            // Also delete any part files from tab switching
+            if (this.panelRecordingParts && this.panelRecordingParts.length > 0) {
+                console.log(`[RECORD] 🗑️  Deleting ${this.panelRecordingParts.length} part files...`);
+                for (const partPath of this.panelRecordingParts) {
+                    try {
+                        await fsp.unlink(partPath);
+                        console.log(`[RECORD]    Deleted: ${partPath}`);
+                    } catch (unlinkErr) {
+                        console.warn(`[RECORD] ⚠️  Could not delete part file ${partPath}: ${unlinkErr.message}`);
+                    }
+                }
+            }
+            
             console.log(`[RECORD] ✅ Recording cancelled successfully`);
         } catch (err) {
             console.error(`[RECORD] ❌ Failed to cancel panel recording:`, err);
             console.error(`[RECORD]    Error details:`, err.message, err.stack);
         } finally {
+            // Restore original page if we switched to a new tab during recording
+            if (this.recordingOriginalPage) {
+                console.log(`[RECORD] 🔄 Restoring tracker.page to original page...`);
+                this.page = this.recordingOriginalPage;
+                this.recordingOriginalPage = null;
+                console.log(`[RECORD] ✅ Restored to original page`);
+            }
+            
             this.panelRecorder = null;
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
+            this.panelRecordingParts = [];
             console.log(`[RECORD]    Status reset: isRecordingPanel=${this.isRecordingPanel}`);
+        }
+    }
+
+    /**
+     * Switch recording to a new page (e.g., when a new tab is opened)
+     * This stops the current recording, saves it as a temp file, and starts a new recording on the new page.
+     * The videos will be merged when stopPanelRecording is called.
+     * @param {Object} newPage - The new Puppeteer page to record
+     */
+    async switchRecordingToPage(newPage) {
+        console.log(`[RECORD] 🔄 Switch recording to new page requested`);
+        console.log(`[RECORD]    Status check: isRecordingPanel=${this.isRecordingPanel}, hasRecorder=${!!this.panelRecorder}, recordingPanelId=${this.recordingPanelId || 'NONE'}`);
+        
+        if (!this.isRecordingPanel || !this.panelRecorder || !this.recordingPanelId) {
+            console.log(`[RECORD] ⏭️  No active recording to switch`);
+            return false;
+        }
+        
+        if (!newPage) {
+            console.log(`[RECORD] ⚠️  No new page provided`);
+            return false;
+        }
+        
+        try {
+            const panelId = this.recordingPanelId;
+            const sessionStart = this.panelRecordingStartTime;
+            const switchTime = Date.now();
+            const duration = switchTime - sessionStart;
+            const durationSeconds = (duration / 1000).toFixed(2);
+            
+            console.log(`[RECORD] 📊 Switching recording:`);
+            console.log(`[RECORD]    Panel ID: ${panelId}`);
+            console.log(`[RECORD]    Recording duration so far: ${durationSeconds}s (${duration}ms)`);
+            
+            // Stop current recording
+            console.log(`[RECORD] ⏹️  Stopping current recorder...`);
+            await this.panelRecorder.stop();
+            
+            // Rename current video to temp (will merge later)
+            const { promises: fsp } = await import('fs');
+            const currentVideoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
+            const tempVideoPath = path.join(this.panelRecordFolder, `${panelId}_part1.mp4`);
+            
+            try {
+                await fsp.rename(currentVideoPath, tempVideoPath);
+                console.log(`[RECORD] 📁 Renamed video to temp: ${tempVideoPath}`);
+                
+                // Track part videos for merging later
+                if (!this.panelRecordingParts) {
+                    this.panelRecordingParts = [];
+                }
+                this.panelRecordingParts.push(tempVideoPath);
+            } catch (renameErr) {
+                console.warn(`[RECORD] ⚠️  Could not rename video file: ${renameErr.message}`);
+            }
+            
+            // Save original page before switching (only if not already saved)
+            if (!this.recordingOriginalPage) {
+                this.recordingOriginalPage = this.page;
+                console.log(`[RECORD] 📄 Saved original page for later restoration`);
+            }
+            
+            // Update tracker.page to new page
+            this.page = newPage;
+            console.log(`[RECORD] 📄 Updated tracker.page to new page`);
+            
+            // Start new recording on new page
+            const { PuppeteerScreenRecorder } = await import('puppeteer-screen-recorder');
+            
+            const videoOptions = {
+                followNewTab: false,
+                fps: 1,
+                videoFrame: {
+                    width: 640,
+                    height: 480,
+                },
+                followCursor: true,
+                highlightStyle: 'highlight',
+            };
+            
+            this.panelRecorder = new PuppeteerScreenRecorder(newPage, videoOptions);
+            const newVideoPath = path.join(this.panelRecordFolder, `${panelId}.mp4`);
+            
+            console.log(`[RECORD] 🎬 Starting new recording on new page...`);
+            console.log(`[RECORD]    Video path: ${newVideoPath}`);
+            
+            await this.panelRecorder.start(newVideoPath);
+            
+            console.log(`[RECORD] ✅ Recording switched to new page successfully`);
+            return true;
+        } catch (err) {
+            console.error(`[RECORD] ❌ Failed to switch recording to new page:`, err);
+            console.error(`[RECORD]    Error details:`, err.message, err.stack);
+            return false;
         }
     }
 

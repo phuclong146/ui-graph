@@ -180,6 +180,14 @@ export async function initBrowsers(tracker, startUrl) {
                         target: target,
                         timestamp: Date.now()
                     });
+                    
+                    // If recording is active, switch recording to the new tab
+                    if (tracker.isRecordingPanel && tracker.panelRecorder && url && url !== 'about:blank') {
+                        console.log(`[RECORD] 🔄 New tab detected while recording, switching to new tab: ${url}`);
+                        // Wait a bit more for the page to be fully loaded before switching recording
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await tracker.switchRecordingToPage(page);
+                    }
                 } catch (urlErr) {
                     // Page might not have URL yet, but still track it
                     console.log(`🆕 New tab opened (URL not available yet)`);

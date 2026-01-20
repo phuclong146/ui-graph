@@ -610,6 +610,93 @@ async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
 }
 
 /**
+ * Merge multiple video parts into a single video file
+ * @param {Array<string>} videoParts - Array of paths to video parts (in order)
+ * @param {string} outputVideoPath - Path to output video file
+ * @returns {Promise<string>} Path to output video file
+ */
+export async function mergeVideoParts(videoParts, outputVideoPath) {
+    if (!videoParts || videoParts.length === 0) {
+        throw new Error('No video parts to merge');
+    }
+    
+    if (videoParts.length === 1) {
+        // Only one part, just copy it
+        await fsp.copyFile(videoParts[0], outputVideoPath);
+        return outputVideoPath;
+    }
+    
+    return new Promise((resolve, reject) => {
+        const outputNormalized = path.resolve(outputVideoPath).replace(/\\/g, '/');
+        
+        // Create a temporary file list for ffmpeg concat
+        const listFilePath = outputVideoPath.replace('.mp4', '_merge_list.txt');
+        const listFileDir = path.dirname(listFilePath);
+        
+        // Escape single quotes in paths for ffmpeg concat format
+        const escapePath = (p) => p.replace(/'/g, "'\\''");
+        
+        // Create list content with relative paths
+        const listContent = videoParts.map(partPath => {
+            const partResolved = path.resolve(partPath);
+            const partRelative = path.relative(listFileDir, partResolved).replace(/\\/g, '/');
+            return `file '${escapePath(partRelative)}'`;
+        }).join('\n');
+        
+        console.log(`[VIDEO] Merging ${videoParts.length} video parts...`);
+        
+        fsp.writeFile(listFilePath, listContent)
+            .then(() => {
+                const listFilePathNormalized = path.resolve(listFilePath).replace(/\\/g, '/');
+                
+                ffmpegLib()
+                    .input(listFilePathNormalized)
+                    .inputOptions(['-f', 'concat', '-safe', '0'])
+                    .outputOptions([
+                        '-c:v', 'libx264',
+                        '-c:a', 'copy', // Copy audio if exists, otherwise no audio
+                        '-avoid_negative_ts', 'make_zero',
+                        '-vsync', 'cfr', // Constant frame rate to ensure proper timestamps
+                        '-fflags', '+genpts', // Generate new timestamps
+                        '-g', '1',                 // Keyframe every frame (GOP size = 1)
+                        '-bf', '0',                // No B-frames for better seeking
+                        '-force_key_frames', '0',  // Force keyframe at start
+                        '-movflags', '+faststart'  // Move moov atom to start for proper seeking
+                    ])
+                    .output(outputNormalized)
+                    .on('start', (commandLine) => {
+                        console.log('[VIDEO] Merge command:', commandLine);
+                    })
+                    .on('stderr', (stderrLine) => {
+                        // console.log('[VIDEO] Merge stderr:', stderrLine);
+                    })
+                    .on('end', async () => {
+                        // Cleanup list file
+                        try {
+                            await fsp.unlink(listFilePath);
+                        } catch (err) {
+                            console.warn('[VIDEO] Failed to cleanup merge list file:', err);
+                        }
+                        console.log(`[VIDEO] ✅ Videos merged successfully: ${outputNormalized}`);
+                        resolve(outputNormalized);
+                    })
+                    .on('error', async (err) => {
+                        // Cleanup list file on error
+                        try {
+                            await fsp.unlink(listFilePath);
+                        } catch (cleanupErr) {
+                            console.warn('[VIDEO] Failed to cleanup merge list file on error:', cleanupErr);
+                        }
+                        console.error('[VIDEO] Merge videos error:', err);
+                        reject(err);
+                    })
+                    .run();
+            })
+            .catch(reject);
+    });
+}
+
+/**
  * Create TrackingVideo from session video
  * @param {string} sessionUrl - URL of original session video
  * @param {number} sessionStart - Session start timestamp
