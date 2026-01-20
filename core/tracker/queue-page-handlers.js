@@ -2239,10 +2239,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
-            // Show loading indicator
+            // Show loading indicator (only in queue browser)
             await tracker._broadcast({ 
                 type: 'show_toast', 
-                message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                message: '📸 Đang capture màn hình, vui lòng đợi...',
+                target: 'queue'
             });
 
             // Check for newly opened tabs (within last 30 seconds)
@@ -3097,10 +3098,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     deviceScaleFactor: 1
                 });
 
-                // Show loading indicator
+                // Show loading indicator (only in queue browser)
                 await tracker._broadcast({ 
                     type: 'show_toast', 
-                    message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                    message: '📸 Đang capture màn hình, vui lòng đợi...',
+                    target: 'queue'
                 });
 
                 await tracker.page.evaluate(() => {
@@ -3236,10 +3238,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (tracker.selectedPanelId && tracker.dataItemManager) {
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
-                // Show loading indicator
+                // Show loading indicator (only in queue browser)
                 await tracker._broadcast({ 
                     type: 'show_toast', 
-                    message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                    message: '📸 Đang capture màn hình, vui lòng đợi...',
+                    target: 'queue'
                 });
 
                 const { captureScreenshot } = await import('../media/screenshot.js');
@@ -3357,10 +3360,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 timestamp: Date.now()
             });
 
-            // Show loading indicator
+            // Show loading indicator (only in queue browser)
             await tracker._broadcast({ 
                 type: 'show_toast', 
-                message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                message: '📸 Đang capture màn hình, vui lòng đợi...',
+                target: 'queue'
             });
 
             const { captureScreenshot } = await import('../media/screenshot.js');
@@ -3529,10 +3533,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const recordingResult = await tracker.stopPanelRecording();
 
-            // Show loading indicator
+            // Show loading indicator (only in queue browser)
             await tracker._broadcast({ 
                 type: 'show_toast', 
-                message: '📸 Đang capture màn hình, vui lòng đợi...' 
+                message: '📸 Đang capture màn hình, vui lòng đợi...',
+                target: 'queue'
             });
 
             await tracker.page.evaluate(() => {

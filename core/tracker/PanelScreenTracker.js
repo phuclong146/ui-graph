@@ -347,6 +347,9 @@ export class PanelScreenTracker {
             this.panelRecordingParts = []; // Reset parts array for new recording
             this.recordingOriginalPage = null; // Reset original page for new recording
             
+            // Broadcast recording status to hide toasts on tracking browser
+            await this._broadcast({ type: 'recording_status', isRecording: true });
+            
             const startTimeStr = new Date(this.panelRecordingStartTime).toISOString();
             console.log(`[RECORD] ✅ Recording started successfully`);
             console.log(`[RECORD]    Start time: ${startTimeStr} (${this.panelRecordingStartTime})`);
@@ -449,6 +452,9 @@ export class PanelScreenTracker {
             this.recordingPanelId = null;
             this.panelRecordingStartTime = null;
             
+            // Broadcast recording status to re-enable toasts on tracking browser
+            await this._broadcast({ type: 'recording_status', isRecording: false });
+            
             console.log(`[RECORD] ✅ Recording stopped successfully`);
             console.log(`[RECORD]    Status reset: isRecordingPanel=${this.isRecordingPanel}`);
             
@@ -469,6 +475,10 @@ export class PanelScreenTracker {
             this.recordingPanelId = null;
             this.panelRecordingStartTime = null;
             this.panelRecordingParts = [];
+            
+            // Broadcast recording status to re-enable toasts on tracking browser (error case)
+            await this._broadcast({ type: 'recording_status', isRecording: false });
+            
             return null;
         }
     }
@@ -539,6 +549,10 @@ export class PanelScreenTracker {
             this.isRecordingPanel = false;
             this.recordingPanelId = null;
             this.panelRecordingParts = [];
+            
+            // Broadcast recording status to re-enable toasts on tracking browser
+            await this._broadcast({ type: 'recording_status', isRecording: false });
+            
             console.log(`[RECORD]    Status reset: isRecordingPanel=${this.isRecordingPanel}`);
         }
     }

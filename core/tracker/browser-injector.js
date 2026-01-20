@@ -206,9 +206,12 @@ export async function setupTracking(tracker) {
                     try {
                         const evt = JSON.parse(msg.data);
 
-                        if (evt.type === 'show_toast' && evt.message) {
-                            // Don't show toast in tracking browser if target is 'queue'
-                            if (evt.target !== 'queue' && window.showTrackingToast) {
+                        if (evt.type === 'recording_status') {
+                            // Track recording status to suppress toasts during recording
+                            window.__isRecording = evt.isRecording;
+                        } else if (evt.type === 'show_toast' && evt.message) {
+                            // Don't show toast in tracking browser if target is 'queue' or if recording is in progress
+                            if (evt.target !== 'queue' && window.showTrackingToast && !window.__isRecording) {
                                 window.showTrackingToast(evt.message);
                             }
                         } else if (evt.type === 'panel_selected') {
