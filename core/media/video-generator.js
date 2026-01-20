@@ -253,7 +253,11 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
                     '-c:v libx264',
                     '-pix_fmt yuv420p',
                     '-r', String(fps), // Output frame rate  
-                    '-an' // No audio
+                    '-an', // No audio
+                    '-g', '1',                 // Keyframe every frame (GOP size = 1)
+                    '-bf', '0',                // No B-frames for better seeking
+                    '-force_key_frames', '0',  // Force keyframe at start
+                    '-movflags', '+faststart'  // Move moov atom to start for proper seeking
                 ])
                 .output(videoPathNormalized);
             
@@ -501,7 +505,11 @@ async function cutVideoSegment(inputVideoPath, startSeconds, durationSeconds, ou
                 '-t', String(durationSeconds),
                 '-c:v', 'libx264',
                 '-c:a', 'copy',
-                '-avoid_negative_ts', 'make_zero'
+                '-avoid_negative_ts', 'make_zero',
+                '-g', '1',                 // Keyframe every frame (GOP size = 1)
+                '-bf', '0',                // No B-frames for better seeking
+                '-force_key_frames', '0',  // Force keyframe at start
+                '-movflags', '+faststart'  // Move moov atom to start for proper seeking
             ])
             .output(outputPathNormalized)
             .on('start', (commandLine) => {
@@ -562,7 +570,11 @@ async function concatenateVideos(video1Path, video2Path, outputVideoPath) {
                         '-c:a', 'copy', // Copy audio if exists, otherwise no audio
                         '-avoid_negative_ts', 'make_zero',
                         '-vsync', 'cfr', // Constant frame rate to ensure proper timestamps
-                        '-fflags', '+genpts' // Generate new timestamps
+                        '-fflags', '+genpts', // Generate new timestamps
+                        '-g', '1',                 // Keyframe every frame (GOP size = 1)
+                        '-bf', '0',                // No B-frames for better seeking
+                        '-force_key_frames', '0',  // Force keyframe at start
+                        '-movflags', '+faststart'  // Move moov atom to start for proper seeking
                     ])
                     .output(outputNormalized)
                     .on('start', (commandLine) => {
@@ -793,7 +805,11 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
                             `-filter:v`, `setpts=${ptsFactor}*PTS`,
                             `-t`, String(finalPanelAfterDuration),
                             '-c:v', 'libx264',
-                            '-an' // Remove audio
+                            '-an', // Remove audio
+                            '-g', '1',                 // Keyframe every frame (GOP size = 1)
+                            '-bf', '0',                // No B-frames for better seeking
+                            '-force_key_frames', '0',  // Force keyframe at start
+                            '-movflags', '+faststart'  // Move moov atom to start for proper seeking
                         ])
                         .output(extendedPathNormalized)
                         .on('start', (commandLine) => {
