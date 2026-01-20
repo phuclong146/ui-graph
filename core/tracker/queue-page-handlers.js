@@ -6593,6 +6593,144 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const regenerateTrackingVideoHandler = async (actionId) => {
+        try {
+            const actionItem = await tracker.dataItemManager.getItem(actionId);
+            if (!actionItem || actionItem.item_category !== 'ACTION') {
+                throw new Error(`Action not found: ${actionId}`);
+            }
+
+            // Import video generators
+            const { createTrackingVideo } = await import('../media/video-generator.js');
+
+            const sessionUrl = actionItem.metadata?.session_url;
+            const sessionStart = actionItem.metadata?.session_start || Date.now();
+
+            if (!sessionUrl) {
+                throw new Error(`No session_url found for action ${actionId}`);
+            }
+
+            // Get clicks for action
+            let clicks = null;
+            if (tracker.clickManager) {
+                clicks = await tracker.clickManager.getClicksForAction(actionId);
+            }
+
+            if (!clicks || clicks.length === 0) {
+                throw new Error(`No clicks found for action ${actionId}`);
+            }
+
+            const trackingVideoResult = await createTrackingVideo(
+                sessionUrl,
+                sessionStart,
+                actionId,
+                clicks,
+                tracker
+            );
+
+            await tracker.dataItemManager.updateItem(actionId, {
+                metadata: {
+                    ...actionItem.metadata,
+                    tracking_video_url: trackingVideoResult.videoUrl
+                }
+            });
+
+            console.log(`✅ TrackingVideo regenerated for action ${actionId}: ${trackingVideoResult.videoUrl}`);
+            return { tracking_video_url: trackingVideoResult.videoUrl };
+        } catch (err) {
+            console.error(`Failed to regenerate tracking video for action ${actionId}:`, err);
+            throw err;
+        }
+    };
+
+    const regenerateStepVideoHandler = async (actionId) => {
+        try {
+            const actionItem = await tracker.dataItemManager.getItem(actionId);
+            if (!actionItem || actionItem.item_category !== 'ACTION') {
+                throw new Error(`Action not found: ${actionId}`);
+            }
+
+            const step = await tracker.stepManager.getStepForAction(actionId);
+            if (!step) {
+                throw new Error(`Step not found for action: ${actionId}`);
+            }
+
+            // Import video generators
+            const { createStepVideo } = await import('../media/video-generator.js');
+
+            const panelBeforeId = step.panel_before?.item_id;
+            const panelAfterId = step.panel_after?.item_id;
+
+            if (!panelBeforeId || !panelAfterId) {
+                throw new Error(`Panel before or after not found for action ${actionId}`);
+            }
+
+            const panelBefore = await tracker.dataItemManager.getItem(panelBeforeId);
+            const panelAfter = await tracker.dataItemManager.getItem(panelAfterId);
+
+            let panelBeforeImage = null;
+            if (panelBefore?.fullscreen_base64) {
+                panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.fullscreen_base64);
+            } else if (panelBefore?.image_base64) {
+                panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.image_base64);
+            }
+
+            let panelAfterImage = null;
+            if (panelAfter?.fullscreen_base64) {
+                panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.fullscreen_base64);
+            } else if (panelAfter?.image_base64) {
+                panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.image_base64);
+            }
+
+            if (!panelBeforeImage || !panelAfterImage) {
+                throw new Error(`Panel images not found for action ${actionId}`);
+            }
+
+            const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };
+            const panelBeforeGlobalPos = panelBefore.metadata?.global_pos || null;
+            const panelAfterGlobalPos = panelAfter.metadata?.global_pos || null;
+            const panelInfo = {
+                name: panelBefore.name || 'Panel',
+                type: panelBefore.type || 'screen',
+                verb: panelBefore.verb || 'view'
+            };
+            const actionInfo = {
+                name: actionItem.name || 'Action',
+                type: actionItem.type || 'button',
+                verb: actionItem.verb || 'click'
+            };
+
+            const stepVideoResult = await createStepVideo(
+                panelBeforeImage,
+                panelAfterImage,
+                actionPos,
+                panelInfo,
+                actionInfo,
+                tracker.sessionFolder,
+                actionId,
+                panelBeforeGlobalPos,
+                panelAfterGlobalPos
+            );
+
+            await tracker.dataItemManager.updateItem(actionId, {
+                metadata: {
+                    ...actionItem.metadata,
+                    step_video_url: stepVideoResult.videoUrl,
+                    step_video_subtitles: stepVideoResult.subtitles
+                }
+            });
+
+            console.log(`✅ StepVideo regenerated for action ${actionId}: ${stepVideoResult.videoUrl}`);
+            return { 
+                step_video_url: stepVideoResult.videoUrl,
+                step_video_subtitles: stepVideoResult.subtitles
+            };
+        } catch (err) {
+            console.error(`Failed to regenerate step video for action ${actionId}:`, err);
+            throw err;
+        }
+    };
+
     const validateStepHandler = async () => {
         try {
             // Load panel tree (TreeMode)
@@ -7270,6 +7408,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
         raiseBug: raiseBugHandler,
-        generateVideoForAction: generateVideoForActionHandler
+        generateVideoForAction: generateVideoForActionHandler,
+        regenerateTrackingVideo: regenerateTrackingVideoHandler,
+        regenerateStepVideo: regenerateStepVideoHandler
     };
 }

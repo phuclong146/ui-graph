@@ -1296,10 +1296,13 @@ export const QUEUE_BROWSER_HTML = `
           <div style="flex:1; display:flex; flex-direction:column; padding:20px; border-right:1px solid #333;">
             <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
               <label style="color:#fff; font-size:14px; font-weight:600;">A - Tracking Video</label>
-              <label style="color:#fff; font-size:12px; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                <input type="checkbox" id="videoValidationRawVideoToggle" style="cursor:pointer;">
-                <span>View RawVideo</span>
-              </label>
+              <div style="display:flex; align-items:center; gap:12px;">
+                <label style="color:#fff; font-size:12px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="videoValidationRawVideoToggle" style="cursor:pointer;">
+                  <span>View RawVideo</span>
+                </label>
+                <button id="videoValidationRecreateTrackingBtn" style="background:#4a9eff; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:12px; cursor:pointer;">Recreate Tracking Video</button>
+              </div>
             </div>
             <div style="flex:1; position:relative; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
               <video id="videoValidationTrackingVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
@@ -1310,8 +1313,9 @@ export const QUEUE_BROWSER_HTML = `
             </div>
           </div>
           <div style="flex:1; display:flex; flex-direction:column; padding:20px;">
-            <div style="margin-bottom:10px;">
+            <div style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
               <label style="color:#fff; font-size:14px; font-weight:600;">B - Step Video</label>
+              <button id="videoValidationRecreateStepBtn" style="background:#4a9eff; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:12px; cursor:pointer;">Recreate Step Video</button>
             </div>
             <div style="flex:1; position:relative; background:#000; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
               <video id="videoValidationStepVideo" controls style="width:100%; height:100%; max-height:100%; object-fit:contain;">
@@ -2534,6 +2538,66 @@ export const QUEUE_BROWSER_HTML = `
             }, { once: true });
           }
           updateSyncedPlayButtonState();
+        });
+      }
+
+      // Recreate Tracking Video button
+      const videoValidationRecreateTrackingBtn = document.getElementById('videoValidationRecreateTrackingBtn');
+      if (videoValidationRecreateTrackingBtn) {
+        videoValidationRecreateTrackingBtn.addEventListener('click', async () => {
+          if (!videoValidationCurrentActionId) {
+            alert('No action selected');
+            return;
+          }
+          videoValidationRecreateTrackingBtn.disabled = true;
+          videoValidationRecreateTrackingBtn.textContent = 'Recreating...';
+          try {
+            const result = await window.regenerateTrackingVideo(videoValidationCurrentActionId);
+            if (result && result.tracking_video_url) {
+              videoValidationTrackingVideoUrl = result.tracking_video_url;
+              if (videoValidationTrackingVideo && (!videoValidationRawVideoToggle || !videoValidationRawVideoToggle.checked)) {
+                videoValidationTrackingVideo.src = result.tracking_video_url;
+              }
+              alert('Tracking video recreated successfully!');
+            }
+          } catch (err) {
+            console.error('Failed to recreate tracking video:', err);
+            alert('Failed to recreate tracking video: ' + err.message);
+          } finally {
+            videoValidationRecreateTrackingBtn.disabled = false;
+            videoValidationRecreateTrackingBtn.textContent = 'Recreate Tracking Video';
+          }
+        });
+      }
+
+      // Recreate Step Video button
+      const videoValidationRecreateStepBtn = document.getElementById('videoValidationRecreateStepBtn');
+      if (videoValidationRecreateStepBtn) {
+        videoValidationRecreateStepBtn.addEventListener('click', async () => {
+          if (!videoValidationCurrentActionId) {
+            alert('No action selected');
+            return;
+          }
+          videoValidationRecreateStepBtn.disabled = true;
+          videoValidationRecreateStepBtn.textContent = 'Recreating...';
+          try {
+            const result = await window.regenerateStepVideo(videoValidationCurrentActionId);
+            if (result && result.step_video_url) {
+              if (videoValidationStepVideo) {
+                videoValidationStepVideo.src = result.step_video_url;
+              }
+              if (result.step_video_subtitles) {
+                videoValidationStepSubtitles = result.step_video_subtitles;
+              }
+              alert('Step video recreated successfully!');
+            }
+          } catch (err) {
+            console.error('Failed to recreate step video:', err);
+            alert('Failed to recreate step video: ' + err.message);
+          } finally {
+            videoValidationRecreateStepBtn.disabled = false;
+            videoValidationRecreateStepBtn.textContent = 'Recreate Step Video';
+          }
         });
       }
 

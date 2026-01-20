@@ -261,6 +261,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("validateStep", handlers.validateStep);
     await tracker.queuePage.exposeFunction("raiseBug", handlers.raiseBug);
     await tracker.queuePage.exposeFunction("generateVideoForAction", handlers.generateVideoForAction);
+    await tracker.queuePage.exposeFunction("regenerateTrackingVideo", handlers.regenerateTrackingVideo);
+    await tracker.queuePage.exposeFunction("regenerateStepVideo", handlers.regenerateStepVideo);
     await tracker.queuePage.exposeFunction("resetDrawingFlag", handlers.resetDrawingFlag);
     await tracker.queuePage.exposeFunction("checkActionHasStep", handlers.checkActionHasStep);
     await tracker.queuePage.exposeFunction("importCookiesFromJson", handlers.importCookiesFromJson);
