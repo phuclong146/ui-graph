@@ -803,8 +803,8 @@ export async function createTrackingVideo(sessionUrl, sessionStart, actionItemId
         
         // 6. Cut panel_before: 3 seconds before action_clicked_at
         // Clamp to video duration to ensure we don't cut beyond video bounds
-        const panelBeforeStart = Math.max(0, validActionClickedAtSeconds - 3);
-        const panelBeforeEnd = Math.min(validActionClickedAtSeconds, videoDuration);
+        const panelBeforeStart = Math.max(0, validActionClickedAtSeconds - 1);
+        const panelBeforeEnd = Math.min(validActionClickedAtSeconds + 2, videoDuration);
         let actualPanelBeforeDuration = Math.max(0, panelBeforeEnd - panelBeforeStart);
         panelBeforePath = path.join(baseDir, `panel_before_${videoId}.mp4`);
         
