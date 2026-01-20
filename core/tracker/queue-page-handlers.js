@@ -4014,7 +4014,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             await tracker.stepManager.deleteStepsForAction(actionItemId);
 
-            await tracker.dataItemManager.updateItem(actionItemId, { status: 'pending' });
+            const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+            await tracker.dataItemManager.updateItem(actionItemId, { 
+                status: 'pending',
+                metadata: {
+                    ...(actionItem?.metadata || {}),
+                    step_video_url: null,
+                    step_video_subtitles: null,
+                    tracking_video_url: null
+                }
+            });
 
             const actionParentPanelId = await getParentPanelOfActionHandler(actionItemId);
             if (actionParentPanelId) {
