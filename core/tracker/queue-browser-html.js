@@ -3217,6 +3217,17 @@ export const QUEUE_BROWSER_HTML = `
                   const loadingMsgs = document.querySelectorAll('.video-validation-loading-msg');
                   loadingMsgs.forEach(msg => msg.remove());
                   
+                  // Show warning if trackingVideo failed but stepVideo was created
+                  if (videoResult.tracking_video_error && videoResult.step_video_url) {
+                    console.warn('TrackingVideo failed but StepVideo created:', videoResult.tracking_video_error);
+                    // Show non-blocking warning - stepVideo still works
+                    const warningDiv = document.createElement('div');
+                    warningDiv.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#ff9800; color:#000; padding:12px 20px; border-radius:8px; font-size:14px; z-index:10001; box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+                    warningDiv.textContent = '⚠️ TrackingVideo failed - viewing raw session video';
+                    document.body.appendChild(warningDiv);
+                    setTimeout(() => warningDiv.remove(), 5000);
+                  }
+                  
                   // Reload videos if URLs are available
                   if (stepInfo.step_video_url || stepInfo.tracking_video_url) {
                     loadVideoDataForAction(node.panel_id);

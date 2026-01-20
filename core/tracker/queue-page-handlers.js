@@ -6565,6 +6565,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             // 2. Create TrackingVideo if not exists
+            // Wrap in try-catch to ensure step_video_url is still returned even if trackingVideo fails
             const existingTrackingVideoUrl = actionItem.metadata?.tracking_video_url || null;
             
             if (!existingTrackingVideoUrl && actionItem.metadata?.session_url) {
@@ -6578,23 +6579,31 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
 
                 if (clicks && clicks.length > 0) {
-                    const trackingVideoResult = await createTrackingVideo(
-                        sessionUrl,
-                        sessionStart,
-                        actionId,
-                        clicks,
-                        tracker
-                    );
+                    try {
+                        const trackingVideoResult = await createTrackingVideo(
+                            sessionUrl,
+                            sessionStart,
+                            actionId,
+                            clicks,
+                            tracker
+                        );
 
-                    await tracker.dataItemManager.updateItem(actionId, {
-                        metadata: {
-                            ...actionItem.metadata,
-                            tracking_video_url: trackingVideoResult.videoUrl
-                        }
-                    });
+                        // Reload actionItem to get latest metadata (step_video may have been saved)
+                        const updatedActionItem = await tracker.dataItemManager.getItem(actionId);
+                        await tracker.dataItemManager.updateItem(actionId, {
+                            metadata: {
+                                ...updatedActionItem.metadata,
+                                tracking_video_url: trackingVideoResult.videoUrl
+                            }
+                        });
 
-                    results.tracking_video_url = trackingVideoResult.videoUrl;
-                    console.log(`✅ TrackingVideo created for action ${actionId}: ${trackingVideoResult.videoUrl}`);
+                        results.tracking_video_url = trackingVideoResult.videoUrl;
+                        console.log(`✅ TrackingVideo created for action ${actionId}: ${trackingVideoResult.videoUrl}`);
+                    } catch (trackingErr) {
+                        console.error(`❌ Failed to create TrackingVideo for action ${actionId}:`, trackingErr);
+                        // Don't throw - allow step_video_url to be returned
+                        results.tracking_video_error = trackingErr.message || 'Failed to create TrackingVideo';
+                    }
                 }
             } else {
                 results.tracking_video_url = existingTrackingVideoUrl;
