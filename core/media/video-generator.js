@@ -1,4 +1,5 @@
 import ffmpegPath from 'ffmpeg-static';
+import ffprobePath from 'ffprobe-static';
 import ffmpegLib from 'fluent-ffmpeg';
 import { promises as fsp } from 'fs';
 import path from 'path';
@@ -9,9 +10,12 @@ import { drawPanelBoundingBoxes } from './screenshot.js';
 import { uploadVideoAndGetUrl, uploadPictureAndGetUrl } from './uploader.js';
 import { ENV } from '../config/env.js';
 
-// Set FFmpeg path
+// Set FFmpeg and FFprobe paths
 if (ffmpegPath) {
     ffmpegLib.setFfmpegPath(ffmpegPath);
+}
+if (ffprobePath?.path) {
+    ffmpegLib.setFfprobePath(ffprobePath.path);
 }
 
 /**
