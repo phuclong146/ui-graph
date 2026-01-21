@@ -6519,10 +6519,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };
                         const panelBeforeGlobalPos = panelBefore.metadata?.global_pos || null;
                         const panelAfterGlobalPos = panelAfter.metadata?.global_pos || null;
-                        const panelInfo = {
+                        const panelBeforeInfo = {
                             name: panelBefore.name || 'Panel',
                             type: panelBefore.type || 'screen',
                             verb: panelBefore.verb || 'view'
+                        };
+                        const panelAfterInfo = {
+                            name: panelAfter.name || 'Panel',
+                            type: panelAfter.type || 'screen',
+                            verb: panelAfter.verb || 'view'
                         };
                         const actionInfo = {
                             name: actionItem.name || 'Action',
@@ -6534,12 +6539,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             panelBeforeImage,
                             panelAfterImage,
                             actionPos,
-                            panelInfo,
+                            panelBeforeInfo,
                             actionInfo,
                             tracker.sessionFolder,
                             actionId,
                             panelBeforeGlobalPos,
-                            panelAfterGlobalPos
+                            panelAfterGlobalPos,
+                            panelAfterInfo
                         );
 
                         await tracker.dataItemManager.updateItem(actionId, {
@@ -6713,10 +6719,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };
             const panelBeforeGlobalPos = panelBefore.metadata?.global_pos || null;
             const panelAfterGlobalPos = panelAfter.metadata?.global_pos || null;
-            const panelInfo = {
+            const panelBeforeInfo = {
                 name: panelBefore.name || 'Panel',
                 type: panelBefore.type || 'screen',
                 verb: panelBefore.verb || 'view'
+            };
+            const panelAfterInfo = {
+                name: panelAfter.name || 'Panel',
+                type: panelAfter.type || 'screen',
+                verb: panelAfter.verb || 'view'
             };
             const actionInfo = {
                 name: actionItem.name || 'Action',
@@ -6728,12 +6739,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panelBeforeImage,
                 panelAfterImage,
                 actionPos,
-                panelInfo,
+                panelBeforeInfo,
                 actionInfo,
                 tracker.sessionFolder,
                 actionId,
                 panelBeforeGlobalPos,
-                panelAfterGlobalPos
+                panelAfterGlobalPos,
+                panelAfterInfo
             );
 
             await tracker.dataItemManager.updateItem(actionId, {

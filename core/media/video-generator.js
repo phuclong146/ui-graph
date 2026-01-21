@@ -16,27 +16,31 @@ if (ffmpegPath) {
 
 /**
  * Format subtitle data for overlay rendering
- * @param {Object} panelInfo - Panel info {name, type, verb}
+ * @param {Object} panelBeforeInfo - Panel before info {name, type, verb}
  * @param {Object} actionInfo - Action info {name, type, verb}
  * @param {Array} timeRanges - Array of {startTime, endTime}
+ * @param {Object} panelAfterInfo - Panel after info {name, type, verb} (optional, defaults to panelBeforeInfo for backward compatibility)
  * @returns {Array} Subtitle objects for overlay
  */
-export function formatSubtitleData(panelInfo, actionInfo, timeRanges) {
+export function formatSubtitleData(panelBeforeInfo, actionInfo, timeRanges, panelAfterInfo = null) {
     const subtitles = [];
     
+    // Use panelAfterInfo if provided, otherwise fall back to panelBeforeInfo for backward compatibility
+    const afterInfo = panelAfterInfo || panelBeforeInfo;
+    
     if (timeRanges.length >= 2) {
-        // First 3 seconds: Panel info + Action info
+        // First 3 seconds: Panel before info + Action info
         subtitles.push({
             startTime: timeRanges[0].startTime,
             endTime: timeRanges[0].endTime,
-            text: `Panel: ${panelInfo?.name || 'N/A'} (${panelInfo?.type || 'N/A'}, ${panelInfo?.verb || 'N/A'})\nAction: ${actionInfo?.name || 'N/A'} (${actionInfo?.type || 'N/A'}, ${actionInfo?.verb || 'N/A'})`
+            text: `Panel: ${panelBeforeInfo?.name || 'N/A'} (${panelBeforeInfo?.type || 'N/A'}, ${panelBeforeInfo?.verb || 'N/A'})\nAction: ${actionInfo?.name || 'N/A'} (${actionInfo?.type || 'N/A'}, ${actionInfo?.verb || 'N/A'})`
         });
         
         // Last 3 seconds: Panel after info
         subtitles.push({
             startTime: timeRanges[1].startTime,
             endTime: timeRanges[1].endTime,
-            text: `Panel: ${panelInfo?.name || 'N/A'} (${panelInfo?.type || 'N/A'}, ${panelInfo?.verb || 'N/A'})`
+            text: `Panel: ${afterInfo?.name || 'N/A'} (${afterInfo?.type || 'N/A'}, ${afterInfo?.verb || 'N/A'})`
         });
     }
     
@@ -295,15 +299,16 @@ async function generateVideoFromImages(images, fps = 1, durationPerImage = 3, re
  * @param {string} panelBeforeImage - Base64 image of panel before (fullscreen)
  * @param {string} panelAfterImage - Base64 image of panel after (fullscreen)
  * @param {Object} actionPos - Action position {x, y, w, h}
- * @param {Object} panelInfo - Panel info {name, type, verb}
+ * @param {Object} panelBeforeInfo - Panel before info {name, type, verb}
  * @param {Object} actionInfo - Action info {name, type, verb}
  * @param {string} sessionFolder - Session folder path (optional)
  * @param {string} actionId - Action item ID
  * @param {Object} panelBeforeGlobalPos - Panel before global position {x, y, w, h} (optional)
  * @param {Object} panelAfterGlobalPos - Panel after global position {x, y, w, h} (optional)
+ * @param {Object} panelAfterInfo - Panel after info {name, type, verb} (optional, for subtitle in last 3 seconds)
  * @returns {Promise<{videoUrl: string, subtitles: Array}>}
  */
-export async function createStepVideo(panelBeforeImage, panelAfterImage, actionPos, panelInfo, actionInfo, sessionFolder = null, actionId = null, panelBeforeGlobalPos = null, panelAfterGlobalPos = null) {
+export async function createStepVideo(panelBeforeImage, panelAfterImage, actionPos, panelBeforeInfo, actionInfo, sessionFolder = null, actionId = null, panelBeforeGlobalPos = null, panelAfterGlobalPos = null, panelAfterInfo = null) {
     try {
         console.log('[VIDEO] 🎬 Creating StepVideo...');
         
@@ -392,12 +397,13 @@ export async function createStepVideo(panelBeforeImage, panelAfterImage, actionP
         
         // 7. Format subtitle data
         const subtitles = formatSubtitleData(
-            panelInfo,
+            panelBeforeInfo,
             actionInfo,
             [
                 { startTime: 0, endTime: 3 },
                 { startTime: 3, endTime: 6 }
-            ]
+            ],
+            panelAfterInfo
         );
         
         // Keep temp video file for inspection (no cleanup)
