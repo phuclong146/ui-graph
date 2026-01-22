@@ -372,7 +372,7 @@ export async function setupTracking(tracker) {
                             return;
                         }
                         window.__freezeScreenshotPending = true;
-                        if (window.showTrackingToast) window.showTrackingToast('❄️ Đang freeze screenshot...');
+                        // DON'T show toast here - it will be captured in screenshot!
                         // Add to keyboard queue for processing by Node.js poller
                         window.__keyboardQueue.push({ action: 'FREEZE_SCREENSHOT', timestamp: Date.now() });
                         return;
