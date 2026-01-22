@@ -160,6 +160,40 @@ export const QUEUE_BROWSER_HTML = `
         display: block;
       }
       
+      /* Shared style for panel log mode buttons in modals */
+      .panel-log-mode-btn {
+        background: transparent;
+        color: #999;
+        border: none;
+        border-radius: 6px;
+        padding: 4px 8px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 32px;
+        height: 32px;
+      }
+      
+      .panel-log-mode-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      
+      .panel-log-mode-btn:active {
+        transform: scale(0.95);
+      }
+      
+      .panel-log-mode-btn img {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+      
       .tree-node {
       }
       
@@ -1247,6 +1281,9 @@ export const QUEUE_BROWSER_HTML = `
           <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
           <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
+            <button id="graph-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+            </button>
           </div>
           <div id="graphPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1288,6 +1325,9 @@ export const QUEUE_BROWSER_HTML = `
         <div id="videoValidationPanelLogContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
           <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
+            <button id="video-validation-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+            </button>
           </div>
           <div id="videoValidationPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1505,7 +1545,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       // Panel log display mode: 'log' or 'tree'
-      let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'tree';
+      let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
 
@@ -2710,8 +2750,27 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       // Graph Panel Log Tree functions
+      // Display mode for Graph Panel Log: 'log' or 'tree'
+      let graphPanelLogDisplayMode = getLocalStorage('graph-panel-log-display-mode') || 'log';
+      
       async function loadGraphPanelTree() {
-        if (window.graphPanelTreeData) {
+        // Update button icon based on saved mode
+        updateGraphShowModeButton();
+        
+        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
+        if (graphPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+          try {
+            graphPanelTreeData = await window.getPanelTree('tree');
+            renderGraphPanelTree();
+          } catch (err) {
+            console.error('Failed to load graph panel tree with tree mode:', err);
+            // Fallback to provided data
+            if (window.graphPanelTreeData) {
+              graphPanelTreeData = window.graphPanelTreeData;
+              renderGraphPanelTree();
+            }
+          }
+        } else if (window.graphPanelTreeData) {
           graphPanelTreeData = window.graphPanelTreeData;
           renderGraphPanelTree();
         }
@@ -2719,6 +2778,46 @@ export const QUEUE_BROWSER_HTML = `
       
       // Expose to window for access from evaluate context
       window.loadGraphPanelTree = loadGraphPanelTree;
+      
+      // Update graph panel log showMode button icon
+      function updateGraphShowModeButton() {
+        const showModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
+        if (!showModeBtn) return;
+        
+        if (graphPanelLogDisplayMode === 'log') {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Tree Mode';
+        } else {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Log Mode';
+        }
+      }
+      
+      // Toggle graph panel log display mode
+      async function toggleGraphPanelLogDisplayMode() {
+        graphPanelLogDisplayMode = graphPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        setLocalStorage('graph-panel-log-display-mode', graphPanelLogDisplayMode);
+        updateGraphShowModeButton();
+        
+        // Reload tree data with new mode
+        if (window.getPanelTree) {
+          try {
+            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
+            renderGraphPanelTree();
+            const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            if (window.showToast) window.showToast('✅ Graph Panel: Switched to ' + modeText + ' Mode');
+          } catch (err) {
+            console.error('Failed to reload graph panel tree:', err);
+          }
+        }
+      }
+      
+      // Initialize graph panel log showMode button
+      const graphPanelLogShowModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
+      if (graphPanelLogShowModeBtn) {
+        graphPanelLogShowModeBtn.addEventListener('click', toggleGraphPanelLogDisplayMode);
+        updateGraphShowModeButton();
+      }
 
       function renderGraphPanelTree() {
         const treeContainer = document.getElementById('graphPanelLogTree');
@@ -2889,8 +2988,11 @@ export const QUEUE_BROWSER_HTML = `
       // Video Validation Panel Log Tree functions
       let videoValidationPanelTreeData = [];
       let videoValidationExpandedPanels = new Set();
+      
+      // Display mode for Video Validation Panel Log: 'log' or 'tree'
+      let videoValidationPanelLogDisplayMode = getLocalStorage('video-validation-panel-log-display-mode') || 'log';
 
-      function renderPanelTreeForValidation(panelTreeData, treeContainer) {
+      function renderPanelTreeForValidationInternal(panelTreeData, treeContainer) {
         if (!treeContainer) return;
         
         videoValidationPanelTreeData = panelTreeData || [];
@@ -2900,9 +3002,72 @@ export const QUEUE_BROWSER_HTML = `
           treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
         });
       }
+      
+      // Wrapper function that checks saved mode and reloads if needed
+      async function renderPanelTreeForValidation(panelTreeData, treeContainer) {
+        // Update button icon based on saved mode
+        updateVideoValidationShowModeButton();
+        
+        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
+        if (videoValidationPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+          try {
+            const treeData = await window.getPanelTree('tree');
+            renderPanelTreeForValidationInternal(treeData, treeContainer);
+          } catch (err) {
+            console.error('Failed to load video validation panel tree with tree mode:', err);
+            // Fallback to provided data
+            renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
+          }
+        } else {
+          renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
+        }
+      }
 
       // Expose to window for access from evaluate context
       window.renderPanelTreeForValidation = renderPanelTreeForValidation;
+      
+      // Update video validation panel log showMode button icon
+      function updateVideoValidationShowModeButton() {
+        const showModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
+        if (!showModeBtn) return;
+        
+        if (videoValidationPanelLogDisplayMode === 'log') {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Tree Mode';
+        } else {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Log Mode';
+        }
+      }
+      
+      // Toggle video validation panel log display mode
+      async function toggleVideoValidationPanelLogDisplayMode() {
+        videoValidationPanelLogDisplayMode = videoValidationPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
+        updateVideoValidationShowModeButton();
+        
+        // Reload tree data with new mode
+        if (window.getPanelTree) {
+          try {
+            const panelTreeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
+            const treeContainer = document.getElementById('videoValidationPanelLogTree');
+            if (treeContainer) {
+              renderPanelTreeForValidation(panelTreeData, treeContainer);
+            }
+            const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            if (window.showToast) window.showToast('✅ Video Validation: Switched to ' + modeText + ' Mode');
+          } catch (err) {
+            console.error('Failed to reload video validation panel tree:', err);
+          }
+        }
+      }
+      
+      // Initialize video validation panel log showMode button
+      const videoValidationPanelLogShowModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
+      if (videoValidationPanelLogShowModeBtn) {
+        videoValidationPanelLogShowModeBtn.addEventListener('click', toggleVideoValidationPanelLogDisplayMode);
+        updateVideoValidationShowModeButton();
+      }
 
       // Function to load video data for a specific action
       function loadVideoDataForAction(actionId) {

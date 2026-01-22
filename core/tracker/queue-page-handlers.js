@@ -5284,10 +5284,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const viewGraphHandler = async () => {
         try {
-            // Load panel tree data in Node.js context
+            // Load panel tree data - default to log mode
+            // User can toggle mode via showMode button in browser
             let panelTreeData = [];
             if (tracker.panelLogManager) {
-                panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                panelTreeData = await tracker.panelLogManager.buildTreeStructure();
             }
             
             // Load data in Node.js context
@@ -6769,10 +6770,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const validateStepHandler = async () => {
         try {
-            // Load panel tree (TreeMode)
+            // Load panel tree - default to log mode
+            // User can toggle mode via showMode button in browser
             let panelTreeData = [];
             if (tracker.panelLogManager) {
-                panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                panelTreeData = await tracker.panelLogManager.buildTreeStructure();
             }
 
             // Get all actions with steps
@@ -6887,8 +6889,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Small delay to ensure file is written
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Reload tree structure with updated bug info
-                const panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                // Reload tree structure with updated bug info (default to log mode)
+                const panelTreeData = await tracker.panelLogManager.buildTreeStructure();
                 
                 // Debug: log to verify bug_flag is in tree data
                 const actionNode = findNodeInTree(panelTreeData, actionItemId);
