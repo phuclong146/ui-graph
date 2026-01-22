@@ -378,13 +378,19 @@ export class MySQLExporter {
             // Backfill doing_item purpose/reason from DB
             console.log('🔄 Starting backfill for doing_item purpose/reason from DB...');
             let backfillItemCount = 0;
+            let itemsNeedingBackfill = 0;
             for (const item of items) {
                 if (!item.purpose && !item.reason && item.item_category === 'ACTION') {
+                    itemsNeedingBackfill++;
                     try {
                         // Find the parent panel for this action
                         const panelId = actionIdToPanelIdMap.get(item.item_id);
                         const panelName = panelId ? panelIdToPanelNameMap.get(panelId) : null;
                         const code = this.generateCode(item.item_category, item.name, panelName);
+                        
+                        if (!panelName) {
+                            console.log(`   ⚠️ Item "${item.name}" has no panelName mapping, code: ${code}`);
+                        }
                         
                         const [rows] = await this.connection.execute(
                             'SELECT purpose, reason FROM doing_item WHERE code = ? AND published = true',
@@ -400,14 +406,20 @@ export class MySQLExporter {
                             item.purpose = rows[0].purpose || null;
                             item.reason = rows[0].reason || null;
                             backfillItemCount++;
+                            console.log(`   📝 Backfilled item "${item.name}" (code: ${code})`);
+                        } else {
+                            console.log(`   ℹ️ No DB match for item "${item.name}" (code: ${code})`);
                         }
                     } catch (backfillErr) {
                         // Ignore errors during backfill
+                        console.warn(`   ⚠️ Backfill error for item "${item.name}":`, backfillErr.message);
                     }
                 }
             }
             if (backfillItemCount > 0) {
-                console.log(`✅ Backfilled ${backfillItemCount} items with purpose/reason from DB`);
+                console.log(`✅ Backfilled ${backfillItemCount}/${itemsNeedingBackfill} items with purpose/reason from DB`);
+            } else if (itemsNeedingBackfill > 0) {
+                console.log(`   ℹ️ ${itemsNeedingBackfill} items need backfill but no matches found in DB`);
             }
             
             // Backfill doing_step purpose/reason from DB
@@ -420,10 +432,17 @@ export class MySQLExporter {
                     .filter(line => line.trim())
                     .map(line => JSON.parse(line));
                 
-                for (const step of steps) {
+                // First, assign step_id to steps that don't have it (same logic as later in code)
+                // This ensures we use the correct step_id for DB query
+                const stepsWithTempId = steps.map((step, index) => ({
+                    ...step,
+                    _tempStepId: step.step_id || (index + 1)  // Use 1, 2, 3, ... like DB does
+                }));
+                
+                for (const step of stepsWithTempId) {
                     if (!step.purpose && !step.reason && step.action?.item_id) {
                         try {
-                            const stepId = step.step_id || 0;
+                            const stepId = step._tempStepId;  // Use the corrected step_id
                             const stepType = 'A-BROWSER';
                             const myStep = `DOS-${recordId}-${stepId}-${stepType}`;
                             const stepCode = `${this.myAiTool}_${myStep}`;
@@ -442,18 +461,23 @@ export class MySQLExporter {
                                 step.purpose = rows[0].purpose || null;
                                 step.reason = rows[0].reason || null;
                                 backfillStepCount++;
+                                console.log(`   📝 Backfilled step ${stepId} (code: ${stepCode})`);
                             }
                         } catch (backfillErr) {
                             // Ignore errors during backfill
+                            console.warn(`   ⚠️ Backfill error for step:`, backfillErr.message);
                         }
                     }
                 }
                 
                 if (backfillStepCount > 0) {
                     console.log(`✅ Backfilled ${backfillStepCount} steps with purpose/reason from DB`);
+                } else {
+                    console.log(`   ℹ️ No steps needed backfill (either already have purpose/reason or no match in DB)`);
                 }
             } catch (stepBackfillErr) {
                 // Ignore if doing_step.jsonl doesn't exist
+                console.log(`   ℹ️ Could not read doing_step.jsonl: ${stepBackfillErr.message}`);
             }
             // ========== END BACKFILL LOGIC ==========
             

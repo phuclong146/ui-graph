@@ -5155,9 +5155,10 @@ Bạn có chắc chắn muốn rollback?\`;
             
             const purposeTitle = document.createElement('div');
             purposeTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333; text-align: center; background: #ffb6c1; padding: 8px; border-radius: 4px;';
-            const titlePurpose = evt.action_info.purpose || evt.action_info.step_purpose || '';
+            const titleStepPurpose = evt.action_info.step_purpose || evt.action_info.purpose || '';
+            const titleActionPurpose = evt.action_info.action_purpose || '';
             const titleReason = evt.action_info.reason || evt.action_info.step_reason || '';
-            purposeTitle.innerHTML = '<strong>Purpose:</strong> ' + (titlePurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
+            purposeTitle.innerHTML = '<strong>Step Purpose:</strong> ' + (titleStepPurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Action Purpose:</strong> ' + (titleActionPurpose || 'N/A') + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
             purposeDiv.appendChild(purposeTitle);
             
             // ReGen button container
@@ -5184,9 +5185,10 @@ Bạn có chắc chắn muốn rollback?\`;
                   
                   // Update purposeTitle directly with new values
                   if (result) {
-                    const newPurpose = result.step_purpose || result.action_purpose || 'N/A';
+                    const newStepPurpose = result.step_purpose || 'N/A';
+                    const newActionPurpose = result.action_purpose || 'N/A';
                     const newReason = result.reason || 'N/A';
-                    purposeTitle.innerHTML = '<strong>Purpose:</strong> ' + newPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
+                    purposeTitle.innerHTML = '<strong>Step Purpose:</strong> ' + newStepPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Action Purpose:</strong> ' + newActionPurpose + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
                   } else {
                     // Fallback: Refresh the view
                     if (window.selectPanel) {
