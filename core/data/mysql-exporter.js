@@ -393,9 +393,10 @@ export class MySQLExporter {
                         }
                         
                         const [rows] = await this.connection.execute(
-                            'SELECT purpose, reason FROM doing_item WHERE code = ? AND published = true',
+                            'SELECT purpose, reason FROM doing_item WHERE code = ? AND published = 1',
                             [code]
                         );
+                        
                         if (rows[0] && (rows[0].purpose || rows[0].reason)) {
                             // Update jsonl file with DB values
                             await this.updateItemInJsonl(item.item_id, {
@@ -448,9 +449,10 @@ export class MySQLExporter {
                             const stepCode = `${this.myAiTool}_${myStep}`;
                             
                             const [rows] = await this.connection.execute(
-                                'SELECT purpose, reason FROM doing_step WHERE code = ? AND published = true',
+                                'SELECT purpose, reason FROM doing_step WHERE code = ? AND published = 1',
                                 [stepCode]
                             );
+                            
                             if (rows[0] && (rows[0].purpose || rows[0].reason)) {
                                 // Update jsonl file with DB values
                                 await this.updateStepInJsonl(step.action.item_id, {
@@ -462,6 +464,8 @@ export class MySQLExporter {
                                 step.reason = rows[0].reason || null;
                                 backfillStepCount++;
                                 console.log(`   📝 Backfilled step ${stepId} (code: ${stepCode})`);
+                            } else {
+                                console.log(`   ℹ️ No DB match for step ${stepId} (code: ${stepCode})`);
                             }
                         } catch (backfillErr) {
                             // Ignore errors during backfill
