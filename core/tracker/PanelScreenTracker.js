@@ -667,6 +667,51 @@ export class PanelScreenTracker {
 
             console.log('❄️ Freezing current screenshot...');
 
+            // Hide cursor highlight and any tracking overlays before capture
+            await this.page.evaluate(() => {
+                // Hide cursor highlight (yellow circle) - try multiple selectors
+                const cursorSelectors = [
+                    '#cursor-highlight',
+                    '.cursor-highlight', 
+                    '[data-cursor-highlight]',
+                    '#puppeteer-cursor',
+                    '.puppeteer-cursor',
+                    '#ghost-cursor',
+                    '.ghost-cursor'
+                ];
+                cursorSelectors.forEach(sel => {
+                    const el = document.querySelector(sel);
+                    if (el) el.style.display = 'none';
+                });
+                
+                // Find and hide any fixed/absolute positioned yellow circles (cursor highlight)
+                document.querySelectorAll('div, span').forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    const isFixed = style.position === 'fixed' || style.position === 'absolute';
+                    const isYellow = style.backgroundColor.includes('255, 255, 0') || 
+                                     style.backgroundColor.includes('rgb(255, 255') ||
+                                     style.borderColor?.includes('255, 255, 0') ||
+                                     style.borderColor?.includes('yellow');
+                    const isCircle = style.borderRadius === '50%' || parseInt(style.borderRadius) > 20;
+                    const isSmall = el.offsetWidth < 100 && el.offsetHeight < 100;
+                    
+                    if (isFixed && (isYellow || isCircle) && isSmall) {
+                        el.dataset.__hiddenByFreeze = 'true';
+                        el.style.display = 'none';
+                    }
+                });
+                
+                // Hide any tracking toast
+                const toast = document.getElementById('__tracking_toast');
+                if (toast) toast.style.display = 'none';
+                
+                // Add style to hide cursor
+                const style = document.createElement('style');
+                style.id = '__freeze_screenshot_style';
+                style.textContent = '* { cursor: none !important; }';
+                document.head.appendChild(style);
+            });
+
             // Capture scroll position
             const scrollPosition = await this.page.evaluate(() => ({
                 x: window.scrollX || window.pageXOffset,
@@ -681,6 +726,38 @@ export class PanelScreenTracker {
             if (result.restoreViewport) {
                 await result.restoreViewport();
             }
+            
+            // Restore cursor and hidden elements after capture
+            await this.page.evaluate(() => {
+                // Restore cursor highlight elements
+                const cursorSelectors = [
+                    '#cursor-highlight',
+                    '.cursor-highlight', 
+                    '[data-cursor-highlight]',
+                    '#puppeteer-cursor',
+                    '.puppeteer-cursor',
+                    '#ghost-cursor',
+                    '.ghost-cursor'
+                ];
+                cursorSelectors.forEach(sel => {
+                    const el = document.querySelector(sel);
+                    if (el) el.style.display = '';
+                });
+                
+                // Restore elements hidden by freeze
+                document.querySelectorAll('[data-__hiddenByFreeze="true"]').forEach(el => {
+                    el.style.display = '';
+                    delete el.dataset.__hiddenByFreeze;
+                });
+                
+                // Restore tracking toast
+                const toast = document.getElementById('__tracking_toast');
+                if (toast) toast.style.display = '';
+                
+                // Remove temporary style
+                const style = document.getElementById('__freeze_screenshot_style');
+                if (style) style.remove();
+            });
             
             this.frozenScreenshot = result.screenshot;
             this.frozenScreenshotMetadata = {
