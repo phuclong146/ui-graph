@@ -940,3 +940,131 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata) 
     }
 }
 
+/**
+ * Detect action purpose using Gemini
+ * @param {object} doingStepInfo - Step info object containing panel_before, action, panel_after details
+ * @param {string[]} imageUrls - Array of image URLs [panel_before_fullscreen, action_url, panel_after_fullscreen]
+ * @returns {Promise<object|null>} - {step_purpose, action_purpose, panel_after_name, reason} or null on error
+ */
+export async function detectActionPurpose(doingStepInfo, imageUrls) {
+    if (!doingStepInfo) return null;
+
+    const { ENV } = await import('../config/env.js');
+
+    const prompt = `Bạn nhận được
+DoingStepInfo: ${JSON.stringify(doingStepInfo, null, 2)}
+
+Định nghĩa DoingStepInfo: là thông tin mô tả lại một thao tác của người dùng trên website của ai_tool_name. Trong đó:
++ panel_before: là chỉ màn hình/popup/newtab trước khi thao tác.
++ panel_before_fullscreen: chứa link ảnh fullscreen của panel_before
++ action: là mô tả thao tác của người dùng, trong đó action_purpose mô tả mục đích tổng hợp của action. Ví dụ step1 purpose là export file ảnh, step2 purpose là export file video, action cùng là export thì action_purpose này sẽ ví dụ sẽ có mô tả là export tài nguyên (ảnh, video).
++ panel_after: là chỉ màn hình/popup/newtab sau khi thao tác.
++ panel_after_fullscreen: chứa link ảnh fullscreen của panel_after
+
+Mục tiêu: Tôi cần chỉ rõ ràng mục đích của action để làm gì và chỉ rõ tên của panel_after.
+
+Nhiệm vụ của bạn:
+Bước 1: Hãy xem kỹ mô tả DoingStepInfo và các hình ảnh panel trước và sau khi action.
+Bước 2: Mô tả ngắn gọn bắt buộc nêu rõ mục đích action của người dùng trong step này để làm gì bằng tiếng Anh - tối đa 15 từ. Gọi là step_purpose.
+Bước 3: Mô tả ngắn gọn tên panel_after bằng tiếng Anh - tối đa 15 từ.
+
+Kết quả trả về đúng định dạng JSON:
+1. step_purpose: mục đích action của người dùng trong step này để làm gì bằng tiếng Anh - tối đa 15 từ.
+2. action_purpose: mục đích tổng quát hóa của action này để làm gì bằng tiếng Anh - tối đa 15 từ.
+4. panel_after_name: tên panel_after bằng tiếng Anh (xóa chữ "Panel" phía sau) - tối đa 15 từ.
+5. reason: giải thích rõ lý do bằng tiếng Việt`;
+
+    const responseSchema = {
+        type: "object",
+        required: ["step_purpose", "action_purpose", "panel_after_name", "reason"],
+        properties: {
+            step_purpose: { type: "string" },
+            action_purpose: { type: "string" },
+            panel_after_name: { type: "string" },
+            reason: { type: "string" }
+        }
+    };
+
+    // Build parts with text prompt and images
+    const parts = [{ text: prompt }];
+    
+    // Add images from URLs if available
+    if (imageUrls && Array.isArray(imageUrls)) {
+        for (const url of imageUrls) {
+            if (url && typeof url === 'string' && url.startsWith('http')) {
+                parts.push({
+                    file_data: {
+                        mime_type: 'image/jpeg',
+                        file_uri: url
+                    }
+                });
+            }
+        }
+    }
+
+    const requestBody = {
+        contents: [{
+            parts: parts
+        }],
+        generation_config: {
+            response_mime_type: 'application/json',
+            response_schema: responseSchema
+        }
+    };
+
+    try {
+        const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
+        
+        // Create AbortController for 30s timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'x-goog-api-key': ENV.GEMINI_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            }
+        );
+        
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Gemini DetectActionPurpose API error response:', errorText);
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('🎯 Gemini DetectActionPurpose Response received');
+
+        let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!jsonText) {
+            console.warn('No text in Gemini DetectActionPurpose response');
+            return null;
+        }
+
+        jsonText = jsonText.trim()
+            .replace(/^```json\s*/i, '')
+            .replace(/^```/, '')
+            .replace(/```$/i, '');
+
+        const result = JSON.parse(jsonText);
+        console.log('🎯 DetectActionPurpose result:', result);
+        return result;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            console.error('Gemini DetectActionPurpose API timed out after 30s');
+        } else {
+            console.error('Gemini DetectActionPurpose API failed:', err);
+        }
+        return null;
+    }
+}
+

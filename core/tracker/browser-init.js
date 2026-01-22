@@ -234,6 +234,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("deleteClickEvent", handlers.deleteClickEvent);
     await tracker.queuePage.exposeFunction("clearAllClicksForAction", handlers.clearAllClicksForAction);
     await tracker.queuePage.exposeFunction("resetActionStep", handlers.resetActionStep);
+    await tracker.queuePage.exposeFunction("detectActionPurpose", handlers.detectActionPurpose);
     await tracker.queuePage.exposeFunction("renamePanel", handlers.renamePanel);
     await tracker.queuePage.exposeFunction("renameActionByAI", handlers.renameActionByAI);
     await tracker.queuePage.exposeFunction("getActionItem", async (actionId) => {

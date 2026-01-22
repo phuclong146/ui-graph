@@ -141,6 +141,32 @@ export class MySQLExporter {
         }
     }
 
+    /**
+     * Update a step in doing_step.jsonl by action.item_id
+     * @param {string} actionItemId - The action item_id to find the step
+     * @param {object} updates - Fields to update (e.g., { purpose: '...', reason: '...' })
+     */
+    async updateStepInJsonl(actionItemId, updates) {
+        const doingStepPath = path.join(this.sessionFolder, 'doing_step.jsonl');
+        try {
+            const content = await fsp.readFile(doingStepPath, 'utf8');
+            const steps = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            
+            const stepIndex = steps.findIndex(s => s.action?.item_id === actionItemId);
+            if (stepIndex !== -1) {
+                steps[stepIndex] = { ...steps[stepIndex], ...updates };
+                
+                const newContent = steps.map(s => JSON.stringify(s)).join('\n') + '\n';
+                await fsp.writeFile(doingStepPath, newContent, 'utf8');
+                console.log(`✅ Updated step in jsonl for action ${actionItemId}`);
+            }
+        } catch (err) {
+            console.error(`Failed to update step for action ${actionItemId} in jsonl:`, err);
+        }
+    }
+
     async generatePagesFromPanels(items, itemIdToMyItemMap) {
         const pageJsonlPath = path.join(this.sessionFolder, 'page.jsonl');
         await fsp.writeFile(pageJsonlPath, '', 'utf8');
@@ -348,6 +374,89 @@ export class MySQLExporter {
                 console.warn('⚠️ Could not read myparent_panel.jsonl for action-panel mapping:', err.message);
             }
             
+            // ========== BACKFILL LOGIC (temporary - will comment out after data is populated) ==========
+            // Backfill doing_item purpose/reason from DB
+            console.log('🔄 Starting backfill for doing_item purpose/reason from DB...');
+            let backfillItemCount = 0;
+            for (const item of items) {
+                if (!item.purpose && !item.reason && item.item_category === 'ACTION') {
+                    try {
+                        // Find the parent panel for this action
+                        const panelId = actionIdToPanelIdMap.get(item.item_id);
+                        const panelName = panelId ? panelIdToPanelNameMap.get(panelId) : null;
+                        const code = this.generateCode(item.item_category, item.name, panelName);
+                        
+                        const [rows] = await this.connection.execute(
+                            'SELECT purpose, reason FROM doing_item WHERE code = ? AND published = true',
+                            [code]
+                        );
+                        if (rows[0] && (rows[0].purpose || rows[0].reason)) {
+                            // Update jsonl file with DB values
+                            await this.updateItemInJsonl(item.item_id, {
+                                purpose: rows[0].purpose || null,
+                                reason: rows[0].reason || null
+                            });
+                            // Also update in-memory item
+                            item.purpose = rows[0].purpose || null;
+                            item.reason = rows[0].reason || null;
+                            backfillItemCount++;
+                        }
+                    } catch (backfillErr) {
+                        // Ignore errors during backfill
+                    }
+                }
+            }
+            if (backfillItemCount > 0) {
+                console.log(`✅ Backfilled ${backfillItemCount} items with purpose/reason from DB`);
+            }
+            
+            // Backfill doing_step purpose/reason from DB
+            console.log('🔄 Starting backfill for doing_step purpose/reason from DB...');
+            let backfillStepCount = 0;
+            try {
+                const doingStepPath = path.join(this.sessionFolder, 'doing_step.jsonl');
+                const stepContent = await fsp.readFile(doingStepPath, 'utf8');
+                const steps = stepContent.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                
+                for (const step of steps) {
+                    if (!step.purpose && !step.reason && step.action?.item_id) {
+                        try {
+                            const stepId = step.step_id || 0;
+                            const stepType = 'A-BROWSER';
+                            const myStep = `DOS-${recordId}-${stepId}-${stepType}`;
+                            const stepCode = `${this.myAiTool}_${myStep}`;
+                            
+                            const [rows] = await this.connection.execute(
+                                'SELECT purpose, reason FROM doing_step WHERE code = ? AND published = true',
+                                [stepCode]
+                            );
+                            if (rows[0] && (rows[0].purpose || rows[0].reason)) {
+                                // Update jsonl file with DB values
+                                await this.updateStepInJsonl(step.action.item_id, {
+                                    purpose: rows[0].purpose || null,
+                                    reason: rows[0].reason || null
+                                });
+                                // Also update in-memory step
+                                step.purpose = rows[0].purpose || null;
+                                step.reason = rows[0].reason || null;
+                                backfillStepCount++;
+                            }
+                        } catch (backfillErr) {
+                            // Ignore errors during backfill
+                        }
+                    }
+                }
+                
+                if (backfillStepCount > 0) {
+                    console.log(`✅ Backfilled ${backfillStepCount} steps with purpose/reason from DB`);
+                }
+            } catch (stepBackfillErr) {
+                // Ignore if doing_step.jsonl doesn't exist
+            }
+            // ========== END BACKFILL LOGIC ==========
+            
             const itemIdToMyItemMap = new Map();
             
             for (const item of items) {
@@ -485,11 +594,16 @@ export class MySQLExporter {
                     }
                 }
                 
+                // Build conditional update clause for purpose/reason
+                // Only update if jsonl has values, otherwise keep existing DB values
+                const purposeUpdateClause = item.purpose ? ', purpose = VALUES(purpose)' : '';
+                const reasonUpdateClause = item.reason ? ', reason = VALUES(reason)' : '';
+                
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, fullscreen_url,
-                      item_category, verb, content, published, session_id, coordinate, metadata, record_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         type = VALUES(type),                     
                         name = VALUES(name),
@@ -501,7 +615,7 @@ export class MySQLExporter {
                         coordinate = VALUES(coordinate),
                         metadata = VALUES(metadata),
                         record_id = VALUES(record_id),
-                        published = VALUES(published),
+                        published = VALUES(published)${purposeUpdateClause}${reasonUpdateClause},
                         updated_at = CURRENT_TIMESTAMP`,
                     [
                         code ?? null,
@@ -518,7 +632,9 @@ export class MySQLExporter {
                         sessionId,
                         globalPos ? JSON.stringify(globalPos) : null,
                         Object.keys(metadataToSave).length > 0 ? JSON.stringify(metadataToSave) : null,
-                        recordId
+                        recordId,
+                        item.purpose ?? null,
+                        item.reason ?? null
                     ]
                 );
                 
@@ -622,11 +738,16 @@ export class MySQLExporter {
                     
                     if (!myPanelBefore || !myAction || !myPanelAfter) continue;
                     
+                    // Build conditional update clause for purpose/reason
+                    // Only update if jsonl has values, otherwise keep existing DB values
+                    const stepPurposeUpdateClause = step.purpose ? ', purpose = VALUES(purpose)' : '';
+                    const stepReasonUpdateClause = step.reason ? ', reason = VALUES(reason)' : '';
+                    
                     await this.connection.execute(
                         `INSERT INTO doing_step 
                          (code, my_ai_tool, my_step, record_id, step_id, step_timestamp, step_type,
-                          my_panel_before, my_action, my_panel_after, step_input, step_output, step_asset, published)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          my_panel_before, my_action, my_panel_after, step_input, step_output, step_asset, published, purpose, reason)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          ON DUPLICATE KEY UPDATE 
                             step_id = VALUES(step_id),
                             step_timestamp = VALUES(step_timestamp),
@@ -634,7 +755,7 @@ export class MySQLExporter {
                             my_action = VALUES(my_action),
                             my_panel_after = VALUES(my_panel_after),
                             record_id = VALUES(record_id),
-                            published = VALUES(published),
+                            published = VALUES(published)${stepPurposeUpdateClause}${stepReasonUpdateClause},
                             updated_at = CURRENT_TIMESTAMP`,
                         [
                             code,
@@ -650,7 +771,9 @@ export class MySQLExporter {
                             null,
                             null,
                             null,
-                            1
+                            1,
+                            step.purpose ?? null,
+                            step.reason ?? null
                         ]
                     );
                     

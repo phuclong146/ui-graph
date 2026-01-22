@@ -72,6 +72,39 @@ export class StepManager {
         }
     }
 
+    /**
+     * Update a step by action.item_id with new fields (e.g., purpose, reason)
+     * @param {string} actionId - The action item_id to find the step
+     * @param {object} updates - Fields to update (e.g., { purpose: '...', reason: '...' })
+     * @returns {Promise<boolean>} - True if updated successfully
+     */
+    async updateStep(actionId, updates) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            const index = entries.findIndex(entry => entry.action.item_id === actionId);
+            if (index === -1) {
+                console.warn(`⚠️ Step not found for action ${actionId}`);
+                return false;
+            }
+
+            // Merge updates into the step
+            entries[index] = { ...entries[index], ...updates };
+
+            const newContent = entries.map(entry => JSON.stringify(entry)).join('\n') + '\n';
+            await fsp.writeFile(this.stepPath, newContent, 'utf8');
+            
+            console.log(`✅ Updated step for action ${actionId} with:`, Object.keys(updates).join(', '));
+            return true;
+        } catch (err) {
+            console.error('Failed to update step:', err);
+            return false;
+        }
+    }
+
     async getAllSteps() {
         try {
             const content = await fsp.readFile(this.stepPath, 'utf8');

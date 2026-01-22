@@ -1612,6 +1612,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Check for changes after saving cropped panel
             scheduleChangeCheck();
             
+            // Auto-call detectActionPurpose after draw new panel (wrapped in try-catch to not break main flow)
+            try {
+                await detectActionPurposeHandler(actionItemId);
+            } catch (purposeErr) {
+                console.error('⚠️ Auto detectActionPurpose failed (non-blocking):', purposeErr);
+            }
+            
             return { panelId: newPanelId, panelName: newPanelName };
 
         } catch (err) {
@@ -2634,6 +2641,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Set state to completed
             await setPanelDrawFlowState(panelId, 'completed');
             
+            // Auto-call detectActionPurpose after draw new panel completion (wrapped in try-catch to not break main flow)
+            try {
+                // Find step with panel_after matching this panelId to get the action ID
+                const stepsForPurpose = await tracker.stepManager.getAllSteps();
+                const stepForPurpose = stepsForPurpose.find(step => step.panel_after?.item_id === panelId);
+                
+                if (stepForPurpose && stepForPurpose.action?.item_id) {
+                    const actionIdForPurpose = stepForPurpose.action.item_id;
+                    console.log(`🎯 Auto-calling detectActionPurpose for action ${actionIdForPurpose}...`);
+                    await detectActionPurposeHandler(actionIdForPurpose);
+                } else {
+                    console.log(`ℹ️ No action found for panel ${panelId}, skipping detectActionPurpose`);
+                }
+            } catch (purposeErr) {
+                console.error('⚠️ Auto detectActionPurpose failed (non-blocking):', purposeErr);
+            }
+            
             // Hide dialog
             await tracker._broadcast({
                 type: 'hide_panel_completion_dialog'
@@ -2671,6 +2695,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker._broadcast({
                 type: 'hide_panel_completion_dialog'
             });
+            
+            // Auto-call detectActionPurpose even when user cancels completion (wrapped in try-catch to not break main flow)
+            try {
+                const panelId = tracker.selectedPanelId;
+                if (panelId) {
+                    // Find step with panel_after matching this panelId to get the action ID
+                    const stepsForPurpose = await tracker.stepManager.getAllSteps();
+                    const stepForPurpose = stepsForPurpose.find(step => step.panel_after?.item_id === panelId);
+                    
+                    if (stepForPurpose && stepForPurpose.action?.item_id) {
+                        const actionIdForPurpose = stepForPurpose.action.item_id;
+                        console.log(`🎯 Auto-calling detectActionPurpose for action ${actionIdForPurpose} (on cancel)...`);
+                        await detectActionPurposeHandler(actionIdForPurpose);
+                    } else {
+                        console.log(`ℹ️ No action found for panel ${panelId}, skipping detectActionPurpose`);
+                    }
+                }
+            } catch (purposeErr) {
+                console.error('⚠️ Auto detectActionPurpose failed (non-blocking):', purposeErr);
+            }
         } catch (err) {
             console.error('Failed to cancel panel completion:', err);
         }
@@ -3878,7 +3922,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         panel_before_name: panelBeforeItem?.name || 'Unknown',
                         panel_after_name: panelAfterItem?.name || 'Unknown'
                     };
+                    
+                    // Add purpose and reason from step (step_purpose) and item (action_purpose)
+                    actionInfo.step_purpose = step.purpose || null;
+                    actionInfo.step_reason = step.reason || null;
                 }
+                
+                // Add purpose and reason from the action item itself
+                actionInfo.purpose = item.purpose || null;
+                actionInfo.reason = item.reason || null;
             }
 
             // Get draw_flow_state for panels
@@ -4080,6 +4132,117 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             scheduleChangeCheck();
         } catch (err) {
             console.error('Failed to reset action step:', err);
+        }
+    };
+
+    /**
+     * Detect action purpose using Gemini AI
+     * Builds doing_step_info and calls Gemini to detect purpose
+     * @param {string} actionItemId - The action item ID to detect purpose for
+     * @returns {Promise<object|null>} - Detection result or null on error
+     */
+    const detectActionPurposeHandler = async (actionItemId) => {
+        try {
+            if (!tracker.stepManager || !tracker.dataItemManager) {
+                console.error('Managers not initialized for detectActionPurpose');
+                return null;
+            }
+
+            // Get step for action
+            const step = await tracker.stepManager.getStepForAction(actionItemId);
+            if (!step) {
+                console.warn(`⚠️ No step found for action ${actionItemId}`);
+                return null;
+            }
+
+            // Get items for panel_before, action, panel_after
+            const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
+            const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+            const panelAfterItem = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+
+            if (!panelBeforeItem || !actionItem || !panelAfterItem) {
+                console.warn('⚠️ Missing items for detectActionPurpose');
+                return null;
+            }
+
+            // Show toast notification
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '🤖 Đang detect action purpose...',
+                target: 'queue'
+            });
+
+            // Build doing_step_info
+            const doingStepInfo = {
+                ai_tool_name: tracker.myAiToolCode || 'Unknown',
+                ai_tool_website: tracker.urlTracking || '',
+                panel_before_name: panelBeforeItem.name || 'Unknown Panel',
+                panel_before_fullscreen: panelBeforeItem.fullscreen_url || '',
+                action_name: actionItem.name || 'Unknown Action',
+                action_url: actionItem.image_url || '',
+                action_type: actionItem.type || 'button',
+                action_verb: actionItem.verb || 'click',
+                panel_after_name: panelAfterItem.name || 'Unknown Panel',
+                panel_after_fullscreen: panelAfterItem.fullscreen_url || ''
+            };
+
+            // Collect image URLs
+            const imageUrls = [
+                panelBeforeItem.fullscreen_url,
+                actionItem.image_url,
+                panelAfterItem.fullscreen_url
+            ].filter(url => url && typeof url === 'string' && url.startsWith('http'));
+
+            console.log('🎯 Calling detectActionPurpose with:', {
+                doingStepInfo,
+                imageUrlsCount: imageUrls.length
+            });
+
+            // Call Gemini to detect action purpose
+            const { detectActionPurpose } = await import('./gemini-handler.js');
+            const result = await detectActionPurpose(doingStepInfo, imageUrls);
+
+            if (!result) {
+                console.warn('⚠️ detectActionPurpose returned null');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không thể detect action purpose'
+                });
+                return null;
+            }
+
+            // Save results to doing_step.jsonl
+            await tracker.stepManager.updateStep(actionItemId, {
+                purpose: result.step_purpose || null,
+                reason: result.reason || null
+            });
+
+            // Save results to doing_item.jsonl (for the action)
+            await tracker.dataItemManager.updateItem(actionItemId, {
+                purpose: result.action_purpose || null,
+                reason: result.reason || null
+            });
+
+            console.log(`✅ Saved action purpose for ${actionItemId}:`, result);
+
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '✅ Đã detect action purpose'
+            });
+
+            // Refresh the view
+            if (tracker.selectedPanelId === actionItemId) {
+                await selectPanelHandler(actionItemId);
+            }
+
+            return result;
+        } catch (err) {
+            console.error('detectActionPurpose failed:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '❌ Lỗi khi detect action purpose'
+            });
+            return null;
         }
     };
 
@@ -4488,6 +4651,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             // Check for changes after using before panel
             scheduleChangeCheck();
+            
+            // Auto-call detectActionPurpose after use current panel (wrapped in try-catch to not break main flow)
+            try {
+                await detectActionPurposeHandler(actionItemId);
+            } catch (purposeErr) {
+                console.error('⚠️ Auto detectActionPurpose failed (non-blocking):', purposeErr);
+            }
         } catch (err) {
             console.error('Use CURRENT PANEL failed:', err);
         }
@@ -4566,6 +4736,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             // Check for changes after using select panel
             scheduleChangeCheck();
+            
+            // Auto-call detectActionPurpose after select panel (wrapped in try-catch to not break main flow)
+            try {
+                await detectActionPurposeHandler(actionItemId);
+            } catch (purposeErr) {
+                console.error('⚠️ Auto detectActionPurpose failed (non-blocking):', purposeErr);
+            }
         } catch (err) {
             console.error('Use SELECT PANEL failed:', err);
             throw err;
@@ -7437,6 +7614,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         deleteClickEvent: deleteClickEventHandler,
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,
+        detectActionPurpose: detectActionPurposeHandler,
         renamePanel: renamePanelHandler,
         renameActionByAI: renameActionByAIHandler,
         getClickEventsForPanel: getClickEventsForPanelHandler,
