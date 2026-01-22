@@ -3929,7 +3929,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
                 
                 // Add purpose and reason from the action item itself
+                // Note: item.purpose stores action_purpose (from Gemini detection)
                 actionInfo.purpose = item.purpose || null;
+                actionInfo.action_purpose = item.purpose || null;  // UI expects action_purpose
                 actionInfo.reason = item.reason || null;
             }
 
