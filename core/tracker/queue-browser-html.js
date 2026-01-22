@@ -4722,6 +4722,18 @@ Bạn có chắc chắn muốn rollback?\`;
         buttonsContainer.appendChild(drawNewPanelBtn);
         step3Div.appendChild(buttonsContainer);
         
+        // Add freeze screenshot tip
+        const freezeTip = document.createElement('div');
+        freezeTip.style.cssText = 'margin-top: 12px; padding: 10px; background: rgba(100, 200, 255, 0.1); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 6px; font-size: 12px; color: #8cf;';
+        freezeTip.innerHTML = '<div style="font-weight: 600; margin-bottom: 6px;">💡 Capture Dropdown/Content auto hide:</div>' +
+          '<div style="color: #aaa; line-height: 1.5;">' +
+            'Nếu cần capture dropdown/content tự động ẩn:<br>' +
+            '<b style="color: #fff;">1.</b> Mở dropdown/popup trên Tracking Browser<br>' +
+            '<b style="color: #fff;">2.</b> Bấm <span style="background: #444; padding: 2px 6px; border-radius: 3px; font-family: monospace;">F2</span> để freeze screenshot<br>' +
+            '<b style="color: #fff;">3.</b> Click <b>DRAW NEW PANEL</b> - sẽ dùng ảnh đã freeze' +
+          '</div>';
+        step3Div.appendChild(freezeTip);
+        
         return step3Div;
       }
       
