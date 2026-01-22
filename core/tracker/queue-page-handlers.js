@@ -2298,9 +2298,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }, message);
             };
 
-            const { captureScreenshot } = await import('../media/screenshot.js');
-            const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
-            const { screenshot, imageWidth, imageHeight, restoreViewport: restoreViewportFn } = result;
+            // Check for frozen screenshot first (to capture dropdowns/popups before focus lost)
+            let screenshot, imageWidth, imageHeight;
+            let restoreViewportFn = null;
+            
+            if (tracker.frozenScreenshot && tracker.frozenScreenshotMetadata) {
+                console.log('❄️ Using frozen screenshot (captured with Ctrl+` or F2)');
+                screenshot = tracker.frozenScreenshot;
+                imageWidth = tracker.frozenScreenshotMetadata.imageWidth;
+                imageHeight = tracker.frozenScreenshotMetadata.imageHeight;
+                
+                await tracker._broadcast({ 
+                    type: 'show_toast', 
+                    message: '❄️ Đang sử dụng frozen screenshot...' 
+                });
+                
+                // Clear frozen screenshot after use
+                tracker.clearFrozenScreenshot();
+            } else {
+                // Capture fresh screenshot
+                const { captureScreenshot } = await import('../media/screenshot.js');
+                const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                screenshot = result.screenshot;
+                imageWidth = result.imageWidth;
+                imageHeight = result.imageHeight;
+                restoreViewportFn = result.restoreViewport;
+            }
+            
             restoreViewport = restoreViewportFn;
             console.log(`📐 Long scroll image captured: ${imageWidth}x${imageHeight}`);
 

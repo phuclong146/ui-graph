@@ -47,6 +47,8 @@ export class PanelScreenTracker {
         this.stepManager = null;
         this.newlyOpenedTabs = []; // Track newly opened tabs
         this.originalPage = null; // Store original page before switching to new tab
+        this.frozenScreenshot = null; // Store frozen screenshot for capturing dropdowns/popups
+        this.frozenScreenshotMetadata = null; // Store metadata (dimensions, scroll position) of frozen screenshot
     }
     
     async init({ startUrl = "about:blank" } = {}) {
@@ -649,6 +651,81 @@ export class PanelScreenTracker {
             console.error(`[RECORD]    Error details:`, err.message, err.stack);
             return false;
         }
+    }
+
+    /**
+     * Freeze the current screenshot for later use when drawing panel.
+     * This allows capturing dropdowns/popups before focus is lost.
+     * @returns {Object} - Object containing success status and metadata
+     */
+    async freezeScreenshot() {
+        try {
+            if (!this.page || this.page.isClosed()) {
+                console.log('❄️ Cannot freeze screenshot - page is not available');
+                return { success: false, error: 'Page not available' };
+            }
+
+            console.log('❄️ Freezing current screenshot...');
+
+            // Capture scroll position
+            const scrollPosition = await this.page.evaluate(() => ({
+                x: window.scrollX || window.pageXOffset,
+                y: window.scrollY || window.pageYOffset
+            }));
+
+            // Capture full-page scrolling screenshot (skipViewportRestore=true to get metadata object)
+            const { captureScreenshot } = await import('../media/screenshot.js');
+            const result = await captureScreenshot(this.page, "base64", true, true);
+            
+            // Restore viewport immediately after capture
+            if (result.restoreViewport) {
+                await result.restoreViewport();
+            }
+            
+            this.frozenScreenshot = result.screenshot;
+            this.frozenScreenshotMetadata = {
+                imageWidth: result.imageWidth,
+                imageHeight: result.imageHeight,
+                scrollPosition,
+                timestamp: Date.now()
+            };
+
+            console.log(`❄️ Screenshot frozen successfully: ${result.imageWidth}x${result.imageHeight}`);
+            
+            // Broadcast to show visual feedback
+            await this._broadcast({ 
+                type: 'show_toast', 
+                message: '❄️ Screenshot frozen! Now click Draw Panel to use it.' 
+            });
+
+            return { 
+                success: true, 
+                imageWidth: result.imageWidth, 
+                imageHeight: result.imageHeight 
+            };
+        } catch (err) {
+            console.error('❄️ Failed to freeze screenshot:', err);
+            return { success: false, error: err.message };
+        }
+    }
+
+    /**
+     * Clear the frozen screenshot
+     */
+    clearFrozenScreenshot() {
+        if (this.frozenScreenshot) {
+            console.log('❄️ Frozen screenshot cleared');
+            this.frozenScreenshot = null;
+            this.frozenScreenshotMetadata = null;
+        }
+    }
+
+    /**
+     * Check if there is a frozen screenshot available
+     * @returns {boolean}
+     */
+    hasFrozenScreenshot() {
+        return !!this.frozenScreenshot;
     }
 
     /**

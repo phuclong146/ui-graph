@@ -122,6 +122,7 @@ export async function setupTracking(tracker) {
         await exposeIfNotExists("triggerUseBeforePanel", handlers.triggerUseBeforePanel);
     }
 
+
     try {
         await tracker.page.evaluate(() => {
             if (!window.showTrackingToast) {
@@ -361,7 +362,23 @@ export async function setupTracking(tracker) {
             }
 
             if (!window.__keydownListenerSetup) {
-                document.addEventListener('keydown', (e) => {
+                document.addEventListener('keydown', async (e) => {
+                    // F2 or Ctrl+` (backtick): Freeze screenshot (capture dropdown/popup state)
+                    const isFreezeShortcut = e.key === 'F2' || ((e.ctrlKey || e.metaKey) && e.key === '`');
+                    if (isFreezeShortcut) {
+                        e.preventDefault();
+                        if (window.__freezeScreenshotPending) {
+                            if (window.showTrackingToast) window.showTrackingToast('⚠️ Đang xử lý, vui lòng đợi...');
+                            return;
+                        }
+                        window.__freezeScreenshotPending = true;
+                        if (window.showTrackingToast) window.showTrackingToast('❄️ Đang freeze screenshot...');
+                        // Add to keyboard queue for processing by Node.js poller
+                        window.__keyboardQueue.push({ action: 'FREEZE_SCREENSHOT', timestamp: Date.now() });
+                        return;
+                    }
+                    
+                    // Ctrl+1: Draw Panel & Detect Actions
                     if ((e.ctrlKey || e.metaKey) && e.key === '1') {
                         e.preventDefault();
                         if (window.__detectPagesInProgress || window.__detectPagesPending) {
@@ -504,6 +521,34 @@ export async function setupTracking(tracker) {
                         } else {
                             try {
                                 await tracker.page.evaluate(() => { window.__detectPagesPending = false; });
+                            } catch { }
+                        }
+                    }
+                    
+                    // Handle FREEZE_SCREENSHOT action
+                    if (kb.action === 'FREEZE_SCREENSHOT') {
+                        try {
+                            const result = await tracker.freezeScreenshot();
+                            if (result && result.success) {
+                                await tracker.page.evaluate(() => {
+                                    window.__freezeScreenshotPending = false;
+                                    if (window.showTrackingToast) window.showTrackingToast('❄️ Screenshot frozen! Giờ bấm Ctrl+1 hoặc click Draw Panel.');
+                                });
+                            } else {
+                                const errorMsg = result?.error || 'Unknown error';
+                                console.error('Freeze screenshot failed:', errorMsg);
+                                await tracker.page.evaluate((msg) => {
+                                    window.__freezeScreenshotPending = false;
+                                    if (window.showTrackingToast) window.showTrackingToast('❌ Không thể freeze screenshot: ' + msg);
+                                }, errorMsg);
+                            }
+                        } catch (err) {
+                            console.error('Freeze screenshot error:', err);
+                            try {
+                                await tracker.page.evaluate((msg) => {
+                                    window.__freezeScreenshotPending = false;
+                                    if (window.showTrackingToast) window.showTrackingToast('❌ Lỗi khi freeze screenshot: ' + msg);
+                                }, err.message || String(err));
                             } catch { }
                         }
                     }
