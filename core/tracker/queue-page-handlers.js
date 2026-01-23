@@ -7590,6 +7590,197 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get the sessions folder path (parent of session folders)
+     */
+    const getSessionsBasePath = () => {
+        const { fileURLToPath } = require('url');
+        const __filename = fileURLToPath(import.meta.url);
+        return path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
+    };
+
+    /**
+     * Generate or get device ID
+     * Uses a persistent device ID stored in account.json
+     */
+    const generateDeviceId = () => {
+        const crypto = require('crypto');
+        return crypto.randomUUID();
+    };
+
+    /**
+     * Get device information
+     */
+    const getDeviceInfo = () => {
+        const os = require('os');
+        return {
+            platform: os.platform(),
+            arch: os.arch(),
+            hostname: os.hostname(),
+            cpus: os.cpus().length,
+            totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+            osType: os.type(),
+            osRelease: os.release(),
+            username: os.userInfo().username,
+            networkInterfaces: Object.entries(os.networkInterfaces())
+                .map(([name, interfaces]) => ({
+                    name,
+                    addresses: interfaces
+                        .filter(iface => !iface.internal)
+                        .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                }))
+                .filter(iface => iface.addresses.length > 0)
+        };
+    };
+
+    /**
+     * Get account info from account.json (in project root, outside sessions folder)
+     * Returns the account info or creates a new one with device_id
+     */
+    const getAccountInfoHandler = async () => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                
+                if (accountData) {
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    return { success: true, data: accountData };
+                }
+            } catch (readErr) {
+                // File doesn't exist, will create new account
+                console.log('📝 No existing account.json, will create new one');
+            }
+            
+            // Create new account with device_id
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const newAccount = {
+                device_id: randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([name, interfaces]) => ({
+                            name,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: null,
+                role: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            
+            console.log(`✅ Created new account with device_id: ${newAccount.device_id}`);
+            return { success: true, data: newAccount };
+        } catch (err) {
+            console.error('Failed to get account info:', err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    /**
+     * Save account info to account.json (in project root, outside sessions folder)
+     * Upserts by deviceId - overwrites existing account data
+     * @param {string} role - The role to save ('DRAW', 'VALIDATE', or 'ADMIN')
+     * @param {string} name - The recorder's name
+     */
+    const saveAccountInfoHandler = async (role, name) => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            let existingAccount = null;
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                existingAccount = JSON.parse(content);
+            } catch (readErr) {
+                // File doesn't exist
+            }
+            
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const accountData = {
+                device_id: existingAccount?.device_id || randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([iname, interfaces]) => ({
+                            name: iname,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: name,
+                role: role,
+                created_at: existingAccount?.created_at || new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            
+            // Upsert - overwrite the entire file with updated account data
+            await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
+            
+            console.log(`✅ Account info saved: ${name}, role: ${role}, device_id: ${accountData.device_id}`);
+
+            // Broadcast to hide dialog
+            await tracker._broadcast({ type: 'hide_role_selection' });
+
+            // Launch tracking browser for DRAW and VALIDATE roles
+            if (role === 'DRAW' || role === 'VALIDATE') {
+                // Import and call initTrackingBrowser
+                const { initTrackingBrowser } = await import('./browser-init.js');
+                await initTrackingBrowser(tracker);
+                console.log(`🚀 Tracking browser launched for ${role} role`);
+            } else {
+                // ADMIN role - no tracking browser needed
+                console.log(`📋 ${role} role - tracking browser not launched`);
+            }
+
+            return { success: true, data: accountData };
+        } catch (err) {
+            console.error('Failed to save account info:', err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    /**
+     * Save role to info.json (deprecated - kept for backward compatibility)
+     * @param {string} role - The role to save ('DRAW', 'VALIDATE', or 'ADMIN')
+     */
+    const saveRoleHandler = async (role) => {
+        // Redirect to new saveAccountInfoHandler
+        return await saveAccountInfoHandler(role, 'Unknown');
+    };
+
     return {
         quitApp: quitAppHandler,
         saveEvents: saveEventsHandler,
@@ -7655,6 +7846,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         raiseBug: raiseBugHandler,
         generateVideoForAction: generateVideoForActionHandler,
         regenerateTrackingVideo: regenerateTrackingVideoHandler,
-        regenerateStepVideo: regenerateStepVideoHandler
+        regenerateStepVideo: regenerateStepVideoHandler,
+        saveRole: saveRoleHandler,
+        getAccountInfo: getAccountInfoHandler,
+        saveAccountInfo: saveAccountInfoHandler
     };
 }

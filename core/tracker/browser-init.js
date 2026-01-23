@@ -56,6 +56,144 @@ async function checkChromePath(chromePath) {
     }
 }
 
+/**
+ * Initialize Tracking Browser - called only when DRAW role is selected
+ */
+export async function initTrackingBrowser(tracker) {
+    if (tracker.browser) {
+        console.log('⚠️ Tracking browser already initialized');
+        return;
+    }
+
+    const { trackingWidth, height, startUrl } = tracker._browserConfig;
+
+    console.log("🚀 Launching Tracking Browser (bypass bot detection)...");
+    
+    // Check and use CHROME_PATH if provided and valid, otherwise use Puppeteer's Chrome
+    let chromePathToUse = await checkChromePath(ENV.CHROME_PATH);
+    if (!chromePathToUse) {
+        console.log("📦 Using Puppeteer's bundled Chrome...");
+        chromePathToUse = await ensureChromeInstalled();
+    } else {
+        console.log(`✅ Using Chrome from CHROME_PATH: ${chromePathToUse}`);
+    }
+
+    const { browser: trackingBrowser, page: initialPage } = await connect({
+        headless: false,
+        turnstile: false,
+        fingerprint: true,
+        tf: false,
+        args: [
+            `--window-size=${trackingWidth},${height}`,
+            '--window-position=0,0',
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer'
+        ],
+        userDataDir: "./user_data",
+        customConfig: {
+            chromePath: chromePathToUse
+        },
+        connectOption: {
+            defaultViewport: null
+        },
+        disableXvfb: true
+    });
+
+    tracker.browser = trackingBrowser;
+    tracker.page = initialPage;
+    tracker.originalPage = initialPage;
+    await tracker.page.setJavaScriptEnabled(true);
+    await tracker.page.setBypassCSP(true);
+
+    // Listen for newly opened tabs
+    trackingBrowser.on('targetcreated', async (target) => {
+        try {
+            const page = await target.page();
+            if (page && page !== tracker.page) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                try {
+                    const url = page.url();
+                    console.log(`🆕 New tab opened: ${url}`);
+                    
+                    const oneMinuteAgo = Date.now() - 60000;
+                    tracker.newlyOpenedTabs = tracker.newlyOpenedTabs.filter(tab => tab.timestamp > oneMinuteAgo);
+                    
+                    tracker.newlyOpenedTabs.push({
+                        page: page,
+                        url: url,
+                        target: target,
+                        timestamp: Date.now()
+                    });
+                    
+                    if (tracker.isRecordingPanel && tracker.panelRecorder && url && url !== 'about:blank') {
+                        console.log(`[RECORD] 🔄 New tab detected while recording, switching to new tab: ${url}`);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        await tracker.switchRecordingToPage(page);
+                    }
+                } catch (urlErr) {
+                    console.log(`🆕 New tab opened (URL not available yet)`);
+                    tracker.newlyOpenedTabs.push({
+                        page: page,
+                        url: null,
+                        target: target,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        } catch (err) {
+            console.debug('Target created but no page available yet:', err.message);
+        }
+    });
+
+    console.log("✅ Tracking browser launched successfully!");
+
+    // Navigate to start URL and inject website selector
+    await tracker.page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    const websites = await fetchWebsiteList();
+
+    const __filename = fileURLToPath(import.meta.url);
+    const sessionsPath = path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
+
+    let allSessions = [];
+    try {
+        const sessionFolders = await fsp.readdir(sessionsPath);
+        for (const folder of sessionFolders) {
+            const infoPath = path.join(sessionsPath, folder, 'info.json');
+            try {
+                const infoContent = await fsp.readFile(infoPath, 'utf8');
+                const info = JSON.parse(infoContent);
+                const timestamps = info.timestamps || [];
+                const lastTimestamp = timestamps.length > 0 ? timestamps[timestamps.length - 1] : Date.now();
+
+                const date = new Date(lastTimestamp);
+                const dd = String(date.getDate()).padStart(2, '0');
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const yyyy = date.getFullYear();
+                const hh = String(date.getHours()).padStart(2, '0');
+                const min = String(date.getMinutes()).padStart(2, '0');
+                const ss = String(date.getSeconds()).padStart(2, '0');
+                const formattedTime = `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+
+                allSessions.push({
+                    folder: path.join(sessionsPath, folder),
+                    toolName: info.toolCode,
+                    formattedTime: formattedTime
+                });
+            } catch (err) {
+            }
+        }
+        allSessions.sort((a, b) => b.folder.localeCompare(a.folder));
+    } catch (err) {
+    }
+
+    await injectWebsiteSelector(tracker.page, websites, allSessions);
+    tracker.page.trackerInstance = tracker;
+}
+
 export async function initBrowsers(tracker, startUrl) {
     tracker.urlTracking = startUrl;
 
@@ -65,11 +203,13 @@ export async function initBrowsers(tracker, startUrl) {
     const trackingWidth = Math.floor(width * 0.7);
     const queueWidth = Math.floor(width * 0.3);
 
+    // Store config for later tracking browser initialization
+    tracker._browserConfig = { width, height, trackingWidth, queueWidth, startUrl };
+
     console.log(`🖥️ Screen: ${width}x${height}`);
     console.log(`📐 Queue browser: ${width}x${height} at (0, 0) - Maximized`);
-    console.log(`📐 Tracking browser: ${trackingWidth}x${height} at (0, 0)`);
 
-    // Initialize Queue Browser FIRST
+    // Initialize Queue Browser ONLY
     console.log("🚀 Launching Queue Browser...");
     const queueChromePath = await ensureChromeInstalled();
     
@@ -116,96 +256,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.setJavaScriptEnabled(true);
     await tracker.queuePage.setContent(QUEUE_BROWSER_HTML);
 
-    // Initialize Tracking Browser SECOND (will be on top)
-    console.log("🚀 Launching Tracking Browser (bypass bot detection)...");
-    
-    // Check and use CHROME_PATH if provided and valid, otherwise use Puppeteer's Chrome
-    let chromePathToUse = await checkChromePath(ENV.CHROME_PATH);
-    if (!chromePathToUse) {
-        console.log("📦 Using Puppeteer's bundled Chrome...");
-        chromePathToUse = await ensureChromeInstalled();
-    } else {
-        console.log(`✅ Using Chrome from CHROME_PATH: ${chromePathToUse}`);
-    }
-
-    const { browser: trackingBrowser, page: initialPage } = await connect({
-        headless: false,
-        turnstile: false,
-        fingerprint: true,
-        tf: false,
-        args: [
-            `--window-size=${trackingWidth},${height}`,
-            '--window-position=0,0',
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-software-rasterizer'
-        ],
-        userDataDir: "./user_data",
-        customConfig: {
-            chromePath: chromePathToUse
-        },
-        connectOption: {
-            defaultViewport: null
-        },
-        disableXvfb: true
-    });
-
-    tracker.browser = trackingBrowser;
-    tracker.page = initialPage;
-    tracker.originalPage = initialPage; // Store original page
-    await tracker.page.setJavaScriptEnabled(true);
-    await tracker.page.setBypassCSP(true);
-
-    // Listen for newly opened tabs
-    trackingBrowser.on('targetcreated', async (target) => {
-        try {
-            const page = await target.page();
-            if (page && page !== tracker.page) {
-                // Wait a bit for the page to initialize
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
-                try {
-                    const url = page.url();
-                    console.log(`🆕 New tab opened: ${url}`);
-                    
-                    // Clean up old tabs (older than 1 minute)
-                    const oneMinuteAgo = Date.now() - 60000;
-                    tracker.newlyOpenedTabs = tracker.newlyOpenedTabs.filter(tab => tab.timestamp > oneMinuteAgo);
-                    
-                    tracker.newlyOpenedTabs.push({
-                        page: page,
-                        url: url,
-                        target: target,
-                        timestamp: Date.now()
-                    });
-                    
-                    // If recording is active, switch recording to the new tab
-                    if (tracker.isRecordingPanel && tracker.panelRecorder && url && url !== 'about:blank') {
-                        console.log(`[RECORD] 🔄 New tab detected while recording, switching to new tab: ${url}`);
-                        // Wait a bit more for the page to be fully loaded before switching recording
-                        await new Promise(resolve => setTimeout(resolve, 1000));
-                        await tracker.switchRecordingToPage(page);
-                    }
-                } catch (urlErr) {
-                    // Page might not have URL yet, but still track it
-                    console.log(`🆕 New tab opened (URL not available yet)`);
-                    tracker.newlyOpenedTabs.push({
-                        page: page,
-                        url: null,
-                        target: target,
-                        timestamp: Date.now()
-                    });
-                }
-            }
-        } catch (err) {
-            // Target might not have a page yet, ignore
-            console.debug('Target created but no page available yet:', err.message);
-        }
-    });
-
-    console.log("✅ Both browsers launched successfully!");
+    console.log("✅ Queue browser launched successfully!");
 
     // Now setup handlers (both browsers are ready)
     const handlers = createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth);
@@ -285,45 +336,11 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("isAnyOperationRunning", handlers.isAnyOperationRunning);
     await tracker.queuePage.exposeFunction("showSaveReminderDialog", handlers.showSaveReminderDialog);
     await tracker.queuePage.exposeFunction("handleSaveReminderResponse", handlers.handleSaveReminderResponse);
+    await tracker.queuePage.exposeFunction("saveRole", handlers.saveRole);
+    await tracker.queuePage.exposeFunction("getAccountInfo", handlers.getAccountInfo);
+    await tracker.queuePage.exposeFunction("saveAccountInfo", handlers.saveAccountInfo);
 
-    await tracker.page.goto(startUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    const websites = await fetchWebsiteList();
-
-    const __filename = fileURLToPath(import.meta.url);
-    const sessionsPath = path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
-
-    let allSessions = [];
-    try {
-        const sessionFolders = await fsp.readdir(sessionsPath);
-        for (const folder of sessionFolders) {
-            const infoPath = path.join(sessionsPath, folder, 'info.json');
-            try {
-                const infoContent = await fsp.readFile(infoPath, 'utf8');
-                const info = JSON.parse(infoContent);
-                const timestamps = info.timestamps || [];
-                const lastTimestamp = timestamps.length > 0 ? timestamps[timestamps.length - 1] : Date.now();
-
-                const date = new Date(lastTimestamp);
-                const dd = String(date.getDate()).padStart(2, '0');
-                const mm = String(date.getMonth() + 1).padStart(2, '0');
-                const yyyy = date.getFullYear();
-                const hh = String(date.getHours()).padStart(2, '0');
-                const min = String(date.getMinutes()).padStart(2, '0');
-                const ss = String(date.getSeconds()).padStart(2, '0');
-                const formattedTime = `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
-
-                allSessions.push({
-                    folder: path.join(sessionsPath, folder),
-                    toolName: info.toolCode,
-                    formattedTime: formattedTime
-                });
-            } catch (err) {
-            }
-        }
-        allSessions.sort((a, b) => b.folder.localeCompare(a.folder));
-    } catch (err) {
-    }
-
-    await injectWebsiteSelector(tracker.page, websites, allSessions);
-    tracker.page.trackerInstance = tracker;
+    // Show RoleSelectionModal immediately when queue tracker opens
+    const accountInfo = await handlers.getAccountInfo();
+    await tracker._broadcast({ type: 'show_role_selection', accountInfo: accountInfo?.data || accountInfo });
 }

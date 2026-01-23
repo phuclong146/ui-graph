@@ -1070,6 +1070,13 @@ export const QUEUE_BROWSER_HTML = `
     </style>
   </head>
   <body>
+    <!-- User greeting display -->
+    <div id="userGreeting" style="display:none; position:fixed; top:10px; right:10px; z-index:10000; background:linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border:1px solid #dee2e6; border-radius:8px; padding:8px 14px; font-size:12px; color:#495057; box-shadow:0 2px 8px rgba(0,0,0,0.1); cursor:pointer;" title="Bấm để thay đổi">
+      <span style="color:#868e96;">Xin chào,</span>
+      <strong id="userGreetingName" style="color:#212529; margin-left:4px;"></strong>
+      <span id="userGreetingRole" style="display:inline-block; margin-left:8px; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600;"></span>
+    </div>
+    
     <div id="main-container">
       <div id="panel-tree-container">
         <h3>
@@ -1214,6 +1221,74 @@ export const QUEUE_BROWSER_HTML = `
           <button id="confirmPanelCompletionBtn" style="background:linear-gradient(135deg, #28a745 0%, #20c997 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(40,167,69,0.3);">
             Hoàn tất
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="roleSelectionModal" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">👤</div>
+          <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Thông tin người record</h3>
+          <p style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+            Vui lòng nhập tên và chọn role trước khi bắt đầu làm việc.
+          </p>
+        </div>
+        
+        <!-- Name input section -->
+        <div id="nameInputSection" style="margin-bottom:20px;">
+          <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:8px;">Tên của bạn <span style="color:red;">*</span></label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="text" id="recorderNameInput" placeholder="Nhập tên của bạn..." style="flex:1; padding:12px 15px; border:2px solid #ddd; border-radius:8px; font-size:14px; transition:border-color 0.2s ease; outline:none;" />
+            <button id="editNameBtn" style="display:none; padding:10px 15px; background:#f0f0f0; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:13px; transition:all 0.2s ease;">
+              ✏️ Sửa
+            </button>
+          </div>
+          <p id="nameError" style="display:none; color:#dc3545; font-size:12px; margin-top:5px;">Vui lòng nhập tên của bạn</p>
+        </div>
+
+        <!-- Display current name when exists -->
+        <div id="currentNameDisplay" style="display:none; margin-bottom:20px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="currentNameViewMode">
+              <span style="font-size:12px; color:#666;">Xin chào,</span>
+              <div id="currentNameText" style="font-size:16px; font-weight:600; color:#333;"></div>
+            </div>
+            <div id="currentNameEditMode" style="display:none; flex:1;">
+              <input type="text" id="editNameInput" placeholder="Nhập tên của bạn..." style="width:100%; padding:10px 12px; border:2px solid #007bff; border-radius:6px; font-size:14px; outline:none;" />
+            </div>
+            <button id="changeNameBtn" style="padding:8px 12px; background:#fff; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:12px; transition:all 0.2s ease; margin-left:10px;">
+              ✏️ Đổi tên
+            </button>
+          </div>
+        </div>
+
+        <!-- Role selection -->
+        <div style="margin-bottom:10px;">
+          <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:12px; text-align:center;">Chọn Role</label>
+          <div style="display:flex; gap:15px; justify-content:center;">
+            <button id="roleDrawBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
+              DRAW
+            </button>
+            <button id="roleValidateBtn" style="background:linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,152,0,0.3);">
+              VALIDATE
+            </button>
+            <!-- Tạm ẩn nút ADMIN -->
+            <button id="roleAdminBtn" style="display:none; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
+              ADMIN
+            </button>
+          </div>
+        </div>
+        
+        <!-- Device info display -->
+        <div id="deviceInfoDisplay" style="margin-top:15px; padding:10px; background:#f8f9fa; border-radius:6px; font-size:11px; color:#666;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span>🖥️</span>
+            <span id="deviceIdText" style="word-break:break-all; flex:1;">Device ID: Loading...</span>
+            <button id="copyDeviceIdBtn" style="padding:4px 8px; background:#fff; border:1px solid #ddd; border-radius:4px; cursor:pointer; font-size:10px; transition:all 0.2s ease; white-space:nowrap;" title="Copy Device ID">
+              📋 Copy
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1835,6 +1910,16 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'hide_panel_completion_dialog') {
           hidePanelCompletionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_role_selection') {
+          showRoleSelectionDialog(evt.accountInfo || null);
+          return;
+        }
+
+        if (evt.type === 'hide_role_selection') {
+          hideRoleSelectionDialog();
           return;
         }
       };
@@ -3832,6 +3917,336 @@ Bạn có chắc chắn muốn rollback?\`;
           if (window.cancelPanelCompletion) {
             await window.cancelPanelCompletion();
           }
+        });
+      }
+
+      // Role Selection Modal handlers
+      const roleSelectionModal = document.getElementById('roleSelectionModal');
+      const roleDrawBtn = document.getElementById('roleDrawBtn');
+      const roleValidateBtn = document.getElementById('roleValidateBtn');
+      const recorderNameInput = document.getElementById('recorderNameInput');
+      const nameError = document.getElementById('nameError');
+      const nameInputSection = document.getElementById('nameInputSection');
+      const currentNameDisplay = document.getElementById('currentNameDisplay');
+      const currentNameText = document.getElementById('currentNameText');
+      const changeNameBtn = document.getElementById('changeNameBtn');
+      const deviceIdText = document.getElementById('deviceIdText');
+      const copyDeviceIdBtn = document.getElementById('copyDeviceIdBtn');
+      const currentNameViewMode = document.getElementById('currentNameViewMode');
+      const currentNameEditMode = document.getElementById('currentNameEditMode');
+      const editNameInput = document.getElementById('editNameInput');
+      
+      // User greeting elements
+      const userGreeting = document.getElementById('userGreeting');
+      const userGreetingName = document.getElementById('userGreetingName');
+      const userGreetingRole = document.getElementById('userGreetingRole');
+
+      let currentAccountInfo = null;
+      let isEditingName = false;
+      let currentDeviceId = '';
+      
+      // Update user greeting display
+      const updateUserGreeting = (name, role) => {
+        if (userGreeting && userGreetingName && userGreetingRole && name && role) {
+          userGreetingName.textContent = name;
+          userGreetingRole.textContent = role;
+          
+          // Style based on role
+          if (role === 'DRAW') {
+            userGreetingRole.style.background = 'linear-gradient(135deg, #007bff 0%, #0056d2 100%)';
+            userGreetingRole.style.color = '#fff';
+          } else if (role === 'VALIDATE') {
+            userGreetingRole.style.background = 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)';
+            userGreetingRole.style.color = '#fff';
+          } else if (role === 'ADMIN') {
+            userGreetingRole.style.background = 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)';
+            userGreetingRole.style.color = '#fff';
+          }
+          
+          userGreeting.style.display = 'block';
+        }
+      };
+      
+      // Click on greeting to change role/name
+      if (userGreeting) {
+        userGreeting.addEventListener('click', async () => {
+          if (window.getAccountInfo) {
+            const result = await window.getAccountInfo();
+            if (result && result.data) {
+              showRoleSelectionDialog(result.data);
+            }
+          }
+        });
+      }
+
+      const showRoleSelectionDialog = async (accountInfo) => {
+        if (!roleSelectionModal) {
+          console.error('roleSelectionModal not found');
+          return;
+        }
+        console.log('Showing role selection dialog with account info:', accountInfo);
+        
+        currentAccountInfo = accountInfo;
+        
+        // Display full device ID
+        if (deviceIdText && accountInfo && accountInfo.device_id) {
+          currentDeviceId = accountInfo.device_id;
+          deviceIdText.textContent = 'Device ID: ' + accountInfo.device_id;
+        }
+        
+        // Get default name from device_info if name is empty
+        let displayName = accountInfo?.name;
+        
+        // Show greeting if account already has a role
+        if (displayName && accountInfo?.role) {
+          updateUserGreeting(displayName, accountInfo.role);
+        }
+        if (!displayName && accountInfo?.device_info?.hostname) {
+          displayName = accountInfo.device_info.hostname;
+        }
+        
+        // Check if user already has a name
+        if (displayName && !isEditingName) {
+          // Show current name display, hide input section
+          if (nameInputSection) nameInputSection.style.display = 'none';
+          if (currentNameDisplay) {
+            currentNameDisplay.style.display = 'block';
+            if (currentNameText) currentNameText.textContent = displayName;
+            // Reset edit mode UI
+            if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+            if (changeNameBtn) {
+              changeNameBtn.innerHTML = '✏️ Đổi tên';
+            }
+          }
+        } else {
+          // Show input section, hide current name display
+          if (nameInputSection) nameInputSection.style.display = 'block';
+          if (currentNameDisplay) currentNameDisplay.style.display = 'none';
+          if (recorderNameInput) {
+            recorderNameInput.value = displayName || '';
+          }
+        }
+        
+        roleSelectionModal.style.display = 'flex';
+      };
+
+      const hideRoleSelectionDialog = () => {
+        if (roleSelectionModal) {
+          console.log('Hiding role selection dialog');
+          roleSelectionModal.style.display = 'none';
+          isEditingName = false;
+          
+          // Reset edit mode UI
+          if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+          if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+          if (changeNameBtn) {
+            changeNameBtn.innerHTML = '✏️ Đổi tên';
+            changeNameBtn.style.background = '#fff';
+            changeNameBtn.style.color = '';
+            changeNameBtn.style.borderColor = '#ddd';
+          }
+        }
+      };
+
+      // Change name button handler - toggles between edit mode and view mode
+      if (changeNameBtn) {
+        changeNameBtn.addEventListener('click', async () => {
+          if (!isEditingName) {
+            // Switch to edit mode
+            isEditingName = true;
+            if (currentNameViewMode) currentNameViewMode.style.display = 'none';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'block';
+            changeNameBtn.innerHTML = '✓ Hoàn thành';
+            changeNameBtn.style.background = '#28a745';
+            changeNameBtn.style.color = '#fff';
+            changeNameBtn.style.borderColor = '#28a745';
+            
+            // Get current display name
+            let currentName = currentAccountInfo?.name;
+            if (!currentName && currentAccountInfo?.device_info?.hostname) {
+              currentName = currentAccountInfo.device_info.hostname;
+            }
+            if (editNameInput) {
+              editNameInput.value = currentName || '';
+              editNameInput.focus();
+              editNameInput.select();
+            }
+          } else {
+            // Complete editing - save the new name
+            const newName = editNameInput ? editNameInput.value.trim() : '';
+            if (!newName) {
+              if (editNameInput) {
+                editNameInput.style.borderColor = '#dc3545';
+                editNameInput.focus();
+              }
+              return;
+            }
+            
+            // Update the display name
+            if (currentNameText) currentNameText.textContent = newName;
+            
+            // Switch back to view mode
+            isEditingName = false;
+            if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+            changeNameBtn.innerHTML = '✏️ Đổi tên';
+            changeNameBtn.style.background = '#fff';
+            changeNameBtn.style.color = '';
+            changeNameBtn.style.borderColor = '#ddd';
+            
+            // Update currentAccountInfo with new name
+            if (currentAccountInfo) {
+              currentAccountInfo.name = newName;
+            }
+          }
+        });
+      }
+      
+      // Copy device ID button handler
+      if (copyDeviceIdBtn) {
+        copyDeviceIdBtn.addEventListener('click', async () => {
+          if (currentDeviceId) {
+            try {
+              // Try modern clipboard API first
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(currentDeviceId);
+              } else {
+                // Fallback for environments where clipboard API is not available
+                const textArea = document.createElement('textarea');
+                textArea.value = currentDeviceId;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                textArea.style.top = '-9999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+              }
+              
+              const originalText = copyDeviceIdBtn.innerHTML;
+              copyDeviceIdBtn.innerHTML = '✓ Copied!';
+              copyDeviceIdBtn.style.background = '#28a745';
+              copyDeviceIdBtn.style.color = '#fff';
+              copyDeviceIdBtn.style.borderColor = '#28a745';
+              setTimeout(() => {
+                copyDeviceIdBtn.innerHTML = originalText;
+                copyDeviceIdBtn.style.background = '#fff';
+                copyDeviceIdBtn.style.color = '';
+                copyDeviceIdBtn.style.borderColor = '#ddd';
+              }, 1500);
+            } catch (err) {
+              console.error('Failed to copy device ID:', err);
+              // Show error feedback
+              copyDeviceIdBtn.innerHTML = '❌ Failed';
+              setTimeout(() => {
+                copyDeviceIdBtn.innerHTML = '📋 Copy';
+              }, 1500);
+            }
+          }
+        });
+      }
+
+      // Name input validation
+      if (recorderNameInput) {
+        recorderNameInput.addEventListener('input', () => {
+          if (nameError) nameError.style.display = 'none';
+          recorderNameInput.style.borderColor = '#ddd';
+        });
+        
+        recorderNameInput.addEventListener('focus', () => {
+          recorderNameInput.style.borderColor = '#007bff';
+        });
+        
+        recorderNameInput.addEventListener('blur', () => {
+          recorderNameInput.style.borderColor = '#ddd';
+        });
+      }
+
+      const validateAndSaveRole = async (role) => {
+        // Get name from input or existing account
+        let name = '';
+        
+        if (nameInputSection && nameInputSection.style.display !== 'none') {
+          // User is entering/editing name via initial input section
+          name = recorderNameInput ? recorderNameInput.value.trim() : '';
+          
+          if (!name) {
+            // Show error
+            if (nameError) nameError.style.display = 'block';
+            if (recorderNameInput) {
+              recorderNameInput.style.borderColor = '#dc3545';
+              recorderNameInput.focus();
+            }
+            return false;
+          }
+        } else if (currentNameDisplay && currentNameDisplay.style.display !== 'none') {
+          // Use name from currentNameDisplay (either existing or edited)
+          if (isEditingName && editNameInput) {
+            // Currently editing, get from edit input
+            name = editNameInput.value.trim();
+            if (!name) {
+              if (editNameInput) {
+                editNameInput.style.borderColor = '#dc3545';
+                editNameInput.focus();
+              }
+              return false;
+            }
+          } else if (currentAccountInfo && currentAccountInfo.name) {
+            // Use existing/updated name from account info
+            name = currentAccountInfo.name;
+          } else if (currentAccountInfo?.device_info?.hostname) {
+            // Fall back to hostname
+            name = currentAccountInfo.device_info.hostname;
+          }
+        } else if (currentAccountInfo && currentAccountInfo.name) {
+          // Use existing name
+          name = currentAccountInfo.name;
+        } else if (currentAccountInfo?.device_info?.hostname) {
+          // Fall back to hostname as default
+          name = currentAccountInfo.device_info.hostname;
+        }
+        
+        if (!name) {
+          // No name available
+          if (nameError) nameError.style.display = 'block';
+          if (nameInputSection) nameInputSection.style.display = 'block';
+          if (currentNameDisplay) currentNameDisplay.style.display = 'none';
+          if (recorderNameInput) {
+            recorderNameInput.focus();
+          }
+          return false;
+        }
+        
+        console.log('User selected ' + role + ' role with name: ' + name);
+        hideRoleSelectionDialog();
+        
+        // Update user greeting
+        updateUserGreeting(name, role);
+        
+        if (window.saveAccountInfo) {
+          await window.saveAccountInfo(role, name);
+        }
+        return true;
+      };
+
+      if (roleDrawBtn) {
+        roleDrawBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('DRAW');
+        });
+      }
+
+      if (roleValidateBtn) {
+        roleValidateBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('VALIDATE');
+        });
+      }
+
+      const roleAdminBtn = document.getElementById('roleAdminBtn');
+      if (roleAdminBtn) {
+        roleAdminBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('ADMIN');
         });
       }
 

@@ -101,6 +101,63 @@ export class PanelScreenTracker {
         });
     }
 
+    async _getAccountInfo() {
+        try {
+            const { promises: fsp } = await import('fs');
+            const pathModule = (await import('path')).default;
+            const { fileURLToPath } = await import('url');
+            
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = pathModule.dirname(pathModule.dirname(pathModule.dirname(__filename)));
+            const accountPath = pathModule.join(projectRoot, 'account.json');
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                
+                if (accountData) {
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    return accountData;
+                }
+            } catch (readErr) {
+                console.log('📝 No existing account.json, will prompt for new account');
+            }
+            
+            // Generate new device info if no account exists
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const newAccount = {
+                device_id: randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([name, interfaces]) => ({
+                            name,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: null,
+                role: null
+            };
+            
+            return newAccount;
+        } catch (err) {
+            console.error('Failed to get account info:', err);
+            return null;
+        }
+    }
+
     async saveResults() {
         return await saveResults(this);
     }
@@ -126,11 +183,15 @@ export class PanelScreenTracker {
             const timestamps = info.timestamps || [];
             timestamps.push(newTimestamp);
             
-            await fsp.writeFile(infoPath, JSON.stringify({
+            // Preserve existing role or default to 'DRAW'
+            const updatedInfo = {
                 toolCode: info.toolCode,
                 website: info.website,
-                timestamps: timestamps
-            }, null, 2), 'utf8');
+                timestamps: timestamps,
+                role: info.role || 'DRAW'
+            };
+            
+            await fsp.writeFile(infoPath, JSON.stringify(updatedInfo, null, 2), 'utf8');
             
             this.panelLogManager = new PanelLogManager(this.sessionFolder);
             
