@@ -334,6 +334,7 @@ export class MySQLExporter {
             // Build actionId -> panelId map from myparent_panel.jsonl
             const actionIdToPanelIdMap = new Map();
             const panelIdToPanelNameMap = new Map();
+            const panelIdToParentEntryMap = new Map();
             
             try {
                 const parentContent = await fsp.readFile(myparentPanelPath, 'utf8');
@@ -348,9 +349,12 @@ export class MySQLExporter {
                     }
                 }
                 
-                // Build actionId -> panelId map
+                // Build actionId -> panelId map and panelId -> parentEntry map
                 for (const parent of parents) {
                     const panelId = parent.parent_panel;
+                    
+                    // Store parent entry for easy access
+                    panelIdToParentEntryMap.set(panelId, parent);
                     
                     // Handle direct child_actions
                     if (parent.child_actions && Array.isArray(parent.child_actions)) {
@@ -508,6 +512,22 @@ export class MySQLExporter {
                         }));
                     if (clicks.length > 0) {
                         metadataToSave.clicks = clicks;
+                    }
+                }
+                
+                // Bổ sung child_actions, child_panels, parent_dom cho PANEL items
+                if (item.item_category === 'PANEL') {
+                    const parentEntry = panelIdToParentEntryMap.get(item.item_id);
+                    if (parentEntry) {
+                        if (parentEntry.child_actions && Array.isArray(parentEntry.child_actions) && parentEntry.child_actions.length > 0) {
+                            metadataToSave.child_actions = parentEntry.child_actions;
+                        }
+                        if (parentEntry.child_panels && Array.isArray(parentEntry.child_panels) && parentEntry.child_panels.length > 0) {
+                            metadataToSave.child_panels = parentEntry.child_panels;
+                        }
+                        if (parentEntry.parent_dom && Array.isArray(parentEntry.parent_dom) && parentEntry.parent_dom.length > 0) {
+                            metadataToSave.parent_dom = parentEntry.parent_dom;
+                        }
                     }
                 }
                 
