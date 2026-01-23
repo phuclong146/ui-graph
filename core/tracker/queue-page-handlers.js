@@ -4237,6 +4237,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await selectPanelHandler(actionItemId);
             }
 
+            // Ensure Save button reflects updated purpose changes
+            scheduleChangeCheck();
+
             return result;
         } catch (err) {
             console.error('detectActionPurpose failed:', err);
