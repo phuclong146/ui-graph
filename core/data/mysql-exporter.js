@@ -172,7 +172,7 @@ export class MySQLExporter {
         await fsp.writeFile(pageJsonlPath, '', 'utf8');
         
         const panels = items.filter(item => item.item_category === 'PANEL');
-        let totalPages = 1;
+        let totalPages = 0;
         console.log(`Processing...${panels.length} panels`);
         for (const panel of panels) {
             const globalPos = panel.metadata?.global_pos;
@@ -226,7 +226,7 @@ export class MySQLExporter {
                     
                     if (tempFilePath) {
                         try {
-                            const screenshotUrl = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
+                            screenshotUrl = await uploadPictureAndGetUrl(tempFilePath, picCode, ENV.API_TOKEN);
                             if (screenshotUrl) {
                                 console.log(`  ✅ Uploaded page ${pageNo}/${numPages}: ${screenshotUrl}`);
                                 hasUpdates = true;
