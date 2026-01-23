@@ -184,14 +184,28 @@ export class PanelScreenTracker {
             timestamps.push(newTimestamp);
             
             // Preserve existing role or default to 'DRAW'
+            const role = info.role || 'DRAW';
             const updatedInfo = {
                 toolCode: info.toolCode,
                 website: info.website,
                 timestamps: timestamps,
-                role: info.role || 'DRAW'
+                role: role
             };
             
             await fsp.writeFile(infoPath, JSON.stringify(updatedInfo, null, 2), 'utf8');
+            
+            // Load data from database if role is VALIDATE
+            if (role === 'VALIDATE') {
+                try {
+                    const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                    const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
+                    await loader.loadFromDatabase();
+                    console.log('✅ Loaded data from database for VALIDATE role');
+                } catch (err) {
+                    console.error('❌ Failed to load data from database:', err);
+                    // Continue with existing session data if DB load fails
+                }
+            }
             
             this.panelLogManager = new PanelLogManager(this.sessionFolder);
             

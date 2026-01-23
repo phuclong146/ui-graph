@@ -156,7 +156,21 @@ export async function initTrackingBrowser(tracker) {
     const websites = await fetchWebsiteList();
 
     const __filename = fileURLToPath(import.meta.url);
-    const sessionsPath = path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
+    const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+    const sessionsPath = path.join(projectRoot, 'sessions');
+
+    // Read account.role from account.json
+    let accountRole = 'DRAW'; // Default to DRAW if account.json doesn't exist or doesn't have role
+    try {
+        const accountPath = path.join(projectRoot, 'account.json');
+        const accountContent = await fsp.readFile(accountPath, 'utf8');
+        const accountData = JSON.parse(accountContent);
+        if (accountData && accountData.role) {
+            accountRole = accountData.role;
+        }
+    } catch (err) {
+        console.log('⚠️ Could not read account.json, using default role: DRAW');
+    }
 
     let allSessions = [];
     try {
@@ -166,6 +180,15 @@ export async function initTrackingBrowser(tracker) {
             try {
                 const infoContent = await fsp.readFile(infoPath, 'utf8');
                 const info = JSON.parse(infoContent);
+                
+                // Get session role: if info.json doesn't have role, default to 'DRAW'
+                const sessionRole = info.role || 'DRAW';
+                
+                // Filter: only include sessions where sessionRole matches accountRole
+                if (sessionRole !== accountRole) {
+                    continue;
+                }
+                
                 const timestamps = info.timestamps || [];
                 const lastTimestamp = timestamps.length > 0 ? timestamps[timestamps.length - 1] : Date.now();
 
