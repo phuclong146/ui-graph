@@ -390,12 +390,12 @@ const captureByStitching = async (page, options, progressCallback = null) => {
       };
     });
 
-    const MAX_SECTIONS = 3;
+    const maxSections = options.maxSections ?? 3;
     let numSections = Math.ceil(dimensions.scrollHeight / dimensions.viewportHeight);
-    
-    if (numSections > MAX_SECTIONS) {
-      console.log(`⚠️ Limiting capture from ${numSections} to ${MAX_SECTIONS} sections`);
-      numSections = MAX_SECTIONS;
+
+    if (numSections > maxSections) {
+      console.log(`⚠️ Limiting capture from ${numSections} to ${maxSections} sections`);
+      numSections = maxSections;
       dimensions.scrollHeight = numSections * dimensions.viewportHeight;
     }
 
@@ -590,6 +590,7 @@ const internalCaptureWebsiteCore = async (options, page, progressCallback = null
     defaultBackground: true,
     delay: 1,
     useStitching: false,
+    maxSections: 3,
     ...options,
   };
 
@@ -616,7 +617,7 @@ const internalCaptureWebsiteCore = async (options, page, progressCallback = null
         await new Promise(resolve => setTimeout(resolve, options.delay * 1000));
       }
 
-      const { width, height, devicePixelRatio } = await page.evaluate(() => {
+      const { width, height: rawHeight, devicePixelRatio } = await page.evaluate(() => {
         return {
           width: window.innerWidth,
           height: Math.max(
@@ -628,6 +629,13 @@ const internalCaptureWebsiteCore = async (options, page, progressCallback = null
           devicePixelRatio: window.devicePixelRatio
         };
       });
+      const maxSections = options.maxSections ?? 3;
+      const maxHeight = Math.round(options.height * maxSections);
+      const height = rawHeight > maxHeight ? maxHeight : rawHeight;
+
+      if (rawHeight > maxHeight) {
+        console.log(`⚠️ Limiting capture from ${rawHeight}px to ${height}px (${maxSections} sections)`);
+      }
 
       const client = page._client();
 
