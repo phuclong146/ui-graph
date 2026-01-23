@@ -302,6 +302,7 @@ export const QUEUE_BROWSER_HTML = `
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        position: relative;
       }
 
       #controls {
@@ -1070,13 +1071,6 @@ export const QUEUE_BROWSER_HTML = `
     </style>
   </head>
   <body>
-    <!-- User greeting display -->
-    <div id="userGreeting" style="display:none; position:fixed; top:10px; right:10px; z-index:10000; background:linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border:1px solid #dee2e6; border-radius:8px; padding:8px 14px; font-size:12px; color:#495057; box-shadow:0 2px 8px rgba(0,0,0,0.1); cursor:pointer;" title="Bấm để thay đổi">
-      <span style="color:#868e96;">Xin chào,</span>
-      <strong id="userGreetingName" style="color:#212529; margin-left:4px;"></strong>
-      <span id="userGreetingRole" style="display:inline-block; margin-left:8px; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600;"></span>
-    </div>
-    
     <div id="main-container">
       <div id="panel-tree-container">
         <h3>
@@ -3935,49 +3929,10 @@ Bạn có chắc chắn muốn rollback?\`;
       const currentNameViewMode = document.getElementById('currentNameViewMode');
       const currentNameEditMode = document.getElementById('currentNameEditMode');
       const editNameInput = document.getElementById('editNameInput');
-      
-      // User greeting elements
-      const userGreeting = document.getElementById('userGreeting');
-      const userGreetingName = document.getElementById('userGreetingName');
-      const userGreetingRole = document.getElementById('userGreetingRole');
 
       let currentAccountInfo = null;
       let isEditingName = false;
       let currentDeviceId = '';
-      
-      // Update user greeting display
-      const updateUserGreeting = (name, role) => {
-        if (userGreeting && userGreetingName && userGreetingRole && name && role) {
-          userGreetingName.textContent = name;
-          userGreetingRole.textContent = role;
-          
-          // Style based on role
-          if (role === 'DRAW') {
-            userGreetingRole.style.background = 'linear-gradient(135deg, #007bff 0%, #0056d2 100%)';
-            userGreetingRole.style.color = '#fff';
-          } else if (role === 'VALIDATE') {
-            userGreetingRole.style.background = 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)';
-            userGreetingRole.style.color = '#fff';
-          } else if (role === 'ADMIN') {
-            userGreetingRole.style.background = 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)';
-            userGreetingRole.style.color = '#fff';
-          }
-          
-          userGreeting.style.display = 'block';
-        }
-      };
-      
-      // Click on greeting to change role/name
-      if (userGreeting) {
-        userGreeting.addEventListener('click', async () => {
-          if (window.getAccountInfo) {
-            const result = await window.getAccountInfo();
-            if (result && result.data) {
-              showRoleSelectionDialog(result.data);
-            }
-          }
-        });
-      }
 
       const showRoleSelectionDialog = async (accountInfo) => {
         if (!roleSelectionModal) {
@@ -3997,10 +3952,6 @@ Bạn có chắc chắn muốn rollback?\`;
         // Get default name from device_info if name is empty
         let displayName = accountInfo?.name;
         
-        // Show greeting if account already has a role
-        if (displayName && accountInfo?.role) {
-          updateUserGreeting(displayName, accountInfo.role);
-        }
         if (!displayName && accountInfo?.device_info?.hostname) {
           displayName = accountInfo.device_info.hostname;
         }
@@ -4221,9 +4172,6 @@ Bạn có chắc chắn muốn rollback?\`;
         
         console.log('User selected ' + role + ' role with name: ' + name);
         hideRoleSelectionDialog();
-        
-        // Update user greeting
-        updateUserGreeting(name, role);
         
         if (window.saveAccountInfo) {
           await window.saveAccountInfo(role, name);
