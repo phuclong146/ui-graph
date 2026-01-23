@@ -384,11 +384,11 @@ export class CheckpointManager {
             `INSERT INTO doing_item_his 
              (code, my_ai_tool, my_item, type, page_index, coordinate, name, image_url, fullscreen_url,
               created_at, updated_at, item_category, verb, purpose, reason, content, published,
-              record_id, session_id, metadata, page_id, process_id)
+              record_id, session_id, metadata, page_id, process_id, item_id, status)
              SELECT 
               code, my_ai_tool, my_item, type, page_index, coordinate, name, image_url, fullscreen_url,
               created_at, updated_at, item_category, verb, purpose, reason, content, published,
-              record_id, session_id, metadata, page_id, ? as process_id
+              record_id, session_id, metadata, page_id, ? as process_id, item_id, status
              FROM doing_item
              WHERE published = 1 AND my_ai_tool = ? AND (record_id = ? OR ? IS NULL)`,
             [checkpointId, this.myAiTool, actualRecordId, actualRecordId]
@@ -547,11 +547,11 @@ export class CheckpointManager {
             `INSERT INTO doing_item 
              (code, my_ai_tool, my_item, type, page_index, coordinate, name, image_url, fullscreen_url,
               created_at, updated_at, item_category, verb, purpose, reason, content, published,
-              record_id, session_id, metadata, page_id)
+              record_id, session_id, metadata, page_id, item_id, status)
              SELECT 
               code, my_ai_tool, my_item, type, page_index, coordinate, name, image_url, fullscreen_url,
               created_at, updated_at, item_category, verb, purpose, reason, content, 1 as published,
-              record_id, session_id, metadata, page_id
+              record_id, session_id, metadata, page_id, item_id, status
              FROM doing_item_his
              WHERE process_id = ?
              ON DUPLICATE KEY UPDATE
@@ -566,6 +566,8 @@ export class CheckpointManager {
                 metadata = VALUES(metadata),
                 record_id = VALUES(record_id),
                 published = 1,
+                item_id = VALUES(item_id),
+                status = VALUES(status),
                 updated_at = CURRENT_TIMESTAMP`,
             [checkpointId]
         );
