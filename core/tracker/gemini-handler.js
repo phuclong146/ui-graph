@@ -2,6 +2,19 @@ import { sleep } from '../utils/utils.js';
 import { drawPanelBoundingBoxes, resizeBase64 } from '../media/screenshot.js';
 import { captureActionsFromDOM } from '../media/dom-capture.js';
 
+const GEMINI_TIMEOUT_MS = 30000;
+
+async function fetchGeminiWithTimeout(url, options, timeoutMs = GEMINI_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 export async function askGemini(tracker, screenshotB64) {
     if (!screenshotB64 || !tracker.geminiSession) return;
 
@@ -155,7 +168,7 @@ export async function askGeminiREST(tracker, screenshotB64) {
 
     try {
         const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
-        const response = await fetch(
+        const response = await fetchGeminiWithTimeout(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {
                 method: 'POST',
@@ -190,15 +203,44 @@ export async function askGeminiREST(tracker, screenshotB64) {
 
         return jsonText;
     } catch (err) {
-        console.error('Gemini REST API failed:', err);
+        if (err.name === 'AbortError') {
+            console.error(`Gemini REST API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
+        } else {
+            console.error('Gemini REST API failed:', err);
+        }
         return null;
     }
 }
 
-export async function handleTurn(tracker) {
+export async function handleTurn(tracker, timeoutMs = GEMINI_TIMEOUT_MS) {
+    const startTime = Date.now();
     let turn = [];
+
     while (true) {
-        const message = await tracker.geminiMessageQueue.get();
+        const remainingMs = timeoutMs - (Date.now() - startTime);
+        if (remainingMs <= 0) {
+            tracker.geminiMessageQueue.clear();
+            console.error(`Gemini WebSocket timed out after ${timeoutMs / 1000}s`);
+            return null;
+        }
+
+        let message;
+        try {
+            message = await Promise.race([
+                tracker.geminiMessageQueue.get(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Gemini WebSocket timeout')), remainingMs)
+                )
+            ]);
+        } catch (err) {
+            if (err.message === 'Gemini WebSocket timeout') {
+                tracker.geminiMessageQueue.clear();
+                console.error(`Gemini WebSocket timed out after ${timeoutMs / 1000}s`);
+                return null;
+            }
+            throw err;
+        }
+
         turn.push(message);
         if (message.serverContent?.turnComplete) {
             turn.sort((a, b) => {
@@ -759,7 +801,7 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
         };
 
         const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
-        const response = await fetch(
+        const response = await fetchGeminiWithTimeout(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {
                 method: 'POST',
@@ -802,7 +844,11 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
             return 'screen';
         }
     } catch (err) {
-        console.error('Gemini Panel Type API failed:', err);
+        if (err.name === 'AbortError') {
+            console.error(`Gemini Panel Type API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
+        } else {
+            console.error('Gemini Panel Type API failed:', err);
+        }
         return 'screen'; // Default to screen on error
     }
 }
@@ -899,7 +945,7 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata) 
 
     try {
         const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
-        const response = await fetch(
+        const response = await fetchGeminiWithTimeout(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {
                 method: 'POST',
@@ -935,7 +981,11 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata) 
         const result = JSON.parse(jsonText);
         return result;
     } catch (err) {
-        console.error('Gemini Rename API failed:', err);
+        if (err.name === 'AbortError') {
+            console.error(`Gemini Rename API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
+        } else {
+            console.error('Gemini Rename API failed:', err);
+        }
         return null;
     }
 }
@@ -1015,11 +1065,7 @@ Kết quả trả về đúng định dạng JSON:
     try {
         const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
         
-        // Create AbortController for 30s timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-        
-        const response = await fetch(
+        const response = await fetchGeminiWithTimeout(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {
                 method: 'POST',
@@ -1027,12 +1073,9 @@ Kết quả trả về đúng định dạng JSON:
                     'x-goog-api-key': ENV.GEMINI_API_KEY,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(requestBody),
-                signal: controller.signal
+                body: JSON.stringify(requestBody)
             }
         );
-        
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -1060,7 +1103,7 @@ Kết quả trả về đúng định dạng JSON:
         return result;
     } catch (err) {
         if (err.name === 'AbortError') {
-            console.error('Gemini DetectActionPurpose API timed out after 30s');
+            console.error(`Gemini DetectActionPurpose API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
         } else {
             console.error('Gemini DetectActionPurpose API failed:', err);
         }
