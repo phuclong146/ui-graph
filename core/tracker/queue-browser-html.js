@@ -3934,6 +3934,28 @@ Bạn có chắc chắn muốn rollback?\`;
       let isEditingName = false;
       let currentDeviceId = '';
 
+      // Function to update button visibility based on role
+      const updateButtonsVisibility = (role) => {
+        const importCookiesBtn = document.getElementById('importCookiesBtn');
+        const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const checkpointBtn = document.getElementById('checkpointBtn');
+        
+        if (role === 'DRAW') {
+          // Show all buttons for DRAW role
+          if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
+          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
+          if (saveBtn) saveBtn.style.display = 'inline-block';
+          if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+        } else {
+          // Hide buttons for non-DRAW roles
+          if (importCookiesBtn) importCookiesBtn.style.display = 'none';
+          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
+          if (saveBtn) saveBtn.style.display = 'none';
+          if (checkpointBtn) checkpointBtn.style.display = 'none';
+        }
+      };
+
       const showRoleSelectionDialog = async (accountInfo) => {
         if (!roleSelectionModal) {
           console.error('roleSelectionModal not found');
@@ -3977,6 +3999,11 @@ Bạn có chắc chắn muốn rollback?\`;
           if (recorderNameInput) {
             recorderNameInput.value = displayName || '';
           }
+        }
+        
+        // Update button visibility if role already exists
+        if (accountInfo && accountInfo.role) {
+          updateButtonsVisibility(accountInfo.role);
         }
         
         roleSelectionModal.style.display = 'flex';
@@ -4176,6 +4203,10 @@ Bạn có chắc chắn muốn rollback?\`;
         if (window.saveAccountInfo) {
           await window.saveAccountInfo(role, name);
         }
+        
+        // Update button visibility based on role
+        updateButtonsVisibility(role);
+        
         return true;
       };
 

@@ -362,10 +362,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         if (!lastSavedState) {
             // First time, no saved state, consider as having changes
-            // Set initial change timestamp
-            const timestamp = Date.now();
-            console.log(`🔔 [Save Reminder] First time - no saved state, setting initial timestamp: ${new Date(timestamp).toISOString()}`);
-            await saveLastSavedState(currentHashes, timestamp);
+            // Set initial change timestamp only for DRAW role
+            if (currentRole === 'DRAW') {
+                const timestamp = Date.now();
+                console.log(`🔔 [Save Reminder] First time - no saved state, setting initial timestamp: ${new Date(timestamp).toISOString()}`);
+                await saveLastSavedState(currentHashes, timestamp);
+            }
             return true;
         }
 
@@ -375,20 +377,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             currentHashes.myparent_panel !== lastSavedState.myparent_panel
         );
 
-        // If changes detected and no timestamp exists, set it (but keep old hashes for comparison)
-        if (hasChanges && !lastSavedState.lastChangeTimestamp) {
-            const timestamp = Date.now();
-            console.log(`🔔 [Save Reminder] Changes detected - setting timestamp: ${new Date(timestamp).toISOString()}`);
-            // Only update timestamp, keep old hashes for comparison
-            const oldHashes = {
-                doing_item: lastSavedState.doing_item,
-                doing_step: lastSavedState.doing_step,
-                myparent_panel: lastSavedState.myparent_panel
-            };
-            await saveLastSavedState(oldHashes, timestamp);
-        } else if (hasChanges && lastSavedState.lastChangeTimestamp) {
-            const timeSinceChange = Date.now() - lastSavedState.lastChangeTimestamp;
-            console.log(`🔔 [Save Reminder] Changes detected - timestamp already exists (${Math.floor(timeSinceChange / 1000)}s ago)`);
+        // Only track changes and timestamps for DRAW role
+        if (currentRole === 'DRAW') {
+            // If changes detected and no timestamp exists, set it (but keep old hashes for comparison)
+            if (hasChanges && !lastSavedState.lastChangeTimestamp) {
+                const timestamp = Date.now();
+                console.log(`🔔 [Save Reminder] Changes detected - setting timestamp: ${new Date(timestamp).toISOString()}`);
+                // Only update timestamp, keep old hashes for comparison
+                const oldHashes = {
+                    doing_item: lastSavedState.doing_item,
+                    doing_step: lastSavedState.doing_step,
+                    myparent_panel: lastSavedState.myparent_panel
+                };
+                await saveLastSavedState(oldHashes, timestamp);
+            } else if (hasChanges && lastSavedState.lastChangeTimestamp) {
+                const timeSinceChange = Date.now() - lastSavedState.lastChangeTimestamp;
+                console.log(`🔔 [Save Reminder] Changes detected - timestamp already exists (${Math.floor(timeSinceChange / 1000)}s ago)`);
+            }
         }
 
         return hasChanges;
@@ -495,6 +500,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     // Save reminder functionality
     let reminderTimerInterval = null;
     let isReminderDialogShowing = false;
+    let currentRole = 'DRAW'; // Track current role to skip save reminder logic for non-DRAW roles
 
     const checkAndShowReminder = async () => {
         try {
@@ -624,9 +630,43 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }, 300000);
     };
 
-    // Initialize reminder timer
-    console.log('🔔 [Save Reminder] Initializing save reminder system...');
-    startReminderTimer();
+    // Initialize reminder timer only for DRAW role
+    const initializeSaveReminder = async () => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            let role = 'DRAW'; // Default to DRAW
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                if (accountData && accountData.role) {
+                    role = accountData.role;
+                }
+            } catch (err) {
+                console.log('⚠️ Could not read account.json for save reminder, using default role: DRAW');
+            }
+            
+            // Update current role
+            currentRole = role;
+            
+            if (role === 'DRAW') {
+                console.log('🔔 [Save Reminder] Initializing save reminder system for DRAW role...');
+                startReminderTimer();
+            } else {
+                console.log(`🔔 [Save Reminder] Skipping save reminder initialization for role: ${role}`);
+            }
+        } catch (err) {
+            console.error('❌ [Save Reminder] Error initializing save reminder:', err);
+            // Default to starting timer if there's an error
+            console.log('🔔 [Save Reminder] Defaulting to starting timer due to error');
+            startReminderTimer();
+        }
+    };
+    
+    initializeSaveReminder();
 
     let isSaving = false;
     const saveEventsHandler = async () => {
@@ -4778,6 +4818,48 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    // Helper function to load image from URL and convert to base64
+    const loadImageFromUrl = async (url) => {
+        if (!url) return null;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error(`Failed to fetch image from URL: ${url}, status: ${response.status}`);
+                return null;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            return buffer.toString('base64');
+        } catch (err) {
+            console.error(`Error loading image from URL ${url}:`, err.message);
+            return null;
+        }
+    };
+
+    // Helper function to load panel image with fallback logic
+    const loadPanelImage = async (item) => {
+        if (!item) return null;
+        
+        // Try fullscreen_base64 first
+        if (item.fullscreen_base64) {
+            const imageBase64 = await tracker.dataItemManager.loadBase64FromFile(item.fullscreen_base64);
+            if (imageBase64) return imageBase64;
+        }
+        
+        // Try fullscreen_url if fullscreen_base64 is not available
+        if (item.fullscreen_url) {
+            const imageBase64 = await loadImageFromUrl(item.fullscreen_url);
+            if (imageBase64) return imageBase64;
+        }
+        
+        // Fallback to image_base64
+        if (item.image_base64) {
+            return await tracker.dataItemManager.loadBase64FromFile(item.image_base64);
+        }
+        
+        return null;
+    };
+
     const getPanelImageHandler = async (panelId) => {
         try {
             if (!tracker.dataItemManager) {
@@ -4791,15 +4873,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return null;
             }
 
-            // Try fullscreen_base64 first, then fall back to image_base64
-            let panelImageBase64 = null;
-            if (panelItem.fullscreen_base64) {
-                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.fullscreen_base64);
-            } else if (panelItem.image_base64) {
-                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
-            }
-
-            return panelImageBase64;
+            return await loadPanelImage(panelItem);
         } catch (err) {
             console.error('Failed to get panel image:', err);
             return null;
@@ -5544,6 +5618,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         verb: n.data.item.verb,
                         image_base64: n.data.item.image_base64,
                         fullscreen_base64: n.data.item.fullscreen_base64,
+                        fullscreen_url: n.data.item.fullscreen_url,
                         metadata: n.data.item.metadata
                     };
                 }
@@ -6519,12 +6594,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const showPanelInfoHandler = async (panelData) => {
         // Load image in Node.js context
-        let imageBase64 = null;
-        if (panelData.fullscreen_base64) {
-            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.fullscreen_base64);
-        } else if (panelData.image_base64) {
-            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.image_base64);
-        }
+        const imageBase64 = await loadPanelImage(panelData);
 
         const globalPos = panelData.metadata?.global_pos;
 
@@ -7143,25 +7213,51 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
 
         if (panelBeforeId) {
-            const panelBeforeNode = nodesData.find(n => n.id === panelBeforeId);
-            if (panelBeforeNode && panelBeforeNode.data) {
-                if (panelBeforeNode.data.fullscreen_base64) {
-                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.fullscreen_base64);
-                } else if (panelBeforeNode.data.image_base64) {
-                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.image_base64);
+            // Try to load from DataItemManager first to get full data including fullscreen_url
+            let panelBeforeItem = null;
+            if (tracker.dataItemManager) {
+                panelBeforeItem = await tracker.dataItemManager.getItem(panelBeforeId);
+            }
+            
+            // If not found in DataItemManager, try nodesData
+            if (!panelBeforeItem) {
+                const panelBeforeNode = nodesData.find(n => n.id === panelBeforeId);
+                if (panelBeforeNode && panelBeforeNode.data) {
+                    panelBeforeItem = panelBeforeNode.data;
                 }
+            }
+            
+            if (panelBeforeItem) {
+                panelBeforeImage = await loadPanelImage(panelBeforeItem);
+                console.log(`[StepInfo] Panel Before (${panelBeforeId}): image loaded = ${!!panelBeforeImage}, has fullscreen_base64 = ${!!panelBeforeItem.fullscreen_base64}, has fullscreen_url = ${!!panelBeforeItem.fullscreen_url}, has image_base64 = ${!!panelBeforeItem.image_base64}`);
+            } else {
+                console.warn(`[StepInfo] Panel Before (${panelBeforeId}): not found in DataItemManager or nodesData`);
             }
         }
 
         // Panel After
         if (step?.panel_after?.item_id) {
-            const panelAfterNode = nodesData.find(n => n.id === step.panel_after.item_id);
-            if (panelAfterNode && panelAfterNode.data) {
-                if (panelAfterNode.data.fullscreen_base64) {
-                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.fullscreen_base64);
-                } else if (panelAfterNode.data.image_base64) {
-                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.image_base64);
+            const panelAfterId = step.panel_after.item_id;
+            
+            // Try to load from DataItemManager first to get full data including fullscreen_url
+            let panelAfterItem = null;
+            if (tracker.dataItemManager) {
+                panelAfterItem = await tracker.dataItemManager.getItem(panelAfterId);
+            }
+            
+            // If not found in DataItemManager, try nodesData
+            if (!panelAfterItem) {
+                const panelAfterNode = nodesData.find(n => n.id === panelAfterId);
+                if (panelAfterNode && panelAfterNode.data) {
+                    panelAfterItem = panelAfterNode.data;
                 }
+            }
+            
+            if (panelAfterItem) {
+                panelAfterImage = await loadPanelImage(panelAfterItem);
+                console.log(`[StepInfo] Panel After (${panelAfterId}): image loaded = ${!!panelAfterImage}, has fullscreen_base64 = ${!!panelAfterItem.fullscreen_base64}, has fullscreen_url = ${!!panelAfterItem.fullscreen_url}, has image_base64 = ${!!panelAfterItem.image_base64}`);
+            } else {
+                console.warn(`[StepInfo] Panel After (${panelAfterId}): not found in DataItemManager or nodesData`);
             }
         }
 
@@ -7750,6 +7846,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
             
             console.log(`✅ Account info saved: ${name}, role: ${role}, device_id: ${accountData.device_id}`);
+
+            // Update current role and manage save reminder timer
+            const previousRole = currentRole;
+            currentRole = role;
+            
+            // Stop timer if switching from DRAW to non-DRAW
+            if (previousRole === 'DRAW' && role !== 'DRAW') {
+                if (reminderTimerInterval) {
+                    console.log(`🔔 [Save Reminder] Stopping timer - role changed from DRAW to ${role}`);
+                    clearInterval(reminderTimerInterval);
+                    reminderTimerInterval = null;
+                }
+            }
+            // Start timer if switching from non-DRAW to DRAW
+            if (previousRole !== 'DRAW' && role === 'DRAW') {
+                console.log(`🔔 [Save Reminder] Starting timer - role changed from ${previousRole} to DRAW`);
+                startReminderTimer();
+            }
 
             // Broadcast to hide dialog
             await tracker._broadcast({ type: 'hide_role_selection' });
