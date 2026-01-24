@@ -1459,7 +1459,7 @@ export const QUEUE_BROWSER_HTML = `
 
     <!-- RaiseBug Modal -->
     <div id="raiseBugModal" style="display:none; position:fixed; z-index:20007; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-        <div id="raiseBugDialog" style="background:white; width:600px; max-width:90%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+        <div id="raiseBugDialog" style="background:white; width:800px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
             <div id="raiseBugHeader" style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; cursor:move;">
                 <h3 style="margin:0; font-size:18px; color:#333;">Raise Bug</h3>
                 <button id="closeRaiseBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
@@ -3695,30 +3695,24 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        if (node.item_category === 'ACTION' && node.bug_flag) {
+        // Check both direct property and metadata property for compatibility
+        if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
             bugIcon.style.display = 'inline-block';
             bugIcon.style.verticalAlign = 'middle';
-            bugIcon.style.width = '14px';
-            bugIcon.style.height = '14px';
-            bugIcon.style.color = '#dc3545';
+            bugIcon.style.width = '16px';
+            bugIcon.style.height = '16px';
+            bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
-            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
-              <ellipse cx="32" cy="36" rx="14" ry="18"/>
-              <circle cx="32" cy="20" r="8"/>
-              <line x1="28" y1="12" x2="22" y2="4"/>
-              <line x1="36" y1="12" x2="42" y2="4"/>
-              <line x1="18" y1="42" x2="8" y2="48"/>
-              <line x1="18" y1="36" x2="8" y2="36"/>
-              <line x1="18" y1="30" x2="8" y2="24"/>
-              <line x1="46" y1="42" x2="56" y2="48"/>
-              <line x1="46" y1="36" x2="56" y2="36"/>
-              <line x1="46" y1="30" x2="56" y2="24"/>
-            </svg>\`;
+            bugIcon.textContent = '🐞';
             
+            // Get bug info from direct property or metadata
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+
             bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, node.bug_note, node.bug_info);
+                showBugTooltip(e, bugNote, bugInfo);
             });
             bugIcon.addEventListener('mouseleave', () => {
                 hideBugTooltip();
@@ -5167,6 +5161,14 @@ Bạn có chắc chắn muốn rollback?\`;
           
           modal.style.display = 'flex';
           
+          // Reset button state
+          if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = 'Save';
+              confirmBtn.style.opacity = '1';
+              confirmBtn.style.cursor = 'pointer';
+          }
+          
           // Helper to check if a specific bug type is checked
           const isChecked = (type) => {
               if (!currentBugInfo || !currentBugInfo.details) return false;
@@ -5189,7 +5191,7 @@ Bạn có chắc chắn muốn rollback?\`;
                   case 'panel_after.name': return val('panel_after_name');
                   case 'panel_after.type': return val('panel_after_type');
                   case 'panel_after.verb': return val('panel_after_verb');
-                  case 'panel_after.image': return '';
+                  case 'panel_after.image': return val('panel_after_image');
                   default: return '';
               }
           };
@@ -5214,43 +5216,61 @@ Bạn có chắc chắn muốn rollback?\`;
               
               <div style="margin-bottom: 15px;">
                   <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
-                  <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> \${formatLabel('Image', getActionValue('action.image'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
-                      </label>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
+                          </label>
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                          \${getActionValue('action.image') ? 
+                            \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                          }
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                              <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> Image Incorrect
+                          </label>
+                      </div>
                   </div>
               </div>
               
               <div style="margin-bottom: 15px;">
                   <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
-                  <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
-                      </label>
-                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                          <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
-                      </label>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
+                          </label>
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                          \${getActionValue('panel_after.image') ? 
+                            \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                          }
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                              <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image Incorrect
+                          </label>
+                      </div>
                   </div>
               </div>
               

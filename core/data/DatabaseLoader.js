@@ -146,6 +146,9 @@ export class DatabaseLoader {
                 coordinate = this.parseJsonSafely(coordinate);
             }
 
+            // Parse bug_info if exists
+            const bugInfo = this.parseJsonSafely(item.bug_info);
+
             const jsonlItem = {
                 item_id: item.item_id,
                 item_category: item.item_category,
@@ -159,7 +162,9 @@ export class DatabaseLoader {
                 image_url: item.image_url,
                 fullscreen_url: item.fullscreen_url,
                 status: item.status,
-                metadata: cleanedMetadata
+                metadata: cleanedMetadata,
+                bug_flag: item.bug_flag === 1,
+                bug_info: bugInfo
             };
 
             lines.push(JSON.stringify(jsonlItem));

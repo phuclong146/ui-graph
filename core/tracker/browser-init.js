@@ -312,7 +312,20 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("renamePanel", handlers.renamePanel);
     await tracker.queuePage.exposeFunction("renameActionByAI", handlers.renameActionByAI);
     await tracker.queuePage.exposeFunction("getActionItem", async (actionId) => {
-        return await tracker.dataItemManager.getItem(actionId);
+        const actionItem = await tracker.dataItemManager.getItem(actionId);
+        if (!actionItem) return null;
+
+        const step = await tracker.stepManager.getStepForAction(actionId);
+        if (step && step.panel_after && step.panel_after.item_id) {
+            const panelAfter = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+            if (panelAfter) {
+                actionItem.panel_after_name = panelAfter.name;
+                actionItem.panel_after_type = panelAfter.type;
+                actionItem.panel_after_verb = panelAfter.verb;
+                actionItem.panel_after_image = panelAfter.image_url;
+            }
+        }
+        return actionItem;
     });
     await tracker.queuePage.exposeFunction("getClickEventsForPanel", handlers.getClickEventsForPanel);
     await tracker.queuePage.exposeFunction("manualCaptureAI", handlers.manualCaptureAI);
