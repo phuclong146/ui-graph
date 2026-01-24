@@ -5762,25 +5762,64 @@ Bạn có chắc chắn muốn rollback?\`;
         step1Div.style.cssText = 'margin-bottom: 20px;';
         
         const step1Title = document.createElement('div');
-        step1Title.textContent = 'Bước 1 Click action';
+        step1Title.textContent = 'Bước 1: Click action';
         step1Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
         step1Div.appendChild(step1Title);
         
-        // Action selection box (similar to "All projects" style)
-        const actionBox = document.createElement('div');
-        actionBox.style.cssText = 'background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 12px; display: flex; align-items: center; gap: 10px; cursor: default;';
-        
-        const actionIcon = document.createElement('div');
-        actionIcon.style.cssText = 'width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;';
-        actionIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
-        actionBox.appendChild(actionIcon);
-        
-        const actionName = document.createElement('span');
+        // Action name (no icon)
+        const actionName = document.createElement('div');
         actionName.textContent = evt.item_name || 'Action';
-        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500;';
-        actionBox.appendChild(actionName);
+        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500; margin-bottom: 10px;';
+        step1Div.appendChild(actionName);
         
-        step1Div.appendChild(actionBox);
+        // Action image (from action_info.image_base64, action_info.image_url, or evt.image_url)
+        const actionImageContainer = document.createElement('div');
+        actionImageContainer.style.cssText = 'margin-top: 10px;';
+        
+        let hasImage = false;
+        let imageSrc = null;
+        
+        // Priority 1: action_info.image_base64
+        if (evt.action_info && evt.action_info.image_base64) {
+          imageSrc = 'data:image/png;base64,' + evt.action_info.image_base64;
+          hasImage = true;
+        }
+        // Priority 2: action_info.image_url
+        else if (evt.action_info && evt.action_info.image_url) {
+          imageSrc = evt.action_info.image_url;
+          hasImage = true;
+        }
+        // Priority 3: evt.image_url (from baseEvent)
+        else if (evt.image_url) {
+          imageSrc = evt.image_url;
+          hasImage = true;
+        }
+        
+        if (hasImage && imageSrc) {
+          const actionImg = document.createElement('img');
+          actionImg.src = imageSrc;
+          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block;';
+          actionImg.alt = 'Action image';
+          actionImg.onerror = function() {
+            console.error('Failed to load action image:', imageSrc);
+            this.style.display = 'none';
+          };
+          actionImg.onload = function() {
+            console.log('✅ Action image loaded successfully');
+          };
+          actionImageContainer.appendChild(actionImg);
+          step1Div.appendChild(actionImageContainer);
+        } else {
+          // Debug: log what we have
+          console.log('🔍 Action image debug:', {
+            hasActionInfo: !!evt.action_info,
+            hasImageBase64: !!(evt.action_info && evt.action_info.image_base64),
+            hasImageUrl: !!(evt.action_info && evt.action_info && evt.action_info.image_url),
+            hasEvtImageUrl: !!evt.image_url,
+            actionInfo: evt.action_info
+          });
+        }
+        
         validateActionDiv.appendChild(step1Div);
         
         // Step 2: Kiểm tra thông tin action
@@ -5793,15 +5832,16 @@ Bạn có chắc chắn muốn rollback?\`;
         step2Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
         step2Div.appendChild(step2Title);
         
-        const checkboxNote = document.createElement('div');
-        checkboxNote.textContent = '(Dạng checkbox)';
-        checkboxNote.style.cssText = 'font-size: 12px; color: #666; margin-bottom: 10px; font-style: italic;';
-        step2Div.appendChild(checkboxNote);
+        // Instruction text
+        const instructionText = document.createElement('div');
+        instructionText.style.cssText = 'font-size: 13px; color: #666; margin-bottom: 12px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5;';
+        instructionText.innerHTML = \`<strong>📋 Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>RaiseBug</strong> để báo lỗi.\`;
+        step2Div.appendChild(instructionText);
         
         const infoBox = document.createElement('div');
         infoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px;';
         
-        // Create checkbox list for each field
+        // Create checkbox list for each field - check if information is incorrect
         const fields = [
           { label: 'Category', value: evt.item_category || 'N/A' },
           { label: 'Name', value: evt.item_name || 'N/A' },
@@ -5818,6 +5858,9 @@ Bạn có chắc chắn muốn rollback?\`;
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.style.cssText = 'cursor: pointer; width: 18px; height: 18px;';
+          // Check if information is incorrect (you can add logic here to determine if incorrect)
+          // For now, default to unchecked
+          checkbox.checked = false;
           fieldRow.appendChild(checkbox);
           
           const label = document.createElement('label');
@@ -5839,33 +5882,28 @@ Bạn có chắc chắn muốn rollback?\`;
         
         step2Div.appendChild(infoBox);
         
-        const errorNote = document.createElement('div');
-        errorNote.textContent = '(Sai thì có button click báo lỗi)';
-        errorNote.style.cssText = 'font-size: 12px; color: #666; margin-top: 10px; margin-bottom: 10px; font-style: italic;';
-        step2Div.appendChild(errorNote);
-        
-        // Báo lỗi button for Step 2
-        const reportErrorBtn2 = document.createElement('button');
-        reportErrorBtn2.textContent = 'Báo lỗi';
-        reportErrorBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
-        reportErrorBtn2.addEventListener('mouseenter', () => {
-          reportErrorBtn2.style.background = '#ff5252';
+        // RaiseBug button for Step 2 (if information is incorrect, check checkbox and click this button)
+        const raiseBugBtn2 = document.createElement('button');
+        raiseBugBtn2.textContent = 'RaiseBug';
+        raiseBugBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
+        raiseBugBtn2.addEventListener('mouseenter', () => {
+          raiseBugBtn2.style.background = '#ff5252';
         });
-        reportErrorBtn2.addEventListener('mouseleave', () => {
-          reportErrorBtn2.style.background = '#ff6b6b';
+        raiseBugBtn2.addEventListener('mouseleave', () => {
+          raiseBugBtn2.style.background = '#ff6b6b';
         });
-        reportErrorBtn2.addEventListener('click', async () => {
+        raiseBugBtn2.addEventListener('click', async () => {
           const note = prompt('Nhập ghi chú về lỗi:');
           if (note !== null && window.raiseBug) {
             await window.raiseBug(evt.panel_id, note || '');
             showToast('✅ Đã báo lỗi');
           }
         });
-        step2Div.appendChild(reportErrorBtn2);
+        step2Div.appendChild(raiseBugBtn2);
         
         validateActionDiv.appendChild(step2Div);
         
-        // Step 3: View graph and Validate Video
+        // Step 3: View graph and Video Validate
         const step3Div = document.createElement('div');
         step3Div.setAttribute('data-step', '3');
         step3Div.style.cssText = 'margin-bottom: 20px;';
@@ -5878,10 +5916,21 @@ Bạn có chắc chắn muốn rollback?\`;
         const buttonsContainer = document.createElement('div');
         buttonsContainer.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px;';
         
-        // View graph button
+        // View graph button with icon
         const viewGraphBtn = document.createElement('button');
-        viewGraphBtn.textContent = 'View graph';
-        viewGraphBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease;';
+        viewGraphBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 6px;';
+        viewGraphBtn.innerHTML = \`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;">
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="18" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <line x1="6" y1="6" x2="12" y2="12"></line>
+          <line x1="18" y1="6" x2="12" y2="12"></line>
+          <line x1="6" y1="18" x2="12" y2="12"></line>
+          <line x1="18" y1="18" x2="12" y2="12"></line>
+        </svg>
+        View Graph\`;
         viewGraphBtn.addEventListener('mouseenter', () => {
           viewGraphBtn.style.background = '#0056b3';
         });
@@ -5895,15 +5944,16 @@ Bạn có chắc chắn muốn rollback?\`;
         });
         buttonsContainer.appendChild(viewGraphBtn);
         
-        // Validate Video button
+        // Video Validate button with icon
         const validateVideoBtn = document.createElement('button');
-        validateVideoBtn.textContent = 'Validate Video';
-        validateVideoBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease;';
+        validateVideoBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 6px;';
+        validateVideoBtn.innerHTML = \`<span style="font-size: 16px;">✓</span>
+        Video Validate\`;
         validateVideoBtn.addEventListener('mouseenter', () => {
-          validateVideoBtn.style.background = '#218838';
+          validateVideoBtn.style.background = '#f57c00';
         });
         validateVideoBtn.addEventListener('mouseleave', () => {
-          validateVideoBtn.style.background = '#28a745';
+          validateVideoBtn.style.background = '#ff9800';
         });
         validateVideoBtn.addEventListener('click', async () => {
           if (typeof openValidateView === 'function') {
@@ -5913,25 +5963,6 @@ Bạn có chắc chắn muốn rollback?\`;
         buttonsContainer.appendChild(validateVideoBtn);
         
         step3Div.appendChild(buttonsContainer);
-        
-        // Báo lỗi button for Step 3
-        const reportErrorBtn3 = document.createElement('button');
-        reportErrorBtn3.textContent = 'Báo lỗi';
-        reportErrorBtn3.style.cssText = 'width: 100%; padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
-        reportErrorBtn3.addEventListener('mouseenter', () => {
-          reportErrorBtn3.style.background = '#ff5252';
-        });
-        reportErrorBtn3.addEventListener('mouseleave', () => {
-          reportErrorBtn3.style.background = '#ff6b6b';
-        });
-        reportErrorBtn3.addEventListener('click', async () => {
-          const note = prompt('Nhập ghi chú về lỗi:');
-          if (note !== null && window.raiseBug) {
-            await window.raiseBug(evt.panel_id, note || '');
-            showToast('✅ Đã báo lỗi');
-          }
-        });
-        step3Div.appendChild(reportErrorBtn3);
         
         validateActionDiv.appendChild(step3Div);
         

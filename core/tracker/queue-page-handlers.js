@@ -3907,7 +3907,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         h: item.metadata.global_pos.h
                     },
                     step_info: null,
-                    image_base64: null
+                    image_base64: null,
+                    image_url: item.image_url || null
                 };
 
                 // Get parent panel of action
@@ -4010,6 +4011,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 item_content: item.content,
                 screenshot: screenshot,
                 draw_flow_state: drawFlowState,
+                image_url: item.image_url || null,
                 timestamp: Date.now()
             };
 
