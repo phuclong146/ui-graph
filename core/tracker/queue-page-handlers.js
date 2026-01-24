@@ -1,4 +1,5 @@
 import { getPanelEditorClassCode } from './panel-editor-class.js';
+import { MySQLExporter } from '../data/mysql-exporter.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
@@ -362,10 +363,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         if (!lastSavedState) {
             // First time, no saved state, consider as having changes
-            // Set initial change timestamp
-            const timestamp = Date.now();
-            console.log(`🔔 [Save Reminder] First time - no saved state, setting initial timestamp: ${new Date(timestamp).toISOString()}`);
-            await saveLastSavedState(currentHashes, timestamp);
+            // Set initial change timestamp only for DRAW role
+            if (currentRole === 'DRAW') {
+                const timestamp = Date.now();
+                console.log(`🔔 [Save Reminder] First time - no saved state, setting initial timestamp: ${new Date(timestamp).toISOString()}`);
+                await saveLastSavedState(currentHashes, timestamp);
+            }
             return true;
         }
 
@@ -375,20 +378,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             currentHashes.myparent_panel !== lastSavedState.myparent_panel
         );
 
-        // If changes detected and no timestamp exists, set it (but keep old hashes for comparison)
-        if (hasChanges && !lastSavedState.lastChangeTimestamp) {
-            const timestamp = Date.now();
-            console.log(`🔔 [Save Reminder] Changes detected - setting timestamp: ${new Date(timestamp).toISOString()}`);
-            // Only update timestamp, keep old hashes for comparison
-            const oldHashes = {
-                doing_item: lastSavedState.doing_item,
-                doing_step: lastSavedState.doing_step,
-                myparent_panel: lastSavedState.myparent_panel
-            };
-            await saveLastSavedState(oldHashes, timestamp);
-        } else if (hasChanges && lastSavedState.lastChangeTimestamp) {
-            const timeSinceChange = Date.now() - lastSavedState.lastChangeTimestamp;
-            console.log(`🔔 [Save Reminder] Changes detected - timestamp already exists (${Math.floor(timeSinceChange / 1000)}s ago)`);
+        // Only track changes and timestamps for DRAW role
+        if (currentRole === 'DRAW') {
+            // If changes detected and no timestamp exists, set it (but keep old hashes for comparison)
+            if (hasChanges && !lastSavedState.lastChangeTimestamp) {
+                const timestamp = Date.now();
+                console.log(`🔔 [Save Reminder] Changes detected - setting timestamp: ${new Date(timestamp).toISOString()}`);
+                // Only update timestamp, keep old hashes for comparison
+                const oldHashes = {
+                    doing_item: lastSavedState.doing_item,
+                    doing_step: lastSavedState.doing_step,
+                    myparent_panel: lastSavedState.myparent_panel
+                };
+                await saveLastSavedState(oldHashes, timestamp);
+            } else if (hasChanges && lastSavedState.lastChangeTimestamp) {
+                const timeSinceChange = Date.now() - lastSavedState.lastChangeTimestamp;
+                console.log(`🔔 [Save Reminder] Changes detected - timestamp already exists (${Math.floor(timeSinceChange / 1000)}s ago)`);
+            }
         }
 
         return hasChanges;
@@ -495,6 +501,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     // Save reminder functionality
     let reminderTimerInterval = null;
     let isReminderDialogShowing = false;
+    let currentRole = 'DRAW'; // Track current role to skip save reminder logic for non-DRAW roles
 
     const checkAndShowReminder = async () => {
         try {
@@ -624,9 +631,43 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }, 300000);
     };
 
-    // Initialize reminder timer
-    console.log('🔔 [Save Reminder] Initializing save reminder system...');
-    startReminderTimer();
+    // Initialize reminder timer only for DRAW role
+    const initializeSaveReminder = async () => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            let role = 'DRAW'; // Default to DRAW
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                if (accountData && accountData.role) {
+                    role = accountData.role;
+                }
+            } catch (err) {
+                console.log('⚠️ Could not read account.json for save reminder, using default role: DRAW');
+            }
+            
+            // Update current role
+            currentRole = role;
+            
+            if (role === 'DRAW') {
+                console.log('🔔 [Save Reminder] Initializing save reminder system for DRAW role...');
+                startReminderTimer();
+            } else {
+                console.log(`🔔 [Save Reminder] Skipping save reminder initialization for role: ${role}`);
+            }
+        } catch (err) {
+            console.error('❌ [Save Reminder] Error initializing save reminder:', err);
+            // Default to starting timer if there's an error
+            console.log('🔔 [Save Reminder] Defaulting to starting timer due to error');
+            startReminderTimer();
+        }
+    };
+    
+    initializeSaveReminder();
 
     let isSaving = false;
     const saveEventsHandler = async () => {
@@ -3737,22 +3778,41 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             if (item.item_category === 'ACTION' && item.status === 'pending' && !item.metadata?.session_url) {
-                const { ENV } = await import('../config/env.js');
-                const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
-                console.log(`[RECORD] 🔍 Checking if should start recording for ACTION ${itemId}:`);
-                console.log(`[RECORD]    Status: ${item.status}`);
-                console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
-                console.log(`[RECORD]    RECORD_PANEL enabled: ${enable}`);
+                // Read role from account.json to check if we should skip recording for VALIDATE role
+                let accountRole = 'DRAW';
+                try {
+                    const { fileURLToPath } = await import('url');
+                    const __filename = fileURLToPath(import.meta.url);
+                    const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+                    const accountPath = path.join(projectRoot, 'account.json');
+                    const accountContent = await fsp.readFile(accountPath, 'utf8');
+                    const accountData = JSON.parse(accountContent);
+                    accountRole = accountData.role || 'DRAW';
+                } catch (err) {
+                    console.log('⚠️ Could not read account.json for role check, using default: DRAW');
+                }
                 
-                if (enable) {
-                    console.log(`[RECORD] ▶️  Starting recording for ACTION: ${itemId}`);
-                    await tracker.startPanelRecording(itemId);
-                    await tracker._broadcast({
-                        type: 'show_toast',
-                        message: '🎬 Recording...'
-                    });
+                // Skip recording for VALIDATE role
+                if (accountRole === 'VALIDATE') {
+                    console.log(`[RECORD] ⏸️  Skipping recording for VALIDATE role`);
                 } else {
-                    console.log(`[RECORD] ⏸️  Recording disabled, skipping start`);
+                    const { ENV } = await import('../config/env.js');
+                    const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
+                    console.log(`[RECORD] 🔍 Checking if should start recording for ACTION ${itemId}:`);
+                    console.log(`[RECORD]    Status: ${item.status}`);
+                    console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
+                    console.log(`[RECORD]    RECORD_PANEL enabled: ${enable}`);
+                    
+                    if (enable) {
+                        console.log(`[RECORD] ▶️  Starting recording for ACTION: ${itemId}`);
+                        await tracker.startPanelRecording(itemId);
+                        await tracker._broadcast({
+                            type: 'show_toast',
+                            message: '🎬 Recording...'
+                        });
+                    } else {
+                        console.log(`[RECORD] ⏸️  Recording disabled, skipping start`);
+                    }
                 }
             } else {
                 console.log(`[RECORD] ⏭️  Not starting recording for item ${itemId}:`);
@@ -3848,7 +3908,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         h: item.metadata.global_pos.h
                     },
                     step_info: null,
-                    image_base64: null
+                    image_base64: null,
+                    image_url: item.image_url || null
                 };
 
                 // Get parent panel of action
@@ -3951,6 +4012,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 item_content: item.content,
                 screenshot: screenshot,
                 draw_flow_state: drawFlowState,
+                image_url: item.image_url || null,
                 timestamp: Date.now()
             };
 
@@ -4778,6 +4840,48 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    // Helper function to load image from URL and convert to base64
+    const loadImageFromUrl = async (url) => {
+        if (!url) return null;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error(`Failed to fetch image from URL: ${url}, status: ${response.status}`);
+                return null;
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            return buffer.toString('base64');
+        } catch (err) {
+            console.error(`Error loading image from URL ${url}:`, err.message);
+            return null;
+        }
+    };
+
+    // Helper function to load panel image with fallback logic
+    const loadPanelImage = async (item) => {
+        if (!item) return null;
+        
+        // Try fullscreen_base64 first
+        if (item.fullscreen_base64) {
+            const imageBase64 = await tracker.dataItemManager.loadBase64FromFile(item.fullscreen_base64);
+            if (imageBase64) return imageBase64;
+        }
+        
+        // Try fullscreen_url if fullscreen_base64 is not available
+        if (item.fullscreen_url) {
+            const imageBase64 = await loadImageFromUrl(item.fullscreen_url);
+            if (imageBase64) return imageBase64;
+        }
+        
+        // Fallback to image_base64
+        if (item.image_base64) {
+            return await tracker.dataItemManager.loadBase64FromFile(item.image_base64);
+        }
+        
+        return null;
+    };
+
     const getPanelImageHandler = async (panelId) => {
         try {
             if (!tracker.dataItemManager) {
@@ -4791,15 +4895,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return null;
             }
 
-            // Try fullscreen_base64 first, then fall back to image_base64
-            let panelImageBase64 = null;
-            if (panelItem.fullscreen_base64) {
-                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.fullscreen_base64);
-            } else if (panelItem.image_base64) {
-                panelImageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
-            }
-
-            return panelImageBase64;
+            return await loadPanelImage(panelItem);
         } catch (err) {
             console.error('Failed to get panel image:', err);
             return null;
@@ -5473,7 +5569,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             data: { isVirtual: true, type: status, actionId, actionItem }
                         });
                         virtualNodesCreated.add(virtualNodeId);
-                        console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
+                        // console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
                     }
                 }
 
@@ -5481,7 +5577,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
         });
         
-        console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
+        // console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
 
         return { nodes, edges, itemMap, stepMap };
     };
@@ -5544,7 +5640,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         verb: n.data.item.verb,
                         image_base64: n.data.item.image_base64,
                         fullscreen_base64: n.data.item.fullscreen_base64,
-                        metadata: n.data.item.metadata
+                        fullscreen_url: n.data.item.fullscreen_url,
+                        metadata: n.data.item.metadata,
+                        bug_flag: n.data.item.bug_flag || n.data.item.metadata?.bug_flag || false,
+                        bug_info: n.data.item.bug_info || null
                     };
                 }
                 
@@ -5581,6 +5680,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         actionPurpose: e.data.actionItem.purpose,
                         actionImage_base64: e.data.actionItem.image_base64,
                         actionMetadata: e.data.actionItem.metadata,
+                        actionBugFlag: e.data.actionItem.bug_flag || e.data.actionItem.metadata?.bug_flag || false,
+                        actionBugInfo: e.data.actionItem.bug_info || null,
                         step: e.data.step ? {
                             step_id: e.data.step.step_id,
                             panel_before: e.data.step.panel_before,
@@ -5602,6 +5703,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Render graph in browser context
             await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData) => {
+                let lastMouseX = 0;
+                let lastMouseY = 0;
+                document.addEventListener('mousemove', (e) => {
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                });
+
                 const graphContainer = document.getElementById('graphContainer');
                 if (!graphContainer) {
                     console.error('graphContainer not found');
@@ -5628,10 +5736,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 };
                 buildNodesWithChildren(panelTreeData);
 
-                // Create vis-network data - đảm bảo tất cả edges có label rỗng
+                // Create vis-network data
                 const edgesForVis = edgesData.map(e => ({
                     ...e,
-                    label: '' // Force empty label
+                    label: e.data && e.data.actionBugFlag ? '🐛' : ''
                 }));
                 
                 // Add collapse/expand icons and set mass for nodes that have children
@@ -5716,11 +5824,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     interaction: {
                         dragNodes: true,
                         zoomView: true,
-                        dragView: true
+                        dragView: true,
+                        hover: true
                     }
                 };
 
                 const network = new vis.Network(graphContainer, data, options);
+
+                network.on("hoverEdge", function (params) {
+                    const edgeId = params.edge;
+                    const edge = edgesForVis.find(e => e.id === edgeId);
+                    if (edge && edge.data && edge.data.actionBugFlag) {
+                         if (typeof window.showBugTooltip === 'function') {
+                             window.showBugTooltip({ clientX: lastMouseX, clientY: lastMouseY }, null, edge.data.actionBugInfo);
+                         }
+                    }
+                });
+                
+                network.on("blurEdge", function (params) {
+                     if (typeof window.hideBugTooltip === 'function') {
+                         window.hideBugTooltip();
+                     }
+                });
 
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
@@ -5764,7 +5889,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     originalLabels.set(node.id, originalLabel);
                 });
                 
-                // Đảm bảo tất cả edges có label rỗng khi khởi tạo
+                // Label clearing logic removed to support bug icons
+                /*
                 const allEdges = data.edges.get();
                 allEdges.forEach(edge => {
                     if (edge.label && edge.label !== '') {
@@ -5774,6 +5900,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         });
                     }
                 });
+                */
 
                 // Function to hide all edge labels
                 const hideAllEdgeLabels = () => {
@@ -6519,12 +6646,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const showPanelInfoHandler = async (panelData) => {
         // Load image in Node.js context
-        let imageBase64 = null;
-        if (panelData.fullscreen_base64) {
-            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.fullscreen_base64);
-        } else if (panelData.image_base64) {
-            imageBase64 = await tracker.dataItemManager.loadBase64FromFile(panelData.image_base64);
-        }
+        const imageBase64 = await loadPanelImage(panelData);
 
         const globalPos = panelData.metadata?.global_pos;
 
@@ -7009,8 +7131,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     session_url: actionItem.metadata?.session_url || null,
                     tracking_action_url: actionItem.metadata?.tracking_action_url || null,
                     tracking_panel_after_url: actionItem.metadata?.tracking_panel_after_url || null,
-                    bug_flag: actionItem.metadata?.bug_flag || false,
-                    bug_note: actionItem.metadata?.bug_note || null,
+                    bug_flag: actionItem.bug_flag || actionItem.metadata?.bug_flag || false,
+                    bug_info: actionItem.bug_info || actionItem.metadata?.bug_info || null,
                     panel_before_id: step.panel_before?.item_id || null,
                     panel_after_id: step.panel_after?.item_id || null
                 };
@@ -7049,7 +7171,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const raiseBugHandler = async (actionItemId, note) => {
+    const raiseBugHandler = async (actionItemId, bugInfo) => {
         try {
             if (!actionItemId) {
                 console.warn('⚠️ No actionItemId provided for raiseBug');
@@ -7062,15 +7184,38 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
-            await tracker.dataItemManager.updateItem(actionItemId, {
-                metadata: {
-                    ...actionItem.metadata,
-                    bug_flag: true,
-                    bug_note: note || ''
-                }
-            });
+            // Update doing_item.jsonl
+            const updates = {
+                bug_flag: true,
+                bug_info: bugInfo
+            };
 
-            console.log(`✅ Bug raised for action ${actionItemId}: ${note || 'No note'}`);
+            // Remove bug-related fields from metadata if they exist (cleanup old way)
+            if (actionItem.metadata && (actionItem.metadata.bug_flag || actionItem.metadata.bug_note)) {
+                updates.metadata = { ...actionItem.metadata };
+                delete updates.metadata.bug_flag;
+                delete updates.metadata.bug_note;
+            }
+
+            await tracker.dataItemManager.updateItem(actionItemId, updates);
+
+            // Update DB
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                
+                await exporter.connection.execute(
+                    `UPDATE doing_item SET bug_flag = 1, bug_info = ? WHERE item_id = ? AND my_ai_tool = ?`,
+                    [JSON.stringify(bugInfo), actionItemId, tracker.myAiToolCode]
+                );
+                
+                await exporter.close();
+                console.log(`✅ Updated bug info in DB for action ${actionItemId}`);
+            } catch (dbErr) {
+                console.error('⚠️ Failed to update bug info in DB:', dbErr);
+            }
+
+            console.log(`✅ Bug raised for action ${actionItemId}`);
             await tracker._broadcast({ type: 'show_toast', message: '✅ Bug raised successfully' });
 
             // Helper function to find node in tree
@@ -7101,7 +7246,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Debug: log to verify bug_flag is in tree data
                 const actionNode = findNodeInTree(panelTreeData, actionItemId);
                 if (actionNode) {
-                    console.log(`🔍 Debug: Action node bug_flag = ${actionNode.bug_flag}, bug_note = ${actionNode.bug_note}`);
+                    console.log(`🔍 Debug: Action node bug_flag = ${actionNode.bug_flag}`);
                 } else {
                     console.warn(`⚠️ Action node not found in tree: ${actionItemId}`);
                 }
@@ -7113,6 +7258,88 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
                     }
                 }, panelTreeData);
+            }
+
+            // Refresh graph view if modal is open
+            const isGraphModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('graphViewModal');
+                return modal && modal.style.display !== 'none';
+            });
+
+            if (isGraphModalOpen) {
+                 await tracker.queuePage.evaluate((itemId, bugInfo) => {
+                     if (window.graphNetwork && window.vis && window.vis.DataSet) {
+                        const network = window.graphNetwork;
+                        const edges = network.body.data.edges;
+                        const nodes = network.body.data.nodes;
+                        
+                        // Try to find as edge (Action)
+                        const allEdges = edges.get();
+                        const targetEdge = allEdges.find(e => e.data && e.data.actionId === itemId);
+                        
+                        if (targetEdge) {
+                             // Update edge
+                             targetEdge.data.actionBugFlag = true;
+                             targetEdge.data.actionBugInfo = bugInfo;
+                             targetEdge.label = '🐛';
+                             edges.update(targetEdge);
+                             console.log('Updated graph edge with bug info:', itemId);
+                        } else {
+                            // Try to find as node (Panel)
+                            const targetNode = nodes.get(itemId);
+                            if (targetNode) {
+                                if (targetNode.data && targetNode.data.item) {
+                                    targetNode.data.item.bug_flag = true;
+                                    targetNode.data.item.bug_info = bugInfo;
+                                }
+                                
+                                // Update label to show bug icon if not already there
+                                if (!targetNode.label.includes('🐞')) {
+                                    targetNode.label = targetNode.label + ' 🐞';
+                                    nodes.update(targetNode);
+                                    console.log('Updated graph node with bug info:', itemId);
+                                }
+                            }
+                        }
+                     }
+                     
+                     // Also update the Panel Log Tree in Graph View
+                     const treeContainer = document.getElementById('graphPanelLogTree');
+                     if (treeContainer) {
+                         const targetNode = treeContainer.querySelector(`[data-panel-id="${itemId}"]`);
+                         if (targetNode) {
+                             const labelSpan = targetNode.querySelector('.graph-tree-label');
+                             if (labelSpan && !labelSpan.innerHTML.includes('🐞')) {
+                                 const bugIcon = document.createElement('span');
+                                 bugIcon.style.marginLeft = '4px';
+                                 bugIcon.style.display = 'inline-block';
+                                 bugIcon.style.verticalAlign = 'middle';
+                                 bugIcon.style.width = '16px';
+                                 bugIcon.style.height = '16px';
+                                 bugIcon.style.fontSize = '14px';
+                                 bugIcon.style.cursor = 'help';
+                                 bugIcon.textContent = '🐞';
+                                 
+                                 // Add bug tooltip behavior
+                                 bugIcon.addEventListener('mouseenter', (e) => {
+                                     if (window.showBugTooltip) {
+                                         // Pass minimal bug info needed for tooltip
+                                         const note = bugInfo?.note || null;
+                                         window.showBugTooltip(e, note, bugInfo);
+                                     }
+                                 });
+                                 bugIcon.addEventListener('mouseleave', () => {
+                                     if (window.hideBugTooltip) {
+                                         window.hideBugTooltip();
+                                     }
+                                 });
+                                 
+                                 labelSpan.appendChild(bugIcon);
+                                 console.log('Updated graph panel log tree with bug icon:', itemId);
+                             }
+                         }
+                     }
+                 }, actionItemId, bugInfo);
             }
         } catch (err) {
             console.error('Failed to raise bug:', err);
@@ -7143,25 +7370,51 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
 
         if (panelBeforeId) {
-            const panelBeforeNode = nodesData.find(n => n.id === panelBeforeId);
-            if (panelBeforeNode && panelBeforeNode.data) {
-                if (panelBeforeNode.data.fullscreen_base64) {
-                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.fullscreen_base64);
-                } else if (panelBeforeNode.data.image_base64) {
-                    panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBeforeNode.data.image_base64);
+            // Try to load from DataItemManager first to get full data including fullscreen_url
+            let panelBeforeItem = null;
+            if (tracker.dataItemManager) {
+                panelBeforeItem = await tracker.dataItemManager.getItem(panelBeforeId);
+            }
+            
+            // If not found in DataItemManager, try nodesData
+            if (!panelBeforeItem) {
+                const panelBeforeNode = nodesData.find(n => n.id === panelBeforeId);
+                if (panelBeforeNode && panelBeforeNode.data) {
+                    panelBeforeItem = panelBeforeNode.data;
                 }
+            }
+            
+            if (panelBeforeItem) {
+                panelBeforeImage = await loadPanelImage(panelBeforeItem);
+                // console.log(`[StepInfo] Panel Before (${panelBeforeId}): image loaded = ${!!panelBeforeImage}, has fullscreen_base64 = ${!!panelBeforeItem.fullscreen_base64}, has fullscreen_url = ${!!panelBeforeItem.fullscreen_url}, has image_base64 = ${!!panelBeforeItem.image_base64}`);
+            } else {
+                console.warn(`[StepInfo] Panel Before (${panelBeforeId}): not found in DataItemManager or nodesData`);
             }
         }
 
         // Panel After
         if (step?.panel_after?.item_id) {
-            const panelAfterNode = nodesData.find(n => n.id === step.panel_after.item_id);
-            if (panelAfterNode && panelAfterNode.data) {
-                if (panelAfterNode.data.fullscreen_base64) {
-                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.fullscreen_base64);
-                } else if (panelAfterNode.data.image_base64) {
-                    panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfterNode.data.image_base64);
+            const panelAfterId = step.panel_after.item_id;
+            
+            // Try to load from DataItemManager first to get full data including fullscreen_url
+            let panelAfterItem = null;
+            if (tracker.dataItemManager) {
+                panelAfterItem = await tracker.dataItemManager.getItem(panelAfterId);
+            }
+            
+            // If not found in DataItemManager, try nodesData
+            if (!panelAfterItem) {
+                const panelAfterNode = nodesData.find(n => n.id === panelAfterId);
+                if (panelAfterNode && panelAfterNode.data) {
+                    panelAfterItem = panelAfterNode.data;
                 }
+            }
+            
+            if (panelAfterItem) {
+                panelAfterImage = await loadPanelImage(panelAfterItem);
+                // console.log(`[StepInfo] Panel After (${panelAfterId}): image loaded = ${!!panelAfterImage}, has fullscreen_base64 = ${!!panelAfterItem.fullscreen_base64}, has fullscreen_url = ${!!panelAfterItem.fullscreen_url}, has image_base64 = ${!!panelAfterItem.image_base64}`);
+            } else {
+                console.warn(`[StepInfo] Panel After (${panelAfterId}): not found in DataItemManager or nodesData`);
             }
         }
 
@@ -7590,6 +7843,215 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get the sessions folder path (parent of session folders)
+     */
+    const getSessionsBasePath = () => {
+        const { fileURLToPath } = require('url');
+        const __filename = fileURLToPath(import.meta.url);
+        return path.join(path.dirname(path.dirname(path.dirname(__filename))), 'sessions');
+    };
+
+    /**
+     * Generate or get device ID
+     * Uses a persistent device ID stored in account.json
+     */
+    const generateDeviceId = () => {
+        const crypto = require('crypto');
+        return crypto.randomUUID();
+    };
+
+    /**
+     * Get device information
+     */
+    const getDeviceInfo = () => {
+        const os = require('os');
+        return {
+            platform: os.platform(),
+            arch: os.arch(),
+            hostname: os.hostname(),
+            cpus: os.cpus().length,
+            totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+            osType: os.type(),
+            osRelease: os.release(),
+            username: os.userInfo().username,
+            networkInterfaces: Object.entries(os.networkInterfaces())
+                .map(([name, interfaces]) => ({
+                    name,
+                    addresses: interfaces
+                        .filter(iface => !iface.internal)
+                        .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                }))
+                .filter(iface => iface.addresses.length > 0)
+        };
+    };
+
+    /**
+     * Get account info from account.json (in project root, outside sessions folder)
+     * Returns the account info or creates a new one with device_id
+     */
+    const getAccountInfoHandler = async () => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                
+                if (accountData) {
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    return { success: true, data: accountData };
+                }
+            } catch (readErr) {
+                // File doesn't exist, will create new account
+                console.log('📝 No existing account.json, will create new one');
+            }
+            
+            // Create new account with device_id
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const newAccount = {
+                device_id: randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([name, interfaces]) => ({
+                            name,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: null,
+                role: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            
+            console.log(`✅ Created new account with device_id: ${newAccount.device_id}`);
+            return { success: true, data: newAccount };
+        } catch (err) {
+            console.error('Failed to get account info:', err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    /**
+     * Save account info to account.json (in project root, outside sessions folder)
+     * Upserts by deviceId - overwrites existing account data
+     * @param {string} role - The role to save ('DRAW', 'VALIDATE', or 'ADMIN')
+     * @param {string} name - The recorder's name
+     */
+    const saveAccountInfoHandler = async (role, name) => {
+        try {
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const accountPath = path.join(projectRoot, 'account.json');
+            
+            let existingAccount = null;
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                existingAccount = JSON.parse(content);
+            } catch (readErr) {
+                // File doesn't exist
+            }
+            
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const accountData = {
+                device_id: existingAccount?.device_id || randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([iname, interfaces]) => ({
+                            name: iname,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: name,
+                role: role,
+                created_at: existingAccount?.created_at || new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            };
+            
+            // Upsert - overwrite the entire file with updated account data
+            await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
+            
+            console.log(`✅ Account info saved: ${name}, role: ${role}, device_id: ${accountData.device_id}`);
+
+            // Update current role and manage save reminder timer
+            const previousRole = currentRole;
+            currentRole = role;
+            
+            // Stop timer if switching from DRAW to non-DRAW
+            if (previousRole === 'DRAW' && role !== 'DRAW') {
+                if (reminderTimerInterval) {
+                    console.log(`🔔 [Save Reminder] Stopping timer - role changed from DRAW to ${role}`);
+                    clearInterval(reminderTimerInterval);
+                    reminderTimerInterval = null;
+                }
+            }
+            // Start timer if switching from non-DRAW to DRAW
+            if (previousRole !== 'DRAW' && role === 'DRAW') {
+                console.log(`🔔 [Save Reminder] Starting timer - role changed from ${previousRole} to DRAW`);
+                startReminderTimer();
+            }
+
+            // Broadcast to hide dialog
+            await tracker._broadcast({ type: 'hide_role_selection' });
+
+            // Launch tracking browser for DRAW and VALIDATE roles
+            if (role === 'DRAW' || role === 'VALIDATE') {
+                // Import and call initTrackingBrowser
+                const { initTrackingBrowser } = await import('./browser-init.js');
+                await initTrackingBrowser(tracker);
+                console.log(`🚀 Tracking browser launched for ${role} role`);
+            } else {
+                // ADMIN role - no tracking browser needed
+                console.log(`📋 ${role} role - tracking browser not launched`);
+            }
+
+            return { success: true, data: accountData };
+        } catch (err) {
+            console.error('Failed to save account info:', err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    /**
+     * Save role to info.json (deprecated - kept for backward compatibility)
+     * @param {string} role - The role to save ('DRAW', 'VALIDATE', or 'ADMIN')
+     */
+    const saveRoleHandler = async (role) => {
+        // Redirect to new saveAccountInfoHandler
+        return await saveAccountInfoHandler(role, 'Unknown');
+    };
+
     return {
         quitApp: quitAppHandler,
         saveEvents: saveEventsHandler,
@@ -7655,6 +8117,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         raiseBug: raiseBugHandler,
         generateVideoForAction: generateVideoForActionHandler,
         regenerateTrackingVideo: regenerateTrackingVideoHandler,
-        regenerateStepVideo: regenerateStepVideoHandler
+        regenerateStepVideo: regenerateStepVideoHandler,
+        saveRole: saveRoleHandler,
+        getAccountInfo: getAccountInfoHandler,
+        saveAccountInfo: saveAccountInfoHandler
     };
 }

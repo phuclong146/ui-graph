@@ -302,6 +302,7 @@ export const QUEUE_BROWSER_HTML = `
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        position: relative;
       }
 
       #controls {
@@ -1218,6 +1219,93 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="roleSelectionModal" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">👤</div>
+          <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Thông tin người record</h3>
+          <p style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+            Vui lòng nhập tên và chọn role trước khi bắt đầu làm việc.
+          </p>
+        </div>
+        
+        <!-- Name input section -->
+        <div id="nameInputSection" style="margin-bottom:20px;">
+          <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:8px;">Tên của bạn <span style="color:red;">*</span></label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="text" id="recorderNameInput" placeholder="Nhập tên của bạn..." style="flex:1; padding:12px 15px; border:2px solid #ddd; border-radius:8px; font-size:14px; transition:border-color 0.2s ease; outline:none;" />
+            <button id="editNameBtn" style="display:none; padding:10px 15px; background:#f0f0f0; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:13px; transition:all 0.2s ease;">
+              ✏️ Sửa
+            </button>
+          </div>
+          <p id="nameError" style="display:none; color:#dc3545; font-size:12px; margin-top:5px;">Vui lòng nhập tên của bạn</p>
+        </div>
+
+        <!-- Display current name when exists -->
+        <div id="currentNameDisplay" style="display:none; margin-bottom:20px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #e9ecef;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="currentNameViewMode">
+              <span style="font-size:12px; color:#666;">Xin chào,</span>
+              <div id="currentNameText" style="font-size:16px; font-weight:600; color:#333;"></div>
+            </div>
+            <div id="currentNameEditMode" style="display:none; flex:1;">
+              <input type="text" id="editNameInput" placeholder="Nhập tên của bạn..." style="width:100%; padding:10px 12px; border:2px solid #007bff; border-radius:6px; font-size:14px; outline:none;" />
+            </div>
+            <button id="changeNameBtn" style="padding:8px 12px; background:#fff; border:1px solid #ddd; border-radius:6px; cursor:pointer; font-size:12px; transition:all 0.2s ease; margin-left:10px;">
+              ✏️ Đổi tên
+            </button>
+          </div>
+        </div>
+
+        <!-- Role selection -->
+        <div style="margin-bottom:10px;">
+          <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:12px; text-align:center;">Chọn Role</label>
+          <div style="display:flex; gap:15px; justify-content:center;">
+            <button id="roleDrawBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
+              DRAW
+            </button>
+            <button id="roleValidateBtn" style="background:linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,152,0,0.3);">
+              VALIDATE
+            </button>
+            <!-- Tạm ẩn nút ADMIN -->
+            <button id="roleAdminBtn" style="display:none; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
+              ADMIN
+            </button>
+          </div>
+        </div>
+        
+        <!-- Device info display -->
+        <div id="deviceInfoDisplay" style="margin-top:15px; padding:10px; background:#f8f9fa; border-radius:6px; font-size:11px; color:#666;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span>🖥️</span>
+            <span id="deviceIdText" style="word-break:break-all; flex:1;">Device ID: Loading...</span>
+            <button id="copyDeviceIdBtn" style="padding:4px 8px; background:#fff; border:1px solid #ddd; border-radius:4px; cursor:pointer; font-size:10px; transition:all 0.2s ease; white-space:nowrap;" title="Copy Device ID">
+              📋 Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="loadingModal" style="display:none; position:fixed; z-index:20010; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:40px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative; text-align:center;">
+        <div style="font-size:48px; margin-bottom:20px;">⏳</div>
+        <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Đang tải dữ liệu từ database</h3>
+        <p id="loadingModalMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+          Vui lòng đợi trong khi hệ thống đang tải dữ liệu và tạo các file JSONL...
+        </p>
+        <div style="margin-top:30px;">
+          <div style="display:inline-block; width:40px; height:40px; border:4px solid #f3f3f3; border-top:4px solid #007bff; border-radius:50%; animation:spin 1s linear infinite;"></div>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      </div>
+    </div>
+
     <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
       <div id="select-panel-sidebar" style="width:200px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
         <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.1);">
@@ -1273,6 +1361,7 @@ export const QUEUE_BROWSER_HTML = `
             <span>Panel Log</span>
           </button>
           <button id="graphFitToScreenBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🔍 Fit to Screen</button>
+          <button id="graphRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;"><ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/><line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/><line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/><line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/></svg> RaiseBug</button>
           <button id="closeGraphViewBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
       </div>
@@ -1369,9 +1458,79 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <!-- RaiseBug Modal -->
+    <div id="raiseBugModal" style="display:none; position:fixed; z-index:20007; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div id="raiseBugDialog" style="background:white; width:800px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+            <div id="raiseBugHeader" style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; cursor:move;">
+                <h3 style="margin:0; font-size:18px; color:#333;">Raise Bug</h3>
+                <button id="closeRaiseBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
+            </div>
+            <div id="raiseBugContent" style="padding:20px; overflow-y:auto; flex:1;">
+                <!-- Content generated dynamically -->
+            </div>
+            <div style="padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; background:#f5f5f5;">
+                <button id="cancelRaiseBugBtn" style="padding:8px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer;">Cancel</button>
+                <button id="confirmRaiseBugBtn" style="padding:8px 16px; border:none; background:#dc3545; color:white; border-radius:4px; cursor:pointer; font-weight:600;">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-      // Panel Log Resizer - Initialize when DOM is ready
-      (function initPanelLogResizer() {
+    // Raise Bug Dialog Drag & Resize
+    (function initRaiseBugDialogFeatures() {
+      function setupDraggable() {
+        const dialog = document.getElementById('raiseBugDialog');
+        const header = document.getElementById('raiseBugHeader');
+        
+        if (!dialog || !header) {
+          setTimeout(setupDraggable, 500);
+          return;
+        }
+
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        header.addEventListener('mousedown', dragStart);
+        document.addEventListener('mouseup', dragEnd);
+        document.addEventListener('mousemove', drag);
+
+        function dragStart(e) {
+          if (e.target === header || header.contains(e.target)) {
+            if (e.target.tagName === 'BUTTON') return;
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+            isDragging = true;
+          }
+        }
+
+        function dragEnd(e) {
+          initialX = currentX;
+          initialY = currentY;
+          isDragging = false;
+        }
+
+        function drag(e) {
+          if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            xOffset = currentX;
+            yOffset = currentY;
+            dialog.style.transform = "translate3d(" + currentX + "px, " + currentY + "px, 0)";
+          }
+        }
+        console.log('✅ RaiseBugDialog drag initialized');
+      }
+      setupDraggable();
+    })();
+
+    // Panel Log Resizer - Initialize when DOM is ready
+    (function initPanelLogResizer() {
         let isResizing = false;
         let startX = 0;
         let startWidth = 0;
@@ -1600,7 +1759,12 @@ export const QUEUE_BROWSER_HTML = `
             isGeminiDetecting = evt.gemini_detecting;
             updateDetectCaptureButtonsState();
           }
-          handlePanelSelected(evt);
+          // Branch based on role: VALIDATE role with ACTION uses handlePanelSelectedForValidate
+          if (currentRole === 'VALIDATE' && evt.item_category === 'ACTION') {
+            handlePanelSelectedForValidate(evt);
+          } else {
+            handlePanelSelected(evt);
+          }
           return;
         }
 
@@ -1835,6 +1999,26 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'hide_panel_completion_dialog') {
           hidePanelCompletionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_role_selection') {
+          showRoleSelectionDialog(evt.accountInfo || null);
+          return;
+        }
+
+        if (evt.type === 'hide_role_selection') {
+          hideRoleSelectionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_loading') {
+          showLoadingModal(evt.message || 'Đang tải dữ liệu từ database...');
+          return;
+        }
+
+        if (evt.type === 'hide_loading') {
+          hideLoadingModal();
           return;
         }
       };
@@ -2274,12 +2458,17 @@ export const QUEUE_BROWSER_HTML = `
       let graphPanelTreeData = [];
       let graphExpandedPanels = new Set();
 
-      const openGraphView = async () => {
+      const openGraphView = async (actionIdToOpen = null) => {
         if (!graphViewModal) {
           console.error('graphViewModal not found');
           return;
         }
         graphViewModal.style.display = 'flex';
+        
+        // Ensure RaiseBug button is visible if allowed
+        if (typeof updateButtonsVisibility === 'function') {
+            updateButtonsVisibility(currentRole);
+        }
         
         // Restore panel log visibility state
         const graphPanelLogTreeContainer = document.getElementById('graphPanelLogTreeContainer');
@@ -2308,6 +2497,113 @@ export const QUEUE_BROWSER_HTML = `
         if (window.viewGraph) {
           await window.viewGraph();
         }
+        
+        // Auto-select the specified action after graph loads
+        if (actionIdToOpen) {
+          // Use polling to wait for tree to be rendered
+          const trySelectAction = async (maxAttempts = 20, attempt = 0) => {
+            const treeContainer = document.getElementById('graphPanelLogTree');
+            if (!treeContainer) {
+              if (attempt < maxAttempts) {
+                setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+              } else {
+                console.warn('Graph panel log tree container not found after', maxAttempts, 'attempts');
+              }
+              return;
+            }
+            
+            // Check if tree has nodes
+            const hasNodes = treeContainer.querySelectorAll('.graph-tree-node').length > 0;
+            if (!hasNodes && attempt < maxAttempts) {
+              setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+              return;
+            }
+            
+            // Find the node with matching panel_id using data-panel-id attribute
+            const targetNode = treeContainer.querySelector(\`[data-panel-id="\${actionIdToOpen}"]\`);
+            if (!targetNode) {
+              if (attempt < maxAttempts) {
+                setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+              } else {
+                console.warn('Panel/Action node not found in graph tree after', maxAttempts, 'attempts:', actionIdToOpen);
+              }
+              return;
+            }
+            
+            // Found the node, now expand parents and select
+            // Expand all parent panels first to make sure the panel/action is visible
+            const expandParentPanels = async (node) => {
+              // Find all parent nodeDivs that contain this node
+              const parentNodeDivs = [];
+              let current = node;
+              
+              // Traverse up to find all parent nodeDivs
+              while (current && current !== treeContainer) {
+                // Check if current is a nodeDiv (graph-tree-node)
+                if (current.classList && current.classList.contains('graph-tree-node')) {
+                  parentNodeDivs.push(current);
+                }
+                current = current.parentElement;
+              }
+              
+              // Expand from top to bottom (reverse order - expand root first, then children)
+              // Skip the target node itself, only expand its parents
+              for (let i = parentNodeDivs.length - 1; i >= 0; i--) {
+                const nodeDiv = parentNodeDivs[i];
+                // Skip if this is the target node itself (only expand parents, not the target)
+                if (nodeDiv === targetNode) {
+                  continue;
+                }
+                // Find the childrenDiv for this node
+                const childrenDiv = nodeDiv.querySelector('.graph-tree-children');
+                if (childrenDiv && !childrenDiv.classList.contains('expanded')) {
+                  // Find the contentDiv which contains the expand icon
+                  const contentDiv = nodeDiv.querySelector('.graph-tree-node-content');
+                  if (contentDiv) {
+                    // Find the expand icon
+                    const expandIcon = contentDiv.querySelector('.graph-tree-expand');
+                    if (expandIcon && expandIcon.style.visibility !== 'hidden' && expandIcon.textContent.trim() !== '') {
+                      // Click the expand icon
+                      expandIcon.click();
+                      // Wait for expansion animation
+                      await new Promise(resolve => setTimeout(resolve, 300));
+                    }
+                  }
+                }
+              }
+            };
+            
+            // Expand all parent panels (this will work for both panels and actions)
+            await expandParentPanels(targetNode);
+            
+            // Find the contentDiv for selection
+            const contentDiv = targetNode.querySelector('.graph-tree-node-content') || targetNode;
+            if (contentDiv) {
+              // Remove selected class from all nodes first
+              treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
+                el.classList.remove('selected');
+              });
+              
+              // Add selected class to target node
+              contentDiv.classList.add('selected');
+              
+              // Scroll into view
+              contentDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              
+              // Click the node to trigger graph selection (works for both panel and action)
+              setTimeout(() => {
+                contentDiv.click();
+              }, 300);
+            } else {
+              console.warn('ContentDiv not found for target node:', actionIdToOpen);
+            }
+          };
+          
+          // Start trying to select after a short delay
+          setTimeout(() => {
+            trySelectAction();
+          }, 500);
+        }
       };
 
       const closeGraphView = () => {
@@ -2320,19 +2616,168 @@ export const QUEUE_BROWSER_HTML = `
       };
 
       if (viewGraphBtn) {
-        viewGraphBtn.addEventListener('click', openGraphView);
+        viewGraphBtn.addEventListener('click', () => {
+          // Try to get selected panel/action from main panel log tree
+          let selectedItemId = null;
+          
+          // First, try to get from selectedPanelId variable
+          if (selectedPanelId) {
+            selectedItemId = selectedPanelId;
+          } else {
+            // Try to find selected node in any panel log tree (main panel log)
+            // Look for any node with class 'selected' that has data-panel-id
+            const selectedNode = document.querySelector('.graph-tree-node-content.selected');
+            if (selectedNode) {
+              selectedItemId = selectedNode.getAttribute('data-panel-id');
+            }
+          }
+          
+          // Fallback to currentValidateActionId if available
+          if (!selectedItemId && currentValidateActionId) {
+            selectedItemId = currentValidateActionId;
+          }
+          
+          openGraphView(selectedItemId);
+        });
       }
 
       // Validate Step handler
       const validateBtn = document.getElementById('validateBtn');
-      const openValidateView = async () => {
+      const openValidateView = async (actionIdToOpen = null) => {
+        // Ensure RaiseBug button is visible if allowed
+        if (typeof updateButtonsVisibility === 'function') {
+            updateButtonsVisibility(currentRole);
+        }
+        
         if (window.validateStep) {
           await window.validateStep();
+          
+          // Auto-open the specified action after modal opens
+          if (actionIdToOpen) {
+            // Use polling to wait for tree to be rendered
+            const trySelectAction = async (maxAttempts = 20, attempt = 0) => {
+              const treeContainer = document.getElementById('videoValidationPanelLogTree');
+              if (!treeContainer) {
+                if (attempt < maxAttempts) {
+                  setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                } else {
+                  console.warn('Video validation tree container not found after', maxAttempts, 'attempts');
+                }
+                return;
+              }
+              
+              // Check if tree has nodes
+              const hasNodes = treeContainer.querySelectorAll('.graph-tree-node').length > 0;
+              if (!hasNodes && attempt < maxAttempts) {
+                setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                return;
+              }
+              
+              // Find the node with matching panel_id using data-panel-id attribute
+              const targetNode = treeContainer.querySelector(\`[data-panel-id="\${actionIdToOpen}"]\`);
+              if (!targetNode) {
+                if (attempt < maxAttempts) {
+                  setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                } else {
+                  console.warn('Action node not found in tree after', maxAttempts, 'attempts:', actionIdToOpen);
+                }
+                return;
+              }
+              
+              // Found the node, now expand parents and select
+              // Expand all parent panels first to make sure the action is visible
+              const expandParentPanels = async (node) => {
+                // Find all parent nodeDivs that contain this node
+                const parentNodeDivs = [];
+                let current = node;
+                
+                // Traverse up to find all parent nodeDivs
+                while (current && current !== treeContainer) {
+                  // Check if current is a nodeDiv (graph-tree-node)
+                  if (current.classList && current.classList.contains('graph-tree-node')) {
+                    parentNodeDivs.push(current);
+                  }
+                  current = current.parentElement;
+                }
+                
+                // Expand from top to bottom (reverse order - expand root first, then children)
+                for (let i = parentNodeDivs.length - 1; i >= 0; i--) {
+                  const nodeDiv = parentNodeDivs[i];
+                  // Find the childrenDiv for this node
+                  const childrenDiv = nodeDiv.querySelector('.graph-tree-children');
+                  if (childrenDiv && !childrenDiv.classList.contains('expanded')) {
+                    // Find the contentDiv which contains the expand icon
+                    const contentDiv = nodeDiv.querySelector('.graph-tree-node-content');
+                    if (contentDiv) {
+                      // Find the expand icon
+                      const expandIcon = contentDiv.querySelector('.graph-tree-expand');
+                      if (expandIcon && expandIcon.style.visibility !== 'hidden' && expandIcon.textContent.trim() !== '') {
+                        // Click the expand icon
+                        expandIcon.click();
+                        // Wait for expansion animation
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                      }
+                    }
+                  }
+                }
+              };
+              
+              // Expand all parent panels
+              await expandParentPanels(targetNode);
+              
+              // Find the contentDiv for selection
+              const contentDiv = targetNode.querySelector('.graph-tree-node-content') || targetNode;
+              if (contentDiv) {
+                // Remove selected class from all nodes first
+                treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
+                  el.classList.remove('selected');
+                });
+                
+                // Add selected class to target node
+                contentDiv.classList.add('selected');
+                
+                // Scroll into view
+                contentDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Click the node to trigger video loading
+                setTimeout(() => {
+                  contentDiv.click();
+                }, 300);
+              }
+            };
+            
+            // Start trying to select after a short delay
+            setTimeout(() => {
+              trySelectAction();
+            }, 300);
+          }
         }
       };
 
       if (validateBtn) {
-        validateBtn.addEventListener('click', openValidateView);
+        validateBtn.addEventListener('click', () => {
+          // Try to get selected panel/action from main panel log tree
+          let selectedItemId = null;
+          
+          // First, try to get from selectedPanelId variable
+          if (selectedPanelId) {
+            selectedItemId = selectedPanelId;
+          } else {
+            // Try to find selected node in any panel log tree (main panel log)
+            // Look for any node with class 'selected' that has data-panel-id
+            const selectedNode = document.querySelector('.graph-tree-node-content.selected');
+            if (selectedNode) {
+              selectedItemId = selectedNode.getAttribute('data-panel-id');
+            }
+          }
+          
+          // Fallback to currentValidateActionId if available
+          if (!selectedItemId && currentValidateActionId) {
+            selectedItemId = currentValidateActionId;
+          }
+          
+          openValidateView(selectedItemId);
+        });
       }
 
       if (closeGraphViewBtn) {
@@ -2392,6 +2837,63 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
 
+      // Graph View RaiseBug button
+      const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
+      if (graphRaiseBugBtn) {
+        graphRaiseBugBtn.addEventListener('click', async () => {
+          // Get selected node or edge from graph network
+          let selectedId = null;
+          
+          if (window.graphNetwork) {
+             const selectedNodes = window.graphNetwork.getSelectedNodes();
+             if (selectedNodes && selectedNodes.length > 0) {
+                selectedId = selectedNodes[0];
+             } else {
+                 const selectedEdges = window.graphNetwork.getSelectedEdges();
+                 if (selectedEdges && selectedEdges.length > 0) {
+                     const edgeId = selectedEdges[0];
+                     // Try to get edge data to find actionId
+                     if (window.graphNetwork.body && window.graphNetwork.body.data && window.graphNetwork.body.data.edges) {
+                         const edge = window.graphNetwork.body.data.edges.get(edgeId);
+                         if (edge && edge.data && edge.data.actionId) {
+                             selectedId = edge.data.actionId;
+                         } else {
+                             // Fallback to edge ID if no data (might be the action ID itself)
+                             selectedId = edgeId;
+                         }
+                     } else {
+                         selectedId = edgeId;
+                     }
+                 }
+             }
+          }
+
+          // If not selected in graph, check in panel log tree
+          if (!selectedId) {
+            const selectedNode = document.querySelector('#graphPanelLogTree .graph-tree-node-content.selected');
+            if (selectedNode) {
+              selectedId = selectedNode.getAttribute('data-panel-id');
+            }
+          }
+          
+          if (!selectedId) {
+            alert('Please select a Panel/Action in the graph or the Panel Log first');
+            return;
+          }
+          
+          let currentBugInfo = null;
+          let item = null;
+          if (window.getActionItem) {
+              item = await window.getActionItem(selectedId);
+              if (item) {
+                  currentBugInfo = item.bug_info || null;
+              }
+          }
+          
+          showRaiseBugDialog(selectedId, currentBugInfo, item);
+        });
+      }
+
       // Video Validation Modal handlers
       const videoValidationModal = document.getElementById('videoValidationModal');
       const closeVideoValidationBtn = document.getElementById('closeVideoValidationBtn');
@@ -2412,6 +2914,7 @@ export const QUEUE_BROWSER_HTML = `
       let videoValidationTrackingVideoUrl = null;
       let videoValidationRawVideoUrl = null;
       let videoValidationCurrentPlaybackSpeed = 0.5;
+      let currentValidateActionId = null; // Store the action ID currently being viewed in validate mode
 
       const closeVideoValidationView = () => {
         if (videoValidationModal) {
@@ -2552,15 +3055,22 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       if (videoValidationRaiseBugBtn) {
-        videoValidationRaiseBugBtn.addEventListener('click', () => {
+        videoValidationRaiseBugBtn.addEventListener('click', async () => {
           if (!videoValidationCurrentActionId) {
             alert('Please select an action first');
             return;
           }
-          const note = prompt('Enter bug note (optional):');
-          if (note !== null && window.raiseBug) {
-            window.raiseBug(videoValidationCurrentActionId, note || '');
+          
+          let currentBugInfo = null;
+          let item = null;
+          if (window.getActionItem) {
+              item = await window.getActionItem(videoValidationCurrentActionId);
+              if (item) {
+                  currentBugInfo = item.bug_info || null;
+              }
           }
+          
+          showRaiseBugDialog(videoValidationCurrentActionId, currentBugInfo, item);
         });
       }
 
@@ -2832,6 +3342,7 @@ export const QUEUE_BROWSER_HTML = `
       function createGraphTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
+        nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
@@ -2911,6 +3422,33 @@ export const QUEUE_BROWSER_HTML = `
           badge.className = 'graph-tree-incomplete-badge';
           badge.textContent = '[Chưa hoàn tất]';
           label.appendChild(badge);
+        }
+        
+        // Add bug icon for actions with bug_flag (after name)
+        // Check both direct property and metadata property for compatibility
+        if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
+            const bugIcon = document.createElement('span');
+            bugIcon.style.marginLeft = '4px';
+            bugIcon.style.display = 'inline-block';
+            bugIcon.style.verticalAlign = 'middle';
+            bugIcon.style.width = '16px';
+            bugIcon.style.height = '16px';
+            bugIcon.style.fontSize = '14px';
+            bugIcon.style.cursor = 'help';
+            bugIcon.textContent = '🐞';
+            
+            // Get bug info from direct property or metadata
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, bugNote, bugInfo);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
+            label.appendChild(bugIcon);
         }
         
         contentDiv.appendChild(label);
@@ -3170,6 +3708,7 @@ export const QUEUE_BROWSER_HTML = `
       function createVideoValidationTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
+        nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
@@ -3252,31 +3791,30 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        if (node.item_category === 'ACTION') {
-          // Debug: log to check bug_flag
-          if (node.bug_flag || node.bug_flag === true) {
+        // Check both direct property and metadata property for compatibility
+        if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
             bugIcon.style.display = 'inline-block';
             bugIcon.style.verticalAlign = 'middle';
-            bugIcon.style.width = '14px';
-            bugIcon.style.height = '14px';
-            bugIcon.style.color = '#dc3545';
-            bugIcon.title = node.bug_note || 'Bug reported';
-            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
-              <ellipse cx="32" cy="36" rx="14" ry="18"/>
-              <circle cx="32" cy="20" r="8"/>
-              <line x1="28" y1="12" x2="22" y2="4"/>
-              <line x1="36" y1="12" x2="42" y2="4"/>
-              <line x1="18" y1="42" x2="8" y2="48"/>
-              <line x1="18" y1="36" x2="8" y2="36"/>
-              <line x1="18" y1="30" x2="8" y2="24"/>
-              <line x1="46" y1="42" x2="56" y2="48"/>
-              <line x1="46" y1="36" x2="56" y2="36"/>
-              <line x1="46" y1="30" x2="56" y2="24"/>
-            </svg>\`;
+            bugIcon.style.width = '16px';
+            bugIcon.style.height = '16px';
+            bugIcon.style.fontSize = '14px';
+            bugIcon.style.cursor = 'help';
+            bugIcon.textContent = '🐞';
+            
+            // Get bug info from direct property or metadata
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, bugNote, bugInfo);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
             label.appendChild(bugIcon);
-          }
         }
         
         contentDiv.appendChild(label);
@@ -3835,6 +4373,385 @@ Bạn có chắc chắn muốn rollback?\`;
         });
       }
 
+      // Role Selection Modal handlers
+      const roleSelectionModal = document.getElementById('roleSelectionModal');
+      const roleDrawBtn = document.getElementById('roleDrawBtn');
+      const roleValidateBtn = document.getElementById('roleValidateBtn');
+      const recorderNameInput = document.getElementById('recorderNameInput');
+      const nameError = document.getElementById('nameError');
+      const nameInputSection = document.getElementById('nameInputSection');
+      const currentNameDisplay = document.getElementById('currentNameDisplay');
+      const currentNameText = document.getElementById('currentNameText');
+      const changeNameBtn = document.getElementById('changeNameBtn');
+      const deviceIdText = document.getElementById('deviceIdText');
+      const copyDeviceIdBtn = document.getElementById('copyDeviceIdBtn');
+      const currentNameViewMode = document.getElementById('currentNameViewMode');
+      const currentNameEditMode = document.getElementById('currentNameEditMode');
+      const editNameInput = document.getElementById('editNameInput');
+
+      let currentAccountInfo = null;
+      let isEditingName = false;
+      let currentDeviceId = '';
+      let currentRole = 'DRAW'; // Track current role for panel_selected handler
+
+      // Function to update button visibility based on role
+      const updateButtonsVisibility = (role) => {
+        const controlsDiv = document.getElementById('controls');
+        
+        // Buttons in Graph View and Video Validation View
+        const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
+        const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
+        
+        if (role === 'VALIDATE') {
+          // Hide all buttons except Quit when role is VALIDATE
+          if (controlsDiv) {
+            const allButtons = controlsDiv.querySelectorAll('button');
+            allButtons.forEach(btn => {
+              if (btn.id !== 'quitBtn') {
+                btn.style.display = 'none';
+              } else {
+                btn.style.display = 'inline-block';
+              }
+            });
+          }
+          
+          // Ensure RaiseBug buttons are visible for VALIDATE role
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'flex';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'flex';
+        } else {
+          // For other roles, use the original logic
+          const importCookiesBtn = document.getElementById('importCookiesBtn');
+          const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
+          const saveBtn = document.getElementById('saveBtn');
+          const checkpointBtn = document.getElementById('checkpointBtn');
+          const viewGraphBtn = document.getElementById('viewGraphBtn');
+          const validateBtn = document.getElementById('validateBtn');
+          const quitBtn = document.getElementById('quitBtn');
+          
+          if (role === 'DRAW') {
+            // Show all buttons for DRAW role
+            if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
+            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
+            if (saveBtn) saveBtn.style.display = 'inline-block';
+            if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+            if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
+            if (validateBtn) validateBtn.style.display = 'inline-block';
+            if (quitBtn) quitBtn.style.display = 'inline-block';
+            
+            // Ensure RaiseBug buttons are HIDDEN for DRAW role
+            if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+            if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
+          } else {
+            // Hide buttons for non-DRAW roles (but keep Quit visible)
+            if (importCookiesBtn) importCookiesBtn.style.display = 'none';
+            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
+            if (saveBtn) saveBtn.style.display = 'none';
+            if (checkpointBtn) checkpointBtn.style.display = 'none';
+            if (viewGraphBtn) viewGraphBtn.style.display = 'none';
+            if (validateBtn) validateBtn.style.display = 'none';
+            if (quitBtn) quitBtn.style.display = 'inline-block';
+          }
+        }
+      };
+
+      const showRoleSelectionDialog = async (accountInfo) => {
+        if (!roleSelectionModal) {
+          console.error('roleSelectionModal not found');
+          return;
+        }
+        console.log('Showing role selection dialog with account info:', accountInfo);
+        
+        currentAccountInfo = accountInfo;
+        
+        // Display full device ID
+        if (deviceIdText && accountInfo && accountInfo.device_id) {
+          currentDeviceId = accountInfo.device_id;
+          deviceIdText.textContent = 'Device ID: ' + accountInfo.device_id;
+        }
+        
+        // Get default name from device_info if name is empty
+        let displayName = accountInfo?.name;
+        
+        if (!displayName && accountInfo?.device_info?.hostname) {
+          displayName = accountInfo.device_info.hostname;
+        }
+        
+        // Check if user already has a name
+        if (displayName && !isEditingName) {
+          // Show current name display, hide input section
+          if (nameInputSection) nameInputSection.style.display = 'none';
+          if (currentNameDisplay) {
+            currentNameDisplay.style.display = 'block';
+            if (currentNameText) currentNameText.textContent = displayName;
+            // Reset edit mode UI
+            if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+            if (changeNameBtn) {
+              changeNameBtn.innerHTML = '✏️ Đổi tên';
+            }
+          }
+        } else {
+          // Show input section, hide current name display
+          if (nameInputSection) nameInputSection.style.display = 'block';
+          if (currentNameDisplay) currentNameDisplay.style.display = 'none';
+          if (recorderNameInput) {
+            recorderNameInput.value = displayName || '';
+          }
+        }
+        
+        // Update button visibility if role already exists
+        if (accountInfo && accountInfo.role) {
+          currentRole = accountInfo.role;
+          updateButtonsVisibility(accountInfo.role);
+        }
+        
+        roleSelectionModal.style.display = 'flex';
+      };
+
+      const hideRoleSelectionDialog = () => {
+        if (roleSelectionModal) {
+          console.log('Hiding role selection dialog');
+          roleSelectionModal.style.display = 'none';
+          isEditingName = false;
+          
+          // Reset edit mode UI
+          if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+          if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+          if (changeNameBtn) {
+            changeNameBtn.innerHTML = '✏️ Đổi tên';
+            changeNameBtn.style.background = '#fff';
+            changeNameBtn.style.color = '';
+            changeNameBtn.style.borderColor = '#ddd';
+          }
+        }
+      };
+
+      // Change name button handler - toggles between edit mode and view mode
+      if (changeNameBtn) {
+        changeNameBtn.addEventListener('click', async () => {
+          if (!isEditingName) {
+            // Switch to edit mode
+            isEditingName = true;
+            if (currentNameViewMode) currentNameViewMode.style.display = 'none';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'block';
+            changeNameBtn.innerHTML = '✓ Hoàn thành';
+            changeNameBtn.style.background = '#28a745';
+            changeNameBtn.style.color = '#fff';
+            changeNameBtn.style.borderColor = '#28a745';
+            
+            // Get current display name
+            let currentName = currentAccountInfo?.name;
+            if (!currentName && currentAccountInfo?.device_info?.hostname) {
+              currentName = currentAccountInfo.device_info.hostname;
+            }
+            if (editNameInput) {
+              editNameInput.value = currentName || '';
+              editNameInput.focus();
+              editNameInput.select();
+            }
+          } else {
+            // Complete editing - save the new name
+            const newName = editNameInput ? editNameInput.value.trim() : '';
+            if (!newName) {
+              if (editNameInput) {
+                editNameInput.style.borderColor = '#dc3545';
+                editNameInput.focus();
+              }
+              return;
+            }
+            
+            // Update the display name
+            if (currentNameText) currentNameText.textContent = newName;
+            
+            // Switch back to view mode
+            isEditingName = false;
+            if (currentNameViewMode) currentNameViewMode.style.display = 'block';
+            if (currentNameEditMode) currentNameEditMode.style.display = 'none';
+            changeNameBtn.innerHTML = '✏️ Đổi tên';
+            changeNameBtn.style.background = '#fff';
+            changeNameBtn.style.color = '';
+            changeNameBtn.style.borderColor = '#ddd';
+            
+            // Update currentAccountInfo with new name
+            if (currentAccountInfo) {
+              currentAccountInfo.name = newName;
+            }
+          }
+        });
+      }
+      
+      // Copy device ID button handler
+      if (copyDeviceIdBtn) {
+        copyDeviceIdBtn.addEventListener('click', async () => {
+          if (currentDeviceId) {
+            try {
+              // Try modern clipboard API first
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(currentDeviceId);
+              } else {
+                // Fallback for environments where clipboard API is not available
+                const textArea = document.createElement('textarea');
+                textArea.value = currentDeviceId;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                textArea.style.top = '-9999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+              }
+              
+              const originalText = copyDeviceIdBtn.innerHTML;
+              copyDeviceIdBtn.innerHTML = '✓ Copied!';
+              copyDeviceIdBtn.style.background = '#28a745';
+              copyDeviceIdBtn.style.color = '#fff';
+              copyDeviceIdBtn.style.borderColor = '#28a745';
+              setTimeout(() => {
+                copyDeviceIdBtn.innerHTML = originalText;
+                copyDeviceIdBtn.style.background = '#fff';
+                copyDeviceIdBtn.style.color = '';
+                copyDeviceIdBtn.style.borderColor = '#ddd';
+              }, 1500);
+            } catch (err) {
+              console.error('Failed to copy device ID:', err);
+              // Show error feedback
+              copyDeviceIdBtn.innerHTML = '❌ Failed';
+              setTimeout(() => {
+                copyDeviceIdBtn.innerHTML = '📋 Copy';
+              }, 1500);
+            }
+          }
+        });
+      }
+
+      // Name input validation
+      if (recorderNameInput) {
+        recorderNameInput.addEventListener('input', () => {
+          if (nameError) nameError.style.display = 'none';
+          recorderNameInput.style.borderColor = '#ddd';
+        });
+        
+        recorderNameInput.addEventListener('focus', () => {
+          recorderNameInput.style.borderColor = '#007bff';
+        });
+        
+        recorderNameInput.addEventListener('blur', () => {
+          recorderNameInput.style.borderColor = '#ddd';
+        });
+      }
+
+      const validateAndSaveRole = async (role) => {
+        // Get name from input or existing account
+        let name = '';
+        
+        if (nameInputSection && nameInputSection.style.display !== 'none') {
+          // User is entering/editing name via initial input section
+          name = recorderNameInput ? recorderNameInput.value.trim() : '';
+          
+          if (!name) {
+            // Show error
+            if (nameError) nameError.style.display = 'block';
+            if (recorderNameInput) {
+              recorderNameInput.style.borderColor = '#dc3545';
+              recorderNameInput.focus();
+            }
+            return false;
+          }
+        } else if (currentNameDisplay && currentNameDisplay.style.display !== 'none') {
+          // Use name from currentNameDisplay (either existing or edited)
+          if (isEditingName && editNameInput) {
+            // Currently editing, get from edit input
+            name = editNameInput.value.trim();
+            if (!name) {
+              if (editNameInput) {
+                editNameInput.style.borderColor = '#dc3545';
+                editNameInput.focus();
+              }
+              return false;
+            }
+          } else if (currentAccountInfo && currentAccountInfo.name) {
+            // Use existing/updated name from account info
+            name = currentAccountInfo.name;
+          } else if (currentAccountInfo?.device_info?.hostname) {
+            // Fall back to hostname
+            name = currentAccountInfo.device_info.hostname;
+          }
+        } else if (currentAccountInfo && currentAccountInfo.name) {
+          // Use existing name
+          name = currentAccountInfo.name;
+        } else if (currentAccountInfo?.device_info?.hostname) {
+          // Fall back to hostname as default
+          name = currentAccountInfo.device_info.hostname;
+        }
+        
+        if (!name) {
+          // No name available
+          if (nameError) nameError.style.display = 'block';
+          if (nameInputSection) nameInputSection.style.display = 'block';
+          if (currentNameDisplay) currentNameDisplay.style.display = 'none';
+          if (recorderNameInput) {
+            recorderNameInput.focus();
+          }
+          return false;
+        }
+        
+        console.log('User selected ' + role + ' role with name: ' + name);
+        hideRoleSelectionDialog();
+        
+        if (window.saveAccountInfo) {
+          await window.saveAccountInfo(role, name);
+        }
+        
+        // Update button visibility based on role
+        updateButtonsVisibility(role);
+        
+        // Update currentRole for panel_selected handler
+        currentRole = role;
+        
+        return true;
+      };
+
+      if (roleDrawBtn) {
+        roleDrawBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('DRAW');
+        });
+      }
+
+      if (roleValidateBtn) {
+        roleValidateBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('VALIDATE');
+        });
+      }
+
+      const roleAdminBtn = document.getElementById('roleAdminBtn');
+      if (roleAdminBtn) {
+        roleAdminBtn.addEventListener('click', async () => {
+          await validateAndSaveRole('ADMIN');
+        });
+      }
+
+      // Loading Modal handlers
+      const loadingModal = document.getElementById('loadingModal');
+      const loadingModalMessage = document.getElementById('loadingModalMessage');
+
+      const showLoadingModal = (message) => {
+        if (!loadingModal) {
+          console.error('loadingModal not found');
+          return;
+        }
+        if (loadingModalMessage && message) {
+          loadingModalMessage.textContent = message;
+        }
+        loadingModal.style.display = 'flex';
+      };
+
+      const hideLoadingModal = () => {
+        if (loadingModal) {
+          loadingModal.style.display = 'none';
+        }
+      };
+
       document.addEventListener("keydown", async (e) => {
         if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
           closeCheckpointModalFn();
@@ -4015,6 +4932,39 @@ Bạn có chắc chắn muốn rollback?\`;
           badge.className = 'tree-incomplete-badge';
           badge.textContent = '[Chưa hoàn tất]';
           label.appendChild(badge);
+        }
+
+        // Check for bug flag
+        if (node.bug_flag) {
+            const bugIcon = document.createElement('span');
+            bugIcon.style.marginLeft = '6px';
+            bugIcon.style.cursor = 'help';
+            bugIcon.style.display = 'inline-block';
+            bugIcon.style.verticalAlign = 'middle';
+            bugIcon.style.width = '14px';
+            bugIcon.style.height = '14px';
+            bugIcon.style.color = '#dc3545';
+            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
+              <ellipse cx="32" cy="36" rx="14" ry="18"/>
+              <circle cx="32" cy="20" r="8"/>
+              <line x1="28" y1="12" x2="22" y2="4"/>
+              <line x1="36" y1="12" x2="42" y2="4"/>
+              <line x1="18" y1="42" x2="8" y2="48"/>
+              <line x1="18" y1="36" x2="8" y2="36"/>
+              <line x1="18" y1="30" x2="8" y2="24"/>
+              <line x1="46" y1="42" x2="56" y2="48"/>
+              <line x1="46" y1="36" x2="56" y2="36"/>
+              <line x1="46" y1="30" x2="56" y2="24"/>
+            </svg>\`;
+            
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, node.bug_note, node.bug_info);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
+            label.appendChild(bugIcon);
         }
         
         contentDiv.appendChild(label);
@@ -4280,6 +5230,304 @@ Bạn có chắc chắn muốn rollback?\`;
         setTimeout(() => {
           toast.remove();
         }, 1500);
+      }
+
+      // RaiseBug Dialog Handler
+      async function showRaiseBugDialog(actionId, currentBugInfo = null, actionItem = null) {
+          // Fetch action item if not provided
+          if (!actionItem && window.getActionItem) {
+              try {
+                  actionItem = await window.getActionItem(actionId);
+              } catch (e) {
+                  console.error('Failed to fetch action item for bug dialog:', e);
+              }
+          } else if (actionItem && (!actionItem.purpose && !actionItem.item_purpose) && window.getActionItem) {
+              // If we have an item but it seems incomplete (e.g. from UI event), try to fetch full data
+              try {
+                  const fullItem = await window.getActionItem(actionId);
+                  if (fullItem) {
+                      // Merge full item into actionItem
+                      actionItem = { ...actionItem, ...fullItem };
+                  }
+              } catch (e) {
+                  console.warn('Failed to fetch full action item:', e);
+              }
+          }
+
+          // If currentBugInfo is null, try to get it from actionItem
+          if (!currentBugInfo && actionItem && actionItem.bug_info) {
+              currentBugInfo = actionItem.bug_info;
+          }
+
+          const modal = document.getElementById('raiseBugModal');
+          const content = document.getElementById('raiseBugContent');
+          const closeBtn = document.getElementById('closeRaiseBugModalBtn');
+          const cancelBtn = document.getElementById('cancelRaiseBugBtn');
+          const confirmBtn = document.getElementById('confirmRaiseBugBtn');
+          
+          if (!modal || !content) return;
+          
+          modal.style.display = 'flex';
+          
+          // Reset button state
+          if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = 'Save';
+              confirmBtn.style.opacity = '1';
+              confirmBtn.style.cursor = 'pointer';
+          }
+          
+          // Helper to check if a specific bug type is checked
+          const isChecked = (type) => {
+              if (!currentBugInfo || !currentBugInfo.details) return false;
+              // Check if bug exists and is NOT fixed (active)
+              return currentBugInfo.details.some(d => d.bug_type === type && d.bug_fixed !== true);
+          };
+
+          // Helper to get value from action item
+          const getActionValue = (field) => {
+              if (!actionItem) return '';
+              const val = (prop) => actionItem[prop] !== undefined ? actionItem[prop] : '';
+              
+              switch(field) {
+                  case 'action.name': return val('item_name') || val('name');
+                  case 'action.type': return val('item_type') || val('type');
+                  case 'action.verb': return val('item_verb') || val('verb');
+                  case 'action.content': return val('item_content') || val('content');
+                  case 'action.purpose': return val('item_purpose') || val('purpose');
+                  case 'action.image': return val('image_url') || val('item_image_url') || ''; 
+                  
+                  case 'panel_after.name': return val('panel_after_name');
+                  case 'panel_after.type': return val('panel_after_type');
+                  case 'panel_after.verb': return val('panel_after_verb');
+                  case 'panel_after.image': return val('panel_after_image');
+                  default: return '';
+              }
+          };
+
+          const formatLabel = (label, value) => {
+              if (value === undefined || value === null || value === '') {
+                   return \`<span>\${label}: <span style="font-weight:normal; color:#999;">N/A</span></span>\`;
+              }
+              // Check if value is an image URL
+              if (typeof value === 'string' && value.match(/^https?:.*\.(jpg|jpeg|png|gif|webp|svg)/i)) {
+                   return \`<span>\${label}: <img src="\${value}" style="max-height: 40px; vertical-align: middle; margin-left: 5px; border: 1px solid #ddd; border-radius: 4px;" alt="Image" /></span>\`;
+              }
+              const displayValue = String(value).length > 100 ? String(value).substring(0, 100) + '...' : value;
+              return \`<span>\${label}: <span style="font-weight:normal; color:#555;">\${displayValue}</span></span>\`;
+          };
+          
+          content.innerHTML = \`
+              <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5; display: flex; align-items: start; gap: 8px;">
+                  <span style="font-size: 16px;">📋</span>
+                  <span><strong>Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>Save</strong> để báo lỗi.</span>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
+                          </label>
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                          \${getActionValue('action.image') ? 
+                            \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                          }
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                              <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> Image Incorrect
+                          </label>
+                      </div>
+                  </div>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
+                          </label>
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                              <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
+                          </label>
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                          \${getActionValue('panel_after.image') ? 
+                            \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                          }
+                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                              <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image Incorrect
+                          </label>
+                      </div>
+                  </div>
+              </div>
+              
+              <div>
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
+                  <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
+              </div>
+          \`;
+          
+          const closeHandler = () => {
+              modal.style.display = 'none';
+              closeBtn.removeEventListener('click', closeHandler);
+              cancelBtn.removeEventListener('click', closeHandler);
+              confirmBtn.replaceWith(confirmBtn.cloneNode(true)); // remove all listeners
+          };
+          
+          closeBtn.addEventListener('click', closeHandler);
+          cancelBtn.addEventListener('click', closeHandler);
+          
+          confirmBtn.onclick = async () => {
+              const note = document.getElementById('raiseBugNote').value;
+              const checkboxes = content.querySelectorAll('input[name="bug_type"]:checked');
+              
+              const bugNameMap = {
+                  "action.name": "Action Name",
+                  "action.image": "Action Image or Position",
+                  "action.type": "Action Type",
+                  "action.verb": "Action Verb",
+                  "action.content": "Action Content",
+                  "action.purpose": "Action Purpose",
+                  "panel_after.name": "Panel After Name",
+                  "panel_after.image": "Panel After Image or Position",
+                  "panel_after.type": "Panel After Type",
+                  "panel_after.verb": "Panel After Verb"
+              };
+              
+              // Get active bugs from checkboxes
+              const activeBugs = Array.from(checkboxes).map(cb => ({
+                  bug_type: cb.value,
+                  bug_name: bugNameMap[cb.value] || cb.value,
+                  bug_fixed: false
+              }));
+              
+              // Preserve existing fixed bugs
+              const existingFixedBugs = (currentBugInfo && currentBugInfo.details) 
+                  ? currentBugInfo.details.filter(d => d.bug_fixed === true) 
+                  : [];
+              
+              // Filter out fixed bugs that are now active (checked)
+              const activeTypes = new Set(activeBugs.map(b => b.bug_type));
+              const keptFixedBugs = existingFixedBugs.filter(d => !activeTypes.has(d.bug_type));
+              
+              const details = [...activeBugs, ...keptFixedBugs];
+              
+              const bugInfo = {
+                  note: note,
+                  details: details
+              };
+              
+              if (window.raiseBug) {
+                  // Disable button and show loading state
+                  confirmBtn.disabled = true;
+                  const originalText = confirmBtn.textContent;
+                  confirmBtn.textContent = 'Saving...';
+                  confirmBtn.style.opacity = '0.7';
+                  confirmBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      await window.raiseBug(actionId, bugInfo);
+
+                      if (typeof refreshPanelTree === 'function') {
+                          refreshPanelTree();
+                      }
+                      
+                      if (typeof showToast === 'function') {
+                          showToast('✅ Bug reported successfully');
+                      } else {
+                          alert('Bug reported successfully');
+                      }
+                      closeHandler();
+                  } catch (error) {
+                      console.error('Error raising bug:', error);
+                      alert('Failed to raise bug: ' + (error.message || error));
+                      // Re-enable button on error
+                      confirmBtn.disabled = false;
+                      confirmBtn.textContent = originalText;
+                      confirmBtn.style.opacity = '1';
+                      confirmBtn.style.cursor = 'pointer';
+                  }
+              } else {
+                  console.warn('window.raiseBug is not defined');
+                  alert('RaiseBug feature is not available (function missing).');
+              }
+          };
+      }
+
+      // Bug Tooltip
+      let bugTooltip = null;
+      function showBugTooltip(e, note, bugInfo) {
+          if (bugTooltip) bugTooltip.remove();
+          
+          bugTooltip = document.createElement('div');
+          bugTooltip.style.cssText = \`
+              position: fixed;
+              left: \${e.clientX + 10}px;
+              top: \${e.clientY + 10}px;
+              background: rgba(0, 0, 0, 0.9);
+              color: white;
+              padding: 10px;
+              border-radius: 6px;
+              font-size: 12px;
+              z-index: 10000001;
+              max-width: 300px;
+              pointer-events: none;
+              white-space: pre-wrap;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          \`;
+          
+          let content = '';
+          // If bugInfo is available, use it (new format)
+          if (bugInfo) {
+              if (bugInfo.note) {
+                  content += \`<strong>Note:</strong> \${bugInfo.note}\n\`;
+              }
+              if (bugInfo.details && Array.isArray(bugInfo.details) && bugInfo.details.length > 0) {
+                  content += \`\n<strong>Details:</strong>\n\`;
+                  bugInfo.details.forEach(d => {
+                      const statusText = d.bug_fixed ? '[đã sửa]' : '[cần sửa]';
+                      content += \`- \${d.bug_name} \${statusText}\n\`;
+                  });
+              }
+          } 
+          // Fallback to simple note (old format)
+          else if (note) {
+               content += \`<strong>Note:</strong> \${note}\`;
+          } else {
+               content += \`Bug detected\`;
+          }
+          
+          bugTooltip.innerHTML = content;
+          document.body.appendChild(bugTooltip);
+      }
+      
+      function hideBugTooltip() {
+          if (bugTooltip) {
+              bugTooltip.remove();
+              bugTooltip = null;
+          }
       }
       
       function addClickEventToView(evt) {
@@ -4843,6 +6091,86 @@ Bạn có chắc chắn muốn rollback?\`;
             actionDiv.appendChild(step3Div);
           }
           
+          // Step 3: Check purpose of action (only show when action has step_info)
+          if (evt.action_info && evt.action_info.step_info) {
+            const stepHeader = document.createElement('div');
+            stepHeader.style.cssText = 'font-weight: bold; margin-bottom: 5px; margin-top: 10px; color: #333;';
+            stepHeader.textContent = 'Bước 3: Kiểm tra action purpose';
+            actionDiv.appendChild(stepHeader);
+
+            const purposeDiv = document.createElement('div');
+            purposeDiv.className = 'event';
+            purposeDiv.style.position = 'relative';
+            purposeDiv.style.background = '#ffe4ec';
+            purposeDiv.style.border = '2px solid #ff69b4';
+            purposeDiv.setAttribute('data-event-type', 'purpose');
+            
+            const purposeTitle = document.createElement('div');
+            purposeTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333; text-align: center; background: #ffb6c1; padding: 8px; border-radius: 4px;';
+            const titleStepPurpose = evt.action_info.step_purpose || evt.action_info.purpose || '';
+            const titleActionPurpose = evt.action_info.action_purpose || '';
+            const titleReason = evt.action_info.reason || evt.action_info.step_reason || '';
+            purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + (titleActionPurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + (titleStepPurpose || 'N/A') + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
+            purposeDiv.appendChild(purposeTitle);
+            
+            // ReGen button container
+            const regenContainer = document.createElement('div');
+            regenContainer.style.cssText = 'text-align: center; margin-top: 12px;';
+            
+            const regenBtn = document.createElement('button');
+            regenBtn.textContent = 'ReGen';
+            regenBtn.style.cssText = 'padding: 8px 20px; background: #ff69b4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s ease;';
+            regenBtn.addEventListener('mouseenter', () => {
+              regenBtn.style.background = '#ff1493';
+            });
+            regenBtn.addEventListener('mouseleave', () => {
+              regenBtn.style.background = '#ff69b4';
+            });
+            regenBtn.addEventListener('click', async () => {
+              regenBtn.disabled = true;
+              regenBtn.textContent = 'Đang detect...';
+              regenBtn.style.opacity = '0.6';
+              
+              try {
+                if (window.detectActionPurpose) {
+                  const result = await window.detectActionPurpose(evt.panel_id);
+                  
+                  // Update purposeTitle directly with new values
+                  if (result) {
+                    const newStepPurpose = result.step_purpose || 'N/A';
+                    const newActionPurpose = result.action_purpose || 'N/A';
+                    const newReason = result.reason || 'N/A';
+                    purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + newActionPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + newStepPurpose + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
+                  } else {
+                    // Fallback: Refresh the view
+                    if (window.selectPanel) {
+                      await window.selectPanel(evt.panel_id);
+                    }
+                  }
+                } else {
+                  showToast('❌ detectActionPurpose không khả dụng');
+                }
+              } catch (err) {
+                console.error('ReGen purpose failed:', err);
+                showToast('❌ Lỗi khi detect action purpose');
+              } finally {
+                regenBtn.disabled = false;
+                regenBtn.textContent = 'ReGen';
+                regenBtn.style.opacity = '1';
+              }
+            });
+            regenContainer.appendChild(regenBtn);
+            
+            // Helper text
+            const helperText = document.createElement('div');
+            helperText.style.cssText = 'font-size: 11px; color: #888; margin-top: 6px;';
+            helperText.textContent = 'ReGen (có thể call lại cho đến khi đúng thì thôi)';
+            regenContainer.appendChild(helperText);
+            
+            purposeDiv.appendChild(regenContainer);
+            actionDiv.appendChild(purposeDiv);
+          }
+          
           container.appendChild(actionDiv);
         }
         
@@ -5145,78 +6473,6 @@ Bạn có chắc chắn muốn rollback?\`;
             stepDiv.appendChild(stepInfo);
             insertEventSorted(stepDiv);
             
-            // Bước 3: Check purpose của action (only show when action has step_info)
-            const purposeDiv = document.createElement('div');
-            purposeDiv.className = 'event';
-            purposeDiv.style.position = 'relative';
-            purposeDiv.style.background = '#ffe4ec';
-            purposeDiv.style.border = '2px solid #ff69b4';
-            purposeDiv.setAttribute('data-event-type', 'purpose');
-            
-            const purposeTitle = document.createElement('div');
-            purposeTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333; text-align: center; background: #ffb6c1; padding: 8px; border-radius: 4px;';
-            const titleStepPurpose = evt.action_info.step_purpose || evt.action_info.purpose || '';
-            const titleActionPurpose = evt.action_info.action_purpose || '';
-            const titleReason = evt.action_info.reason || evt.action_info.step_reason || '';
-            purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + (titleActionPurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + (titleStepPurpose || 'N/A') + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
-            purposeDiv.appendChild(purposeTitle);
-            
-            // ReGen button container
-            const regenContainer = document.createElement('div');
-            regenContainer.style.cssText = 'text-align: center; margin-top: 12px;';
-            
-            const regenBtn = document.createElement('button');
-            regenBtn.textContent = 'ReGen';
-            regenBtn.style.cssText = 'padding: 8px 20px; background: #ff69b4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s ease;';
-            regenBtn.addEventListener('mouseenter', () => {
-              regenBtn.style.background = '#ff1493';
-            });
-            regenBtn.addEventListener('mouseleave', () => {
-              regenBtn.style.background = '#ff69b4';
-            });
-            regenBtn.addEventListener('click', async () => {
-              regenBtn.disabled = true;
-              regenBtn.textContent = 'Đang detect...';
-              regenBtn.style.opacity = '0.6';
-              
-              try {
-                if (window.detectActionPurpose) {
-                  const result = await window.detectActionPurpose(evt.panel_id);
-                  
-                  // Update purposeTitle directly with new values
-                  if (result) {
-                    const newStepPurpose = result.step_purpose || 'N/A';
-                    const newActionPurpose = result.action_purpose || 'N/A';
-                    const newReason = result.reason || 'N/A';
-                    purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + newActionPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + newStepPurpose + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
-                  } else {
-                    // Fallback: Refresh the view
-                    if (window.selectPanel) {
-                      await window.selectPanel(evt.panel_id);
-                    }
-                  }
-                } else {
-                  showToast('❌ detectActionPurpose không khả dụng');
-                }
-              } catch (err) {
-                console.error('ReGen purpose failed:', err);
-                showToast('❌ Lỗi khi detect action purpose');
-              } finally {
-                regenBtn.disabled = false;
-                regenBtn.textContent = 'ReGen';
-                regenBtn.style.opacity = '1';
-              }
-            });
-            regenContainer.appendChild(regenBtn);
-            
-            // Helper text
-            const helperText = document.createElement('div');
-            helperText.style.cssText = 'font-size: 11px; color: #888; margin-top: 6px;';
-            helperText.textContent = 'ReGen (có thể call lại cho đến khi đúng thì thôi)';
-            regenContainer.appendChild(helperText);
-            
-            purposeDiv.appendChild(regenContainer);
-            insertEventSorted(purposeDiv);
           } else {
             const needCapture = document.createElement('div');
             needCapture.className = 'event';
@@ -5250,6 +6506,277 @@ Bạn có chắc chắn muốn rollback?\`;
             });
           }
         }
+      }
+      
+      // Handle panel selected for VALIDATE role - separate from DRAW role
+      async function handlePanelSelectedForValidate(evt) {
+        selectedPanelId = evt.panel_id;
+        // Store the current action ID being viewed for auto-opening in Video Validate
+        if (evt.item_category === 'ACTION' && evt.panel_id) {
+          currentValidateActionId = evt.panel_id;
+        }
+        renderPanelTree();
+        
+        // Hide all control buttons except Quit when role is VALIDATE
+        if (currentRole === 'VALIDATE') {
+          const controlsDiv = document.getElementById('controls');
+          if (controlsDiv) {
+            const allButtons = controlsDiv.querySelectorAll('button');
+            allButtons.forEach(btn => {
+              if (btn.id !== 'quitBtn') {
+                btn.style.display = 'none';
+              } else {
+                btn.style.display = 'inline-block';
+              }
+            });
+          }
+        }
+        
+        // Clean up existing events (same cleanup as handlePanelSelected but separate implementation)
+        const existingCaptureEvent = container.querySelector('.event[data-event-type="capture"]');
+        if (existingCaptureEvent) {
+          existingCaptureEvent.remove();
+        }
+        
+        const existingStepEvent = container.querySelector('.event[data-event-type="step"]');
+        if (existingStepEvent) {
+          existingStepEvent.remove();
+        }
+        
+        const existingPurposeEvent = container.querySelector('.event[data-event-type="purpose"]');
+        if (existingPurposeEvent) {
+          existingPurposeEvent.remove();
+        }
+        
+        const existingActionDetails = container.querySelector('.event[data-event-type="action_details"]');
+        if (existingActionDetails) {
+          existingActionDetails.remove();
+        }
+        
+        const existingValidateAction = container.querySelector('.event[data-event-type="validate_action"]');
+        if (existingValidateAction) {
+          existingValidateAction.remove();
+        }
+        
+        if (!evt.panel_id) {
+          const existingClickEvents = Array.from(container.querySelectorAll('.event[data-event-type="click"]'));
+          existingClickEvents.forEach(el => el.remove());
+          return;
+        }
+        
+        // Only handle ACTION items
+        if (evt.item_category !== 'ACTION') {
+          return;
+        }
+        
+        console.log('🎯 VALIDATE ACTION detected, evt:', evt);
+        
+        const validateActionDiv = document.createElement('div');
+        validateActionDiv.className = 'event';
+        validateActionDiv.style.position = 'relative';
+        validateActionDiv.setAttribute('data-timestamp', evt.timestamp || Date.now());
+        validateActionDiv.setAttribute('data-event-type', 'validate_action');
+        
+        // Step 1: Click action
+        const step1Div = document.createElement('div');
+        step1Div.setAttribute('data-step', '1');
+        step1Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step1Title = document.createElement('div');
+        step1Title.textContent = 'Bước 1: Click action';
+        step1Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step1Div.appendChild(step1Title);
+        
+        // Action name (no icon)
+        const actionName = document.createElement('div');
+        actionName.textContent = evt.item_name || 'Action';
+        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500; margin-bottom: 10px;';
+        step1Div.appendChild(actionName);
+        
+        // Action image (from action_info.image_base64, action_info.image_url, or evt.image_url)
+        const actionImageContainer = document.createElement('div');
+        actionImageContainer.style.cssText = 'margin-top: 10px;';
+        
+        let hasImage = false;
+        let imageSrc = null;
+        
+        // Priority 1: action_info.image_base64
+        if (evt.action_info && evt.action_info.image_base64) {
+          imageSrc = 'data:image/png;base64,' + evt.action_info.image_base64;
+          hasImage = true;
+        }
+        // Priority 2: action_info.image_url
+        else if (evt.action_info && evt.action_info.image_url) {
+          imageSrc = evt.action_info.image_url;
+          hasImage = true;
+        }
+        // Priority 3: evt.image_url (from baseEvent)
+        else if (evt.image_url) {
+          imageSrc = evt.image_url;
+          hasImage = true;
+        }
+        
+        if (hasImage && imageSrc) {
+          const actionImg = document.createElement('img');
+          actionImg.src = imageSrc;
+          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block;';
+          actionImg.alt = 'Action image';
+          actionImg.onerror = function() {
+            console.error('Failed to load action image:', imageSrc);
+            this.style.display = 'none';
+          };
+          actionImg.onload = function() {
+            console.log('✅ Action image loaded successfully');
+          };
+          actionImageContainer.appendChild(actionImg);
+          step1Div.appendChild(actionImageContainer);
+        } else {
+          // Debug: log what we have
+          console.log('🔍 Action image debug:', {
+            hasActionInfo: !!evt.action_info,
+            hasImageBase64: !!(evt.action_info && evt.action_info.image_base64),
+            hasImageUrl: !!(evt.action_info && evt.action_info && evt.action_info.image_url),
+            hasEvtImageUrl: !!evt.image_url,
+            actionInfo: evt.action_info
+          });
+        }
+        
+        validateActionDiv.appendChild(step1Div);
+        
+        // Step 2: Kiểm tra thông tin action
+        const step2Div = document.createElement('div');
+        step2Div.setAttribute('data-step', '2');
+        step2Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step2Title = document.createElement('div');
+        step2Title.textContent = 'Bước 2: Kiểm tra thông tin action';
+        step2Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step2Div.appendChild(step2Title);
+        
+        // Instruction text - Simplified for this view, detailed one is in dialog
+        const instructionText = document.createElement('div');
+        instructionText.style.cssText = 'font-size: 13px; color: #666; margin-bottom: 12px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5;';
+        instructionText.innerHTML = \`<strong>Check Bugs:</strong> Nếu thấy thông tin không đúng, nhấn nút <strong>RaiseBug</strong> để báo lỗi.\`;
+        step2Div.appendChild(instructionText);
+        
+        // Show current values (readonly)
+        const infoBox = document.createElement('div');
+        infoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px;';
+        
+        const fields = [
+          { label: 'Category', value: evt.item_category || 'N/A' },
+          { label: 'Name', value: evt.item_name || 'N/A' },
+          { label: 'Type', value: evt.item_type || 'N/A' },
+          { label: 'Verb', value: evt.item_verb || 'N/A' },
+          { label: 'Content', value: evt.item_content || 'N/A' },
+          { label: 'purpose', value: evt.action_info?.purpose || evt.action_info?.action_purpose || 'N/A' }
+        ];
+        
+        fields.forEach(field => {
+          const fieldRow = document.createElement('div');
+          fieldRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: white; border-radius: 4px;';
+          
+          const label = document.createElement('label');
+          label.style.cssText = 'flex: 1; font-size: 13px; display: flex; align-items: center;';
+          const labelText = document.createElement('strong');
+          labelText.textContent = field.label + ':';
+          label.appendChild(labelText);
+          const valueSpan = document.createElement('span');
+          valueSpan.style.cssText = 'margin-left: 6px; color: #555;';
+          valueSpan.textContent = field.value;
+          label.appendChild(valueSpan);
+          fieldRow.appendChild(label);
+          
+          infoBox.appendChild(fieldRow);
+        });
+        
+        step2Div.appendChild(infoBox);
+        
+        validateActionDiv.appendChild(step2Div);
+        
+        // Step 3: View graph and Video Validate
+        const step3Div = document.createElement('div');
+        step3Div.setAttribute('data-step', '3');
+        step3Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step3Title = document.createElement('div');
+        step3Title.textContent = 'Bước 3: Xem nội dung action trong 2 nút này đã đúng chưa';
+        step3Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step3Div.appendChild(step3Title);
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px;';
+        
+        // View graph button with icon
+        const viewGraphBtn = document.createElement('button');
+        viewGraphBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 6px;';
+        viewGraphBtn.innerHTML = \`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;">
+          <circle cx="6" cy="6" r="3"></circle>
+          <circle cx="18" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="18" r="3"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <line x1="6" y1="6" x2="12" y2="12"></line>
+          <line x1="18" y1="6" x2="12" y2="12"></line>
+          <line x1="6" y1="18" x2="12" y2="12"></line>
+          <line x1="18" y1="18" x2="12" y2="12"></line>
+        </svg>
+        View Graph\`;
+        viewGraphBtn.addEventListener('mouseenter', () => {
+          viewGraphBtn.style.background = '#0056b3';
+        });
+        viewGraphBtn.addEventListener('mouseleave', () => {
+          viewGraphBtn.style.background = '#007bff';
+        });
+        viewGraphBtn.addEventListener('click', async () => {
+          if (typeof openGraphView === 'function') {
+            // Pass the current action ID to auto-open it in graph view
+            await openGraphView(evt.panel_id);
+          }
+        });
+        buttonsContainer.appendChild(viewGraphBtn);
+        
+        // Video Validate button with icon
+        const validateVideoBtn = document.createElement('button');
+        validateVideoBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #ff9800; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 6px;';
+        validateVideoBtn.innerHTML = \`<span style="font-size: 16px;">✓</span>
+        Video Validate\`;
+        validateVideoBtn.addEventListener('mouseenter', () => {
+          validateVideoBtn.style.background = '#f57c00';
+        });
+        validateVideoBtn.addEventListener('mouseleave', () => {
+          validateVideoBtn.style.background = '#ff9800';
+        });
+        validateVideoBtn.addEventListener('click', async () => {
+          if (typeof openValidateView === 'function') {
+            // Pass the current action ID to auto-open it in video validation
+            await openValidateView(evt.panel_id);
+          }
+        });
+        buttonsContainer.appendChild(validateVideoBtn);
+        
+        step3Div.appendChild(buttonsContainer);
+        
+        // RaiseBug button (moved from Step 2)
+        const raiseBugBtn2 = document.createElement('button');
+        raiseBugBtn2.textContent = 'RaiseBug';
+        raiseBugBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px; width: 100%;';
+        raiseBugBtn2.addEventListener('mouseenter', () => {
+          raiseBugBtn2.style.background = '#ff5252';
+        });
+        raiseBugBtn2.addEventListener('mouseleave', () => {
+          raiseBugBtn2.style.background = '#ff6b6b';
+        });
+        raiseBugBtn2.addEventListener('click', () => {
+             // Pass current bug info from event if available
+             const currentBugInfo = evt.bug_info || null;
+             showRaiseBugDialog(evt.panel_id, currentBugInfo, evt);
+        });
+        step3Div.appendChild(raiseBugBtn2);
+        
+        validateActionDiv.appendChild(step3Div);
+        
+        container.appendChild(validateActionDiv);
       }
       
       // Update showMode button icon based on current mode
@@ -5292,17 +6819,21 @@ Bạn có chắc chắn muốn rollback?\`;
       
       async function refreshPanelTree() {
         const refreshBtn = document.getElementById('panel-log-refresh-btn');
-        if (!refreshBtn) return;
-        
-        refreshBtn.classList.add('loading');
-        refreshBtn.disabled = true;
-        const originalText = refreshBtn.textContent;
-        refreshBtn.textContent = '⏳';
+        let originalText = '';
+
+        if (refreshBtn) {
+            refreshBtn.classList.add('loading');
+            refreshBtn.disabled = true;
+            originalText = refreshBtn.textContent;
+            refreshBtn.textContent = '⏳';
+        }
         
         try {
           if (window.getPanelTree) {
             panelTreeData = await window.getPanelTree(panelLogDisplayMode);
             renderPanelTree();
+            // Optional: Only show toast if triggered by user click? 
+            // For now keeping it simple as it confirms the update.
             showToast('✅ Panel Log đã được cập nhật');
           } else {
             showToast('⚠️ Refresh function không khả dụng');
@@ -5311,9 +6842,11 @@ Bạn có chắc chắn muốn rollback?\`;
           console.error('Failed to refresh panel tree:', err);
           showToast('❌ Lỗi khi refresh Panel Log');
         } finally {
-          refreshBtn.classList.remove('loading');
-          refreshBtn.disabled = false;
-          refreshBtn.textContent = originalText;
+          if (refreshBtn) {
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = originalText;
+          }
         }
       }
       

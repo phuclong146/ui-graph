@@ -12,6 +12,7 @@ import { DataItemManager } from "../data/DataItemManager.js";
 import { ParentPanelManager } from "../data/ParentPanelManager.js";
 import { StepManager } from "../data/StepManager.js";
 import { PanelLogManager } from "../data/PanelLogManager.js";
+import { initDbPool } from "../data/db-connection.js";
 
 export class PanelScreenTracker {
     constructor() {
@@ -52,6 +53,7 @@ export class PanelScreenTracker {
     }
     
     async init({ startUrl = "about:blank" } = {}) {
+        await initDbPool();
         await initBrowsers(this, startUrl);
 
         console.log('DEBUG ENV.GEMINI_USE_REST:', ENV.GEMINI_USE_REST, typeof ENV.GEMINI_USE_REST);
@@ -101,6 +103,63 @@ export class PanelScreenTracker {
         });
     }
 
+    async _getAccountInfo() {
+        try {
+            const { promises: fsp } = await import('fs');
+            const pathModule = (await import('path')).default;
+            const { fileURLToPath } = await import('url');
+            
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = pathModule.dirname(pathModule.dirname(pathModule.dirname(__filename)));
+            const accountPath = pathModule.join(projectRoot, 'account.json');
+            
+            try {
+                const content = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(content);
+                
+                if (accountData) {
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    return accountData;
+                }
+            } catch (readErr) {
+                console.log('📝 No existing account.json, will prompt for new account');
+            }
+            
+            // Generate new device info if no account exists
+            const { randomUUID } = await import('crypto');
+            const os = await import('os');
+            
+            const newAccount = {
+                device_id: randomUUID(),
+                device_info: {
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    hostname: os.hostname(),
+                    cpus: os.cpus().length,
+                    totalMemory: Math.round(os.totalmem() / (1024 * 1024 * 1024)) + ' GB',
+                    osType: os.type(),
+                    osRelease: os.release(),
+                    username: os.userInfo().username,
+                    networkInterfaces: Object.entries(os.networkInterfaces())
+                        .map(([name, interfaces]) => ({
+                            name,
+                            addresses: interfaces
+                                .filter(iface => !iface.internal)
+                                .map(iface => ({ family: iface.family, address: iface.address, mac: iface.mac }))
+                        }))
+                        .filter(iface => iface.addresses.length > 0)
+                },
+                name: null,
+                role: null
+            };
+            
+            return newAccount;
+        } catch (err) {
+            console.error('Failed to get account info:', err);
+            return null;
+        }
+    }
+
     async saveResults() {
         return await saveResults(this);
     }
@@ -126,11 +185,57 @@ export class PanelScreenTracker {
             const timestamps = info.timestamps || [];
             timestamps.push(newTimestamp);
             
-            await fsp.writeFile(infoPath, JSON.stringify({
+            // Preserve existing role or default to 'DRAW'
+            const role = info.role || 'DRAW';
+            const updatedInfo = {
                 toolCode: info.toolCode,
                 website: info.website,
-                timestamps: timestamps
-            }, null, 2), 'utf8');
+                timestamps: timestamps,
+                role: role
+            };
+            
+            await fsp.writeFile(infoPath, JSON.stringify(updatedInfo, null, 2), 'utf8');
+            
+            // Upsert session to DB
+            try {
+                const account = await this._getAccountInfo();
+                const { upsertSessionToDb } = await import('../data/session-db.js');
+                await upsertSessionToDb(updatedInfo, account);
+            } catch (err) {
+                console.error('Failed to upsert session to DB in loadSession:', err);
+            }
+            
+            // Update bug info from database if role is DRAW
+            if (role === 'DRAW') {
+                try {
+                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
+                     await loader.updateBugInfoInDoingItems();
+                } catch (err) {
+                    console.error('❌ Failed to update bug info:', err);
+                }
+            }
+
+            // Load data from database if role is VALIDATE
+            if (role === 'VALIDATE') {
+                try {
+                    await this._broadcast({ 
+                        type: 'show_loading', 
+                        message: 'Đang tải dữ liệu từ database và tạo các file JSONL. Vui lòng đợi...' 
+                    });
+                    
+                    const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                    const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
+                    await loader.loadFromDatabase();
+                    console.log('✅ Loaded data from database for VALIDATE role');
+                    
+                    await this._broadcast({ type: 'hide_loading' });
+                } catch (err) {
+                    console.error('❌ Failed to load data from database:', err);
+                    await this._broadcast({ type: 'hide_loading' });
+                    // Continue with existing session data if DB load fails
+                }
+            }
             
             this.panelLogManager = new PanelLogManager(this.sessionFolder);
             
@@ -254,6 +359,61 @@ export class PanelScreenTracker {
             
             const trackingTimestamp = Date.now();
             this.sessionFolder = await this.logger.initLogFile(trackingTimestamp, toolCode, url);
+            
+            // Read account.role to check if we need to load data from database
+            const { promises: fsp } = await import('fs');
+            const path = (await import('path')).default;
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(path.dirname(path.dirname(__filename)));
+            
+            let accountRole = 'DRAW';
+            try {
+                const accountPath = path.join(__dirname, 'account.json');
+                const accountContent = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(accountContent);
+                if (accountData && accountData.role) {
+                    accountRole = accountData.role;
+                }
+            } catch (err) {
+                console.log('⚠️ Could not read account.json, using default role: DRAW');
+            }
+            
+            // Upsert session to DB
+            try {
+                const account = await this._getAccountInfo();
+                const info = {
+                    toolCode: toolCode,
+                    website: url,
+                    timestamps: [trackingTimestamp],
+                    role: accountRole
+                };
+                const { upsertSessionToDb } = await import('../data/session-db.js');
+                await upsertSessionToDb(info, account);
+            } catch (err) {
+                console.error('Failed to upsert session to DB in startTracking:', err);
+            }
+            
+            // Load data from database if role is VALIDATE
+            if (accountRole === 'VALIDATE') {
+                try {
+                    await this._broadcast({ 
+                        type: 'show_loading', 
+                        message: 'Đang tải dữ liệu từ database và tạo các file JSONL. Vui lòng đợi...' 
+                    });
+                    
+                    const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                    const loader = new DatabaseLoader(this.sessionFolder, toolCode);
+                    await loader.loadFromDatabase();
+                    console.log('✅ Loaded data from database for VALIDATE role');
+                    
+                    await this._broadcast({ type: 'hide_loading' });
+                } catch (err) {
+                    console.error('❌ Failed to load data from database:', err);
+                    await this._broadcast({ type: 'hide_loading' });
+                    // Continue with session creation even if DB load fails
+                }
+            }
             
             this.panelLogManager = new PanelLogManager(this.sessionFolder);
             
@@ -878,6 +1038,14 @@ export class PanelScreenTracker {
         } catch (err) {
             console.error('❌ Failed to close Gemini session:', err);
         }
+
+        try {
+            const { closeDbPool } = await import('../data/db-connection.js');
+            await closeDbPool();
+        } catch (err) {
+            console.error('❌ Failed to close DB pool:', err);
+        }
+
         console.log("🛑 Tracker closed.");
         process.exit(0);
     }

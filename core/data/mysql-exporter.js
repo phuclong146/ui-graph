@@ -1,19 +1,10 @@
-import mysql from 'mysql2/promise';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { uploadPictureAndGetUrl } from '../media/uploader.js';
 import { saveBase64AsFile, calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
-
-const MYSQL_CONFIG = {
-    host: 'mysql.clevai.vn',
-    port: 3306,
-    user: 'comaker',
-    password: 'zwTe1ROMxeRRZAiXhCDmfNRTeFsroMLI',
-    database: 'comaker',
-    connectTimeout: 60000
-};
+import { getDbPool } from './db-connection.js';
 
 export class MySQLExporter {
     constructor(sessionFolder, trackingUrl, myAiToolCode = null) {
@@ -28,8 +19,8 @@ export class MySQLExporter {
             throw new Error('❌ myAiToolCode is required!');
         }
         
-        this.connection = await mysql.createConnection(MYSQL_CONFIG);
-        console.log('✅ MySQL connected');
+        this.connection = getDbPool();
+        // console.log('✅ MySQL connected (via pool)');
     }
 
     normalizeName(name) {
@@ -334,6 +325,7 @@ export class MySQLExporter {
             // Build actionId -> panelId map from myparent_panel.jsonl
             const actionIdToPanelIdMap = new Map();
             const panelIdToPanelNameMap = new Map();
+            const panelIdToParentEntryMap = new Map();
             
             try {
                 const parentContent = await fsp.readFile(myparentPanelPath, 'utf8');
@@ -348,9 +340,12 @@ export class MySQLExporter {
                     }
                 }
                 
-                // Build actionId -> panelId map
+                // Build actionId -> panelId map and panelId -> parentEntry map
                 for (const parent of parents) {
                     const panelId = parent.parent_panel;
+                    
+                    // Store parent entry for easy access
+                    panelIdToParentEntryMap.set(panelId, parent);
                     
                     // Handle direct child_actions
                     if (parent.child_actions && Array.isArray(parent.child_actions)) {
@@ -511,6 +506,22 @@ export class MySQLExporter {
                     }
                 }
                 
+                // Bổ sung child_actions, child_panels, parent_dom cho PANEL items
+                if (item.item_category === 'PANEL') {
+                    const parentEntry = panelIdToParentEntryMap.get(item.item_id);
+                    if (parentEntry) {
+                        if (parentEntry.child_actions && Array.isArray(parentEntry.child_actions) && parentEntry.child_actions.length > 0) {
+                            metadataToSave.child_actions = parentEntry.child_actions;
+                        }
+                        if (parentEntry.child_panels && Array.isArray(parentEntry.child_panels) && parentEntry.child_panels.length > 0) {
+                            metadataToSave.child_panels = parentEntry.child_panels;
+                        }
+                        if (parentEntry.parent_dom && Array.isArray(parentEntry.parent_dom) && parentEntry.parent_dom.length > 0) {
+                            metadataToSave.parent_dom = parentEntry.parent_dom;
+                        }
+                    }
+                }
+                
                 // Build conditional update clause for purpose/reason
                 // Only update if jsonl has values, otherwise keep existing DB values
                 const purposeUpdateClause = item.purpose ? ', purpose = VALUES(purpose)' : '';
@@ -519,8 +530,8 @@ export class MySQLExporter {
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, fullscreen_url,
-                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason, item_id, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         type = VALUES(type),                     
                         name = VALUES(name),
@@ -533,6 +544,8 @@ export class MySQLExporter {
                         metadata = VALUES(metadata),
                         record_id = VALUES(record_id),
                         published = VALUES(published)${purposeUpdateClause}${reasonUpdateClause},
+                        item_id = VALUES(item_id),
+                        status = VALUES(status),
                         updated_at = CURRENT_TIMESTAMP`,
                     [
                         code ?? null,
@@ -551,7 +564,9 @@ export class MySQLExporter {
                         Object.keys(metadataToSave).length > 0 ? JSON.stringify(metadataToSave) : null,
                         recordId,
                         item.purpose ?? null,
-                        item.reason ?? null
+                        item.reason ?? null,
+                        item.item_id ?? null,
+                        item.status ?? null
                     ]
                 );
                 
@@ -916,10 +931,9 @@ export class MySQLExporter {
     }
 
     async close() {
-        if (this.connection) {
-            await this.connection.end();
-            console.log('✅ MySQL connection closed');
-        }
+        // Pool is managed globally, no need to close individual connection
+        this.connection = null;
+        // console.log('✅ MySQL connection released (pool)');
     }
 }
 

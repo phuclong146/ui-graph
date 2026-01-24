@@ -11,18 +11,36 @@ export class TrackingLogger {
     }
 
     async initLogFile(timestamp, toolCode, website) {
-        this.sessionFolder = path.resolve(__dirname, 'sessions', `${toolCode}_${timestamp}`);
+        // Read account.role from account.json first (before creating folder)
+        let accountRole = 'DRAW'; // Default to DRAW if account.json doesn't exist or doesn't have role
+        try {
+            const accountPath = path.join(__dirname, 'account.json');
+            const accountContent = await fsp.readFile(accountPath, 'utf8');
+            const accountData = JSON.parse(accountContent);
+            if (accountData && accountData.role) {
+                accountRole = accountData.role;
+            }
+        } catch (err) {
+            console.log('⚠️ Could not read account.json, using default role: DRAW');
+        }
+
+        // Session folder: VALIDATE_ prefix when role is VALIDATE, to distinguish from DRAW sessions
+        const folderName = accountRole === 'VALIDATE'
+            ? `VALIDATE_${toolCode}_${timestamp}`
+            : `${toolCode}_${timestamp}`;
+        this.sessionFolder = path.resolve(__dirname, 'sessions', folderName);
         await fsp.mkdir(this.sessionFolder, { recursive: true });
         
         const infoPath = path.join(this.sessionFolder, 'info.json');
         const infoData = {
             toolCode: toolCode,
             website: website,
-            timestamps: [timestamp]
+            timestamps: [timestamp],
+            role: accountRole
         };
         await fsp.writeFile(infoPath, JSON.stringify(infoData, null, 2), 'utf8');
         
-        console.log(`📄 Session info: ${infoPath}`);
+        console.log(`📄 Session info: ${infoPath} (role: ${accountRole})`);
         return this.sessionFolder;
     }
 
