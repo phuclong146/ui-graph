@@ -2438,14 +2438,117 @@ export const QUEUE_BROWSER_HTML = `
 
       // Validate Step handler
       const validateBtn = document.getElementById('validateBtn');
-      const openValidateView = async () => {
+      const openValidateView = async (actionIdToOpen = null) => {
         if (window.validateStep) {
           await window.validateStep();
+          
+          // Auto-open the specified action after modal opens
+          if (actionIdToOpen) {
+            // Use polling to wait for tree to be rendered
+            const trySelectAction = async (maxAttempts = 20, attempt = 0) => {
+              const treeContainer = document.getElementById('videoValidationPanelLogTree');
+              if (!treeContainer) {
+                if (attempt < maxAttempts) {
+                  setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                } else {
+                  console.warn('Video validation tree container not found after', maxAttempts, 'attempts');
+                }
+                return;
+              }
+              
+              // Check if tree has nodes
+              const hasNodes = treeContainer.querySelectorAll('.graph-tree-node').length > 0;
+              if (!hasNodes && attempt < maxAttempts) {
+                setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                return;
+              }
+              
+              // Find the node with matching panel_id using data-panel-id attribute
+              const targetNode = treeContainer.querySelector(\`[data-panel-id="\${actionIdToOpen}"]\`);
+              if (!targetNode) {
+                if (attempt < maxAttempts) {
+                  setTimeout(() => trySelectAction(maxAttempts, attempt + 1), 200);
+                } else {
+                  console.warn('Action node not found in tree after', maxAttempts, 'attempts:', actionIdToOpen);
+                }
+                return;
+              }
+              
+              // Found the node, now expand parents and select
+              // Expand all parent panels first to make sure the action is visible
+              const expandParentPanels = async (node) => {
+                // Find all parent nodeDivs that contain this node
+                const parentNodeDivs = [];
+                let current = node;
+                
+                // Traverse up to find all parent nodeDivs
+                while (current && current !== treeContainer) {
+                  // Check if current is a nodeDiv (graph-tree-node)
+                  if (current.classList && current.classList.contains('graph-tree-node')) {
+                    parentNodeDivs.push(current);
+                  }
+                  current = current.parentElement;
+                }
+                
+                // Expand from top to bottom (reverse order - expand root first, then children)
+                for (let i = parentNodeDivs.length - 1; i >= 0; i--) {
+                  const nodeDiv = parentNodeDivs[i];
+                  // Find the childrenDiv for this node
+                  const childrenDiv = nodeDiv.querySelector('.graph-tree-children');
+                  if (childrenDiv && !childrenDiv.classList.contains('expanded')) {
+                    // Find the contentDiv which contains the expand icon
+                    const contentDiv = nodeDiv.querySelector('.graph-tree-node-content');
+                    if (contentDiv) {
+                      // Find the expand icon
+                      const expandIcon = contentDiv.querySelector('.graph-tree-expand');
+                      if (expandIcon && expandIcon.style.visibility !== 'hidden' && expandIcon.textContent.trim() !== '') {
+                        // Click the expand icon
+                        expandIcon.click();
+                        // Wait for expansion animation
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                      }
+                    }
+                  }
+                }
+              };
+              
+              // Expand all parent panels
+              await expandParentPanels(targetNode);
+              
+              // Find the contentDiv for selection
+              const contentDiv = targetNode.querySelector('.graph-tree-node-content') || targetNode;
+              if (contentDiv) {
+                // Remove selected class from all nodes first
+                treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
+                  el.classList.remove('selected');
+                });
+                
+                // Add selected class to target node
+                contentDiv.classList.add('selected');
+                
+                // Scroll into view
+                contentDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Click the node to trigger video loading
+                setTimeout(() => {
+                  contentDiv.click();
+                }, 300);
+              }
+            };
+            
+            // Start trying to select after a short delay
+            setTimeout(() => {
+              trySelectAction();
+            }, 300);
+          }
         }
       };
 
       if (validateBtn) {
-        validateBtn.addEventListener('click', openValidateView);
+        validateBtn.addEventListener('click', () => {
+          // Use stored currentValidateActionId if available
+          openValidateView(currentValidateActionId);
+        });
       }
 
       if (closeGraphViewBtn) {
@@ -2525,6 +2628,7 @@ export const QUEUE_BROWSER_HTML = `
       let videoValidationTrackingVideoUrl = null;
       let videoValidationRawVideoUrl = null;
       let videoValidationCurrentPlaybackSpeed = 0.5;
+      let currentValidateActionId = null; // Store the action ID currently being viewed in validate mode
 
       const closeVideoValidationView = () => {
         if (videoValidationModal) {
@@ -3283,6 +3387,7 @@ export const QUEUE_BROWSER_HTML = `
       function createVideoValidationTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
+        nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
@@ -5735,6 +5840,10 @@ Bạn có chắc chắn muốn rollback?\`;
       // Handle panel selected for VALIDATE role - separate from DRAW role
       async function handlePanelSelectedForValidate(evt) {
         selectedPanelId = evt.panel_id;
+        // Store the current action ID being viewed for auto-opening in Video Validate
+        if (evt.item_category === 'ACTION' && evt.panel_id) {
+          currentValidateActionId = evt.panel_id;
+        }
         renderPanelTree();
         
         // Hide all control buttons except Quit when role is VALIDATE
@@ -5998,7 +6107,8 @@ Bạn có chắc chắn muốn rollback?\`;
         });
         validateVideoBtn.addEventListener('click', async () => {
           if (typeof openValidateView === 'function') {
-            await openValidateView();
+            // Pass the current action ID to auto-open it in video validation
+            await openValidateView(evt.panel_id);
           }
         });
         buttonsContainer.appendChild(validateVideoBtn);
