@@ -197,12 +197,20 @@ export class PanelScreenTracker {
             // Load data from database if role is VALIDATE
             if (role === 'VALIDATE') {
                 try {
+                    await this._broadcast({ 
+                        type: 'show_loading', 
+                        message: 'Đang tải dữ liệu từ database và tạo các file JSONL. Vui lòng đợi...' 
+                    });
+                    
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
                     await loader.loadFromDatabase();
                     console.log('✅ Loaded data from database for VALIDATE role');
+                    
+                    await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {
                     console.error('❌ Failed to load data from database:', err);
+                    await this._broadcast({ type: 'hide_loading' });
                     // Continue with existing session data if DB load fails
                 }
             }
@@ -329,6 +337,46 @@ export class PanelScreenTracker {
             
             const trackingTimestamp = Date.now();
             this.sessionFolder = await this.logger.initLogFile(trackingTimestamp, toolCode, url);
+            
+            // Read account.role to check if we need to load data from database
+            const { promises: fsp } = await import('fs');
+            const path = (await import('path')).default;
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(path.dirname(path.dirname(__filename)));
+            
+            let accountRole = 'DRAW';
+            try {
+                const accountPath = path.join(__dirname, 'account.json');
+                const accountContent = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(accountContent);
+                if (accountData && accountData.role) {
+                    accountRole = accountData.role;
+                }
+            } catch (err) {
+                console.log('⚠️ Could not read account.json, using default role: DRAW');
+            }
+            
+            // Load data from database if role is VALIDATE
+            if (accountRole === 'VALIDATE') {
+                try {
+                    await this._broadcast({ 
+                        type: 'show_loading', 
+                        message: 'Đang tải dữ liệu từ database và tạo các file JSONL. Vui lòng đợi...' 
+                    });
+                    
+                    const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                    const loader = new DatabaseLoader(this.sessionFolder, toolCode);
+                    await loader.loadFromDatabase();
+                    console.log('✅ Loaded data from database for VALIDATE role');
+                    
+                    await this._broadcast({ type: 'hide_loading' });
+                } catch (err) {
+                    console.error('❌ Failed to load data from database:', err);
+                    await this._broadcast({ type: 'hide_loading' });
+                    // Continue with session creation even if DB load fails
+                }
+            }
             
             this.panelLogManager = new PanelLogManager(this.sessionFolder);
             

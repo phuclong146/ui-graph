@@ -213,7 +213,7 @@ export async function initTrackingBrowser(tracker) {
     } catch (err) {
     }
 
-    await injectWebsiteSelector(tracker.page, websites, allSessions);
+    await injectWebsiteSelector(tracker.page, websites, allSessions, accountRole);
     tracker.page.trackerInstance = tracker;
 }
 

@@ -4,8 +4,10 @@
  * page.exposeFunction("startTrackingFromUI") should be provided by caller.
  * @param {import('puppeteer').Page} page
  * @param {Array<{website:string,toolName:string}>} allWebsites
+ * @param {Array} allSessions
+ * @param {string} role - The role ('DRAW', 'VALIDATE', or 'ADMIN')
  */
-export async function injectWebsiteSelector(page, allWebsites = [], allSessions = []) {
+export async function injectWebsiteSelector(page, allWebsites = [], allSessions = [], role = 'DRAW') {
     await page.exposeFunction("startTrackingFromUI", async (websiteData) => {
         console.log(`▶️ startTrackingFromUI called with ${websiteData.website}`);
         if (page.trackerInstance) {
@@ -113,12 +115,12 @@ export async function injectWebsiteSelector(page, allWebsites = [], allSessions 
         </style>
       </head>
       <body>
-        <h2>Chọn website để Tracking</h2>
+        <h2>Chọn website để ${role === 'VALIDATE' ? 'Validate' : 'Tracking'}</h2>
         <div class="search-box">
           <input type="text" id="websiteInput" placeholder="Nhập tên hoặc URL..." autocomplete="off"/>
           <div id="suggestions" class="suggestions"></div>
         </div>
-        <button id="trackBtn">Tracking</button>
+        <button id="trackBtn">${role === 'VALIDATE' ? 'Validate' : 'Tracking'}</button>
 
         <h2 style="margin-top: 40px;">Hoặc tiếp tục session cũ</h2>
         <div id="sessionsList" style="width: 480px; max-width: 90%; max-height: 300px; overflow-y: auto; background: white; border: 1px solid #dfe1e5; border-radius: 12px; padding: 10px;"></div>

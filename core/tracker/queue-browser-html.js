@@ -1287,6 +1287,25 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="loadingModal" style="display:none; position:fixed; z-index:20010; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:40px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative; text-align:center;">
+        <div style="font-size:48px; margin-bottom:20px;">⏳</div>
+        <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Đang tải dữ liệu từ database</h3>
+        <p id="loadingModalMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+          Vui lòng đợi trong khi hệ thống đang tải dữ liệu và tạo các file JSONL...
+        </p>
+        <div style="margin-top:30px;">
+          <div style="display:inline-block; width:40px; height:40px; border:4px solid #f3f3f3; border-top:4px solid #007bff; border-radius:50%; animation:spin 1s linear infinite;"></div>
+        </div>
+        <style>
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        </style>
+      </div>
+    </div>
+
     <div id="select-panel-container" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.95); flex-direction:row;">
       <div id="select-panel-sidebar" style="width:200px; background:rgba(26, 26, 26, 0.95); backdrop-filter:blur(10px); border-right:1px solid rgba(255,255,255,0.1); display:flex; flex-direction:column; overflow:hidden;">
         <div style="padding:15px; border-bottom:1px solid rgba(255,255,255,0.1);">
@@ -1914,6 +1933,16 @@ export const QUEUE_BROWSER_HTML = `
 
         if (evt.type === 'hide_role_selection') {
           hideRoleSelectionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_loading') {
+          showLoadingModal(evt.message || 'Đang tải dữ liệu từ database...');
+          return;
+        }
+
+        if (evt.type === 'hide_loading') {
+          hideLoadingModal();
           return;
         }
       };
@@ -4228,6 +4257,27 @@ Bạn có chắc chắn muốn rollback?\`;
           await validateAndSaveRole('ADMIN');
         });
       }
+
+      // Loading Modal handlers
+      const loadingModal = document.getElementById('loadingModal');
+      const loadingModalMessage = document.getElementById('loadingModalMessage');
+
+      const showLoadingModal = (message) => {
+        if (!loadingModal) {
+          console.error('loadingModal not found');
+          return;
+        }
+        if (loadingModalMessage && message) {
+          loadingModalMessage.textContent = message;
+        }
+        loadingModal.style.display = 'flex';
+      };
+
+      const hideLoadingModal = () => {
+        if (loadingModal) {
+          loadingModal.style.display = 'none';
+        }
+      };
 
       document.addEventListener("keydown", async (e) => {
         if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
