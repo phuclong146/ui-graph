@@ -2675,8 +2675,27 @@ export const QUEUE_BROWSER_HTML = `
 
       if (validateBtn) {
         validateBtn.addEventListener('click', () => {
-          // Use stored currentValidateActionId if available
-          openValidateView(currentValidateActionId);
+          // Try to get selected panel/action from main panel log tree
+          let selectedItemId = null;
+          
+          // First, try to get from selectedPanelId variable
+          if (selectedPanelId) {
+            selectedItemId = selectedPanelId;
+          } else {
+            // Try to find selected node in any panel log tree (main panel log)
+            // Look for any node with class 'selected' that has data-panel-id
+            const selectedNode = document.querySelector('.graph-tree-node-content.selected');
+            if (selectedNode) {
+              selectedItemId = selectedNode.getAttribute('data-panel-id');
+            }
+          }
+          
+          // Fallback to currentValidateActionId if available
+          if (!selectedItemId && currentValidateActionId) {
+            selectedItemId = currentValidateActionId;
+          }
+          
+          openValidateView(selectedItemId);
         });
       }
 
