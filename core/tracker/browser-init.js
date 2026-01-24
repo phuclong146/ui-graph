@@ -138,9 +138,8 @@ export async function initBrowsers(tracker, startUrl) {
             '--window-position=0,0',
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-software-rasterizer'
+            '--disable-dev-shm-usage'
+            // Removed '--disable-gpu' and '--disable-software-rasterizer' to enable WebGL
         ],
         userDataDir: "./user_data",
         customConfig: {
