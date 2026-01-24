@@ -2465,6 +2465,11 @@ export const QUEUE_BROWSER_HTML = `
         }
         graphViewModal.style.display = 'flex';
         
+        // Ensure RaiseBug button is visible if allowed
+        if (typeof updateButtonsVisibility === 'function') {
+            updateButtonsVisibility(currentRole);
+        }
+        
         // Restore panel log visibility state
         const graphPanelLogTreeContainer = document.getElementById('graphPanelLogTreeContainer');
         const toggleGraphPanelLogBtn = document.getElementById('toggleGraphPanelLogBtn');
@@ -2639,6 +2644,11 @@ export const QUEUE_BROWSER_HTML = `
       // Validate Step handler
       const validateBtn = document.getElementById('validateBtn');
       const openValidateView = async (actionIdToOpen = null) => {
+        // Ensure RaiseBug button is visible if allowed
+        if (typeof updateButtonsVisibility === 'function') {
+            updateButtonsVisibility(currentRole);
+        }
+        
         if (window.validateStep) {
           await window.validateStep();
           
@@ -4388,6 +4398,10 @@ Bạn có chắc chắn muốn rollback?\`;
       const updateButtonsVisibility = (role) => {
         const controlsDiv = document.getElementById('controls');
         
+        // Buttons in Graph View and Video Validation View
+        const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
+        const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
+        
         if (role === 'VALIDATE') {
           // Hide all buttons except Quit when role is VALIDATE
           if (controlsDiv) {
@@ -4400,6 +4414,10 @@ Bạn có chắc chắn muốn rollback?\`;
               }
             });
           }
+          
+          // Ensure RaiseBug buttons are visible for VALIDATE role
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'flex';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'flex';
         } else {
           // For other roles, use the original logic
           const importCookiesBtn = document.getElementById('importCookiesBtn');
@@ -4419,6 +4437,10 @@ Bạn có chắc chắn muốn rollback?\`;
             if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
             if (validateBtn) validateBtn.style.display = 'inline-block';
             if (quitBtn) quitBtn.style.display = 'inline-block';
+            
+            // Ensure RaiseBug buttons are HIDDEN for DRAW role
+            if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+            if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
           } else {
             // Hide buttons for non-DRAW roles (but keep Quit visible)
             if (importCookiesBtn) importCookiesBtn.style.display = 'none';
