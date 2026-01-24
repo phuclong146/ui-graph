@@ -5172,7 +5172,8 @@ Bạn có chắc chắn muốn rollback?\`;
           // Helper to check if a specific bug type is checked
           const isChecked = (type) => {
               if (!currentBugInfo || !currentBugInfo.details) return false;
-              return currentBugInfo.details.some(d => d.bug_type === type && d.bug_status);
+              // Check if bug exists and is NOT fixed (active)
+              return currentBugInfo.details.some(d => d.bug_type === type && d.bug_fixed !== true);
           };
 
           // Helper to get value from action item
@@ -5307,11 +5308,23 @@ Bạn có chắc chắn muốn rollback?\`;
                   "panel_after.verb": "Panel After Verb"
               };
               
-              const details = Array.from(checkboxes).map(cb => ({
+              // Get active bugs from checkboxes
+              const activeBugs = Array.from(checkboxes).map(cb => ({
                   bug_type: cb.value,
                   bug_name: bugNameMap[cb.value] || cb.value,
-                  bug_status: true
+                  bug_fixed: false
               }));
+              
+              // Preserve existing fixed bugs
+              const existingFixedBugs = (currentBugInfo && currentBugInfo.details) 
+                  ? currentBugInfo.details.filter(d => d.bug_fixed === true) 
+                  : [];
+              
+              // Filter out fixed bugs that are now active (checked)
+              const activeTypes = new Set(activeBugs.map(b => b.bug_type));
+              const keptFixedBugs = existingFixedBugs.filter(d => !activeTypes.has(d.bug_type));
+              
+              const details = [...activeBugs, ...keptFixedBugs];
               
               const bugInfo = {
                   note: note,
@@ -5328,6 +5341,11 @@ Bạn có chắc chắn muốn rollback?\`;
 
                   try {
                       await window.raiseBug(actionId, bugInfo);
+
+                      if (typeof refreshPanelTree === 'function') {
+                          refreshPanelTree();
+                      }
+                      
                       if (typeof showToast === 'function') {
                           showToast('✅ Bug reported successfully');
                       } else {
@@ -5381,7 +5399,7 @@ Bạn có chắc chắn muốn rollback?\`;
               if (bugInfo.details && Array.isArray(bugInfo.details) && bugInfo.details.length > 0) {
                   content += \`\n<strong>Details:</strong>\n\`;
                   bugInfo.details.forEach(d => {
-                      const statusText = d.bug_status ? '[đã sửa]' : '[cần sửa]';
+                      const statusText = d.bug_fixed ? '[đã sửa]' : '[cần sửa]';
                       content += \`- \${d.bug_name} \${statusText}\n\`;
                   });
               }
@@ -6685,17 +6703,21 @@ Bạn có chắc chắn muốn rollback?\`;
       
       async function refreshPanelTree() {
         const refreshBtn = document.getElementById('panel-log-refresh-btn');
-        if (!refreshBtn) return;
-        
-        refreshBtn.classList.add('loading');
-        refreshBtn.disabled = true;
-        const originalText = refreshBtn.textContent;
-        refreshBtn.textContent = '⏳';
+        let originalText = '';
+
+        if (refreshBtn) {
+            refreshBtn.classList.add('loading');
+            refreshBtn.disabled = true;
+            originalText = refreshBtn.textContent;
+            refreshBtn.textContent = '⏳';
+        }
         
         try {
           if (window.getPanelTree) {
             panelTreeData = await window.getPanelTree(panelLogDisplayMode);
             renderPanelTree();
+            // Optional: Only show toast if triggered by user click? 
+            // For now keeping it simple as it confirms the update.
             showToast('✅ Panel Log đã được cập nhật');
           } else {
             showToast('⚠️ Refresh function không khả dụng');
@@ -6704,9 +6726,11 @@ Bạn có chắc chắn muốn rollback?\`;
           console.error('Failed to refresh panel tree:', err);
           showToast('❌ Lỗi khi refresh Panel Log');
         } finally {
-          refreshBtn.classList.remove('loading');
-          refreshBtn.disabled = false;
-          refreshBtn.textContent = originalText;
+          if (refreshBtn) {
+            refreshBtn.classList.remove('loading');
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = originalText;
+          }
         }
       }
       

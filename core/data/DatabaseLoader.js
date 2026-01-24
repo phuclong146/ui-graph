@@ -35,14 +35,17 @@ export class DatabaseLoader {
     }
 
     /**
-     * Parse JSON string safely
+     * Parse JSON string safely. If input is already an object, return it.
      */
-    parseJsonSafely(jsonString) {
-        if (!jsonString || jsonString === 'null') {
+    parseJsonSafely(input) {
+        if (!input || input === 'null') {
             return null;
         }
+        if (typeof input === 'object') {
+            return input;
+        }
         try {
-            return JSON.parse(jsonString);
+            return JSON.parse(input);
         } catch (err) {
             console.warn('⚠️ Failed to parse JSON:', err.message);
             return null;
