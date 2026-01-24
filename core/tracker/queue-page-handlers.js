@@ -7131,8 +7131,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     session_url: actionItem.metadata?.session_url || null,
                     tracking_action_url: actionItem.metadata?.tracking_action_url || null,
                     tracking_panel_after_url: actionItem.metadata?.tracking_panel_after_url || null,
-                    bug_flag: actionItem.metadata?.bug_flag || false,
-                    bug_note: actionItem.metadata?.bug_note || null,
+                    bug_flag: actionItem.bug_flag || actionItem.metadata?.bug_flag || false,
+                    bug_info: actionItem.bug_info || actionItem.metadata?.bug_info || null,
                     panel_before_id: step.panel_before?.item_id || null,
                     panel_after_id: step.panel_after?.item_id || null
                 };

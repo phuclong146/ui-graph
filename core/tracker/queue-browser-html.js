@@ -2994,8 +2994,9 @@ export const QUEUE_BROWSER_HTML = `
           }
           
           let currentBugInfo = null;
+          let item = null;
           if (window.getActionItem) {
-              const item = await window.getActionItem(videoValidationCurrentActionId);
+              item = await window.getActionItem(videoValidationCurrentActionId);
               if (item) {
                   currentBugInfo = item.bug_info || null;
               }
