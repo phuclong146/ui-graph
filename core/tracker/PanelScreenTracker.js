@@ -196,6 +196,15 @@ export class PanelScreenTracker {
             
             await fsp.writeFile(infoPath, JSON.stringify(updatedInfo, null, 2), 'utf8');
             
+            // Upsert session to DB
+            try {
+                const account = await this._getAccountInfo();
+                const { upsertSessionToDb } = await import('../data/session-db.js');
+                await upsertSessionToDb(updatedInfo, account);
+            } catch (err) {
+                console.error('Failed to upsert session to DB in loadSession:', err);
+            }
+            
             // Update bug info from database if role is DRAW
             if (role === 'DRAW') {
                 try {
@@ -368,6 +377,21 @@ export class PanelScreenTracker {
                 }
             } catch (err) {
                 console.log('⚠️ Could not read account.json, using default role: DRAW');
+            }
+            
+            // Upsert session to DB
+            try {
+                const account = await this._getAccountInfo();
+                const info = {
+                    toolCode: toolCode,
+                    website: url,
+                    timestamps: [trackingTimestamp],
+                    role: accountRole
+                };
+                const { upsertSessionToDb } = await import('../data/session-db.js');
+                await upsertSessionToDb(info, account);
+            } catch (err) {
+                console.error('Failed to upsert session to DB in startTracking:', err);
             }
             
             // Load data from database if role is VALIDATE
