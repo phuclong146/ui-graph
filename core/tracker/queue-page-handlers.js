@@ -3777,22 +3777,41 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             if (item.item_category === 'ACTION' && item.status === 'pending' && !item.metadata?.session_url) {
-                const { ENV } = await import('../config/env.js');
-                const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
-                console.log(`[RECORD] 🔍 Checking if should start recording for ACTION ${itemId}:`);
-                console.log(`[RECORD]    Status: ${item.status}`);
-                console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
-                console.log(`[RECORD]    RECORD_PANEL enabled: ${enable}`);
+                // Read role from account.json to check if we should skip recording for VALIDATE role
+                let accountRole = 'DRAW';
+                try {
+                    const { fileURLToPath } = await import('url');
+                    const __filename = fileURLToPath(import.meta.url);
+                    const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+                    const accountPath = path.join(projectRoot, 'account.json');
+                    const accountContent = await fsp.readFile(accountPath, 'utf8');
+                    const accountData = JSON.parse(accountContent);
+                    accountRole = accountData.role || 'DRAW';
+                } catch (err) {
+                    console.log('⚠️ Could not read account.json for role check, using default: DRAW');
+                }
                 
-                if (enable) {
-                    console.log(`[RECORD] ▶️  Starting recording for ACTION: ${itemId}`);
-                    await tracker.startPanelRecording(itemId);
-                    await tracker._broadcast({
-                        type: 'show_toast',
-                        message: '🎬 Recording...'
-                    });
+                // Skip recording for VALIDATE role
+                if (accountRole === 'VALIDATE') {
+                    console.log(`[RECORD] ⏸️  Skipping recording for VALIDATE role`);
                 } else {
-                    console.log(`[RECORD] ⏸️  Recording disabled, skipping start`);
+                    const { ENV } = await import('../config/env.js');
+                    const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
+                    console.log(`[RECORD] 🔍 Checking if should start recording for ACTION ${itemId}:`);
+                    console.log(`[RECORD]    Status: ${item.status}`);
+                    console.log(`[RECORD]    Has session_url: ${!!item.metadata?.session_url}`);
+                    console.log(`[RECORD]    RECORD_PANEL enabled: ${enable}`);
+                    
+                    if (enable) {
+                        console.log(`[RECORD] ▶️  Starting recording for ACTION: ${itemId}`);
+                        await tracker.startPanelRecording(itemId);
+                        await tracker._broadcast({
+                            type: 'show_toast',
+                            message: '🎬 Recording...'
+                        });
+                    } else {
+                        console.log(`[RECORD] ⏸️  Recording disabled, skipping start`);
+                    }
                 }
             } else {
                 console.log(`[RECORD] ⏭️  Not starting recording for item ${itemId}:`);

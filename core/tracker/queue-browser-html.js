@@ -1688,7 +1688,12 @@ export const QUEUE_BROWSER_HTML = `
             isGeminiDetecting = evt.gemini_detecting;
             updateDetectCaptureButtonsState();
           }
-          handlePanelSelected(evt);
+          // Branch based on role: VALIDATE role with ACTION uses handlePanelSelectedForValidate
+          if (currentRole === 'VALIDATE' && evt.item_category === 'ACTION') {
+            handlePanelSelectedForValidate(evt);
+          } else {
+            handlePanelSelected(evt);
+          }
           return;
         }
 
@@ -3962,6 +3967,7 @@ Bạn có chắc chắn muốn rollback?\`;
       let currentAccountInfo = null;
       let isEditingName = false;
       let currentDeviceId = '';
+      let currentRole = 'DRAW'; // Track current role for panel_selected handler
 
       // Function to update button visibility based on role
       const updateButtonsVisibility = (role) => {
@@ -4032,6 +4038,7 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Update button visibility if role already exists
         if (accountInfo && accountInfo.role) {
+          currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
         }
         
@@ -4235,6 +4242,9 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Update button visibility based on role
         updateButtonsVisibility(role);
+        
+        // Update currentRole for panel_selected handler
+        currentRole = role;
         
         return true;
       };
@@ -5694,6 +5704,238 @@ Bạn có chắc chắn muốn rollback?\`;
             });
           }
         }
+      }
+      
+      // Handle panel selected for VALIDATE role - separate from DRAW role
+      async function handlePanelSelectedForValidate(evt) {
+        selectedPanelId = evt.panel_id;
+        renderPanelTree();
+        
+        // Clean up existing events (same cleanup as handlePanelSelected but separate implementation)
+        const existingCaptureEvent = container.querySelector('.event[data-event-type="capture"]');
+        if (existingCaptureEvent) {
+          existingCaptureEvent.remove();
+        }
+        
+        const existingStepEvent = container.querySelector('.event[data-event-type="step"]');
+        if (existingStepEvent) {
+          existingStepEvent.remove();
+        }
+        
+        const existingPurposeEvent = container.querySelector('.event[data-event-type="purpose"]');
+        if (existingPurposeEvent) {
+          existingPurposeEvent.remove();
+        }
+        
+        const existingActionDetails = container.querySelector('.event[data-event-type="action_details"]');
+        if (existingActionDetails) {
+          existingActionDetails.remove();
+        }
+        
+        const existingValidateAction = container.querySelector('.event[data-event-type="validate_action"]');
+        if (existingValidateAction) {
+          existingValidateAction.remove();
+        }
+        
+        if (!evt.panel_id) {
+          const existingClickEvents = Array.from(container.querySelectorAll('.event[data-event-type="click"]'));
+          existingClickEvents.forEach(el => el.remove());
+          return;
+        }
+        
+        // Only handle ACTION items
+        if (evt.item_category !== 'ACTION') {
+          return;
+        }
+        
+        console.log('🎯 VALIDATE ACTION detected, evt:', evt);
+        
+        const validateActionDiv = document.createElement('div');
+        validateActionDiv.className = 'event';
+        validateActionDiv.style.position = 'relative';
+        validateActionDiv.setAttribute('data-timestamp', evt.timestamp || Date.now());
+        validateActionDiv.setAttribute('data-event-type', 'validate_action');
+        
+        // Step 1: Click action
+        const step1Div = document.createElement('div');
+        step1Div.setAttribute('data-step', '1');
+        step1Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step1Title = document.createElement('div');
+        step1Title.textContent = 'Bước 1 Click action';
+        step1Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step1Div.appendChild(step1Title);
+        
+        // Action selection box (similar to "All projects" style)
+        const actionBox = document.createElement('div');
+        actionBox.style.cssText = 'background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; padding: 12px; display: flex; align-items: center; gap: 10px; cursor: default;';
+        
+        const actionIcon = document.createElement('div');
+        actionIcon.style.cssText = 'width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;';
+        actionIcon.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>';
+        actionBox.appendChild(actionIcon);
+        
+        const actionName = document.createElement('span');
+        actionName.textContent = evt.item_name || 'Action';
+        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500;';
+        actionBox.appendChild(actionName);
+        
+        step1Div.appendChild(actionBox);
+        validateActionDiv.appendChild(step1Div);
+        
+        // Step 2: Kiểm tra thông tin action
+        const step2Div = document.createElement('div');
+        step2Div.setAttribute('data-step', '2');
+        step2Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step2Title = document.createElement('div');
+        step2Title.textContent = 'Bước 2: Kiểm tra thông tin action';
+        step2Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step2Div.appendChild(step2Title);
+        
+        const checkboxNote = document.createElement('div');
+        checkboxNote.textContent = '(Dạng checkbox)';
+        checkboxNote.style.cssText = 'font-size: 12px; color: #666; margin-bottom: 10px; font-style: italic;';
+        step2Div.appendChild(checkboxNote);
+        
+        const infoBox = document.createElement('div');
+        infoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px;';
+        
+        // Create checkbox list for each field
+        const fields = [
+          { label: 'Category', value: evt.item_category || 'N/A' },
+          { label: 'Name', value: evt.item_name || 'N/A' },
+          { label: 'Type', value: evt.item_type || 'N/A' },
+          { label: 'Verb', value: evt.item_verb || 'N/A' },
+          { label: 'Content', value: evt.item_content || 'N/A' },
+          { label: 'purpose', value: evt.action_info?.purpose || evt.action_info?.action_purpose || 'N/A' }
+        ];
+        
+        fields.forEach(field => {
+          const fieldRow = document.createElement('div');
+          fieldRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: white; border-radius: 4px;';
+          
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.style.cssText = 'cursor: pointer; width: 18px; height: 18px;';
+          fieldRow.appendChild(checkbox);
+          
+          const label = document.createElement('label');
+          label.style.cssText = 'flex: 1; cursor: pointer; font-size: 13px; display: flex; align-items: center;';
+          const labelText = document.createElement('strong');
+          labelText.textContent = field.label + ':';
+          label.appendChild(labelText);
+          const valueSpan = document.createElement('span');
+          valueSpan.style.cssText = 'margin-left: 6px; color: #555;';
+          valueSpan.textContent = field.value;
+          label.appendChild(valueSpan);
+          label.addEventListener('click', () => {
+            checkbox.checked = !checkbox.checked;
+          });
+          fieldRow.appendChild(label);
+          
+          infoBox.appendChild(fieldRow);
+        });
+        
+        step2Div.appendChild(infoBox);
+        
+        const errorNote = document.createElement('div');
+        errorNote.textContent = '(Sai thì có button click báo lỗi)';
+        errorNote.style.cssText = 'font-size: 12px; color: #666; margin-top: 10px; margin-bottom: 10px; font-style: italic;';
+        step2Div.appendChild(errorNote);
+        
+        // Báo lỗi button for Step 2
+        const reportErrorBtn2 = document.createElement('button');
+        reportErrorBtn2.textContent = 'Báo lỗi';
+        reportErrorBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
+        reportErrorBtn2.addEventListener('mouseenter', () => {
+          reportErrorBtn2.style.background = '#ff5252';
+        });
+        reportErrorBtn2.addEventListener('mouseleave', () => {
+          reportErrorBtn2.style.background = '#ff6b6b';
+        });
+        reportErrorBtn2.addEventListener('click', async () => {
+          const note = prompt('Nhập ghi chú về lỗi:');
+          if (note !== null && window.raiseBug) {
+            await window.raiseBug(evt.panel_id, note || '');
+            showToast('✅ Đã báo lỗi');
+          }
+        });
+        step2Div.appendChild(reportErrorBtn2);
+        
+        validateActionDiv.appendChild(step2Div);
+        
+        // Step 3: View graph and Validate Video
+        const step3Div = document.createElement('div');
+        step3Div.setAttribute('data-step', '3');
+        step3Div.style.cssText = 'margin-bottom: 20px;';
+        
+        const step3Title = document.createElement('div');
+        step3Title.textContent = 'Bước 3: Xem nội dung action trong 2 nút này đã đúng chưa';
+        step3Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        step3Div.appendChild(step3Title);
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.style.cssText = 'display: flex; gap: 10px; margin-bottom: 10px;';
+        
+        // View graph button
+        const viewGraphBtn = document.createElement('button');
+        viewGraphBtn.textContent = 'View graph';
+        viewGraphBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease;';
+        viewGraphBtn.addEventListener('mouseenter', () => {
+          viewGraphBtn.style.background = '#0056b3';
+        });
+        viewGraphBtn.addEventListener('mouseleave', () => {
+          viewGraphBtn.style.background = '#007bff';
+        });
+        viewGraphBtn.addEventListener('click', async () => {
+          if (typeof openGraphView === 'function') {
+            await openGraphView();
+          }
+        });
+        buttonsContainer.appendChild(viewGraphBtn);
+        
+        // Validate Video button
+        const validateVideoBtn = document.createElement('button');
+        validateVideoBtn.textContent = 'Validate Video';
+        validateVideoBtn.style.cssText = 'flex: 1; padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s ease;';
+        validateVideoBtn.addEventListener('mouseenter', () => {
+          validateVideoBtn.style.background = '#218838';
+        });
+        validateVideoBtn.addEventListener('mouseleave', () => {
+          validateVideoBtn.style.background = '#28a745';
+        });
+        validateVideoBtn.addEventListener('click', async () => {
+          if (typeof openValidateView === 'function') {
+            await openValidateView();
+          }
+        });
+        buttonsContainer.appendChild(validateVideoBtn);
+        
+        step3Div.appendChild(buttonsContainer);
+        
+        // Báo lỗi button for Step 3
+        const reportErrorBtn3 = document.createElement('button');
+        reportErrorBtn3.textContent = 'Báo lỗi';
+        reportErrorBtn3.style.cssText = 'width: 100%; padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
+        reportErrorBtn3.addEventListener('mouseenter', () => {
+          reportErrorBtn3.style.background = '#ff5252';
+        });
+        reportErrorBtn3.addEventListener('mouseleave', () => {
+          reportErrorBtn3.style.background = '#ff6b6b';
+        });
+        reportErrorBtn3.addEventListener('click', async () => {
+          const note = prompt('Nhập ghi chú về lỗi:');
+          if (note !== null && window.raiseBug) {
+            await window.raiseBug(evt.panel_id, note || '');
+            showToast('✅ Đã báo lỗi');
+          }
+        });
+        step3Div.appendChild(reportErrorBtn3);
+        
+        validateActionDiv.appendChild(step3Div);
+        
+        container.appendChild(validateActionDiv);
       }
       
       // Update showMode button icon based on current mode
