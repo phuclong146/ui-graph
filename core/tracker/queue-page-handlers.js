@@ -1,4 +1,5 @@
 import { getPanelEditorClassCode } from './panel-editor-class.js';
+import { MySQLExporter } from '../data/mysql-exporter.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
@@ -5640,7 +5641,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         image_base64: n.data.item.image_base64,
                         fullscreen_base64: n.data.item.fullscreen_base64,
                         fullscreen_url: n.data.item.fullscreen_url,
-                        metadata: n.data.item.metadata
+                        metadata: n.data.item.metadata,
+                        bug_flag: n.data.item.bug_flag || n.data.item.metadata?.bug_flag || false,
+                        bug_info: n.data.item.bug_info || null
                     };
                 }
                 
@@ -5677,6 +5680,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         actionPurpose: e.data.actionItem.purpose,
                         actionImage_base64: e.data.actionItem.image_base64,
                         actionMetadata: e.data.actionItem.metadata,
+                        actionBugFlag: e.data.actionItem.bug_flag || e.data.actionItem.metadata?.bug_flag || false,
+                        actionBugInfo: e.data.actionItem.bug_info || null,
                         step: e.data.step ? {
                             step_id: e.data.step.step_id,
                             panel_before: e.data.step.panel_before,
@@ -5698,6 +5703,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Render graph in browser context
             await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData) => {
+                let lastMouseX = 0;
+                let lastMouseY = 0;
+                document.addEventListener('mousemove', (e) => {
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                });
+
                 const graphContainer = document.getElementById('graphContainer');
                 if (!graphContainer) {
                     console.error('graphContainer not found');
@@ -5724,10 +5736,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 };
                 buildNodesWithChildren(panelTreeData);
 
-                // Create vis-network data - đảm bảo tất cả edges có label rỗng
+                // Create vis-network data
                 const edgesForVis = edgesData.map(e => ({
                     ...e,
-                    label: '' // Force empty label
+                    label: e.data && e.data.actionBugFlag ? '🐛' : ''
                 }));
                 
                 // Add collapse/expand icons and set mass for nodes that have children
@@ -5812,11 +5824,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     interaction: {
                         dragNodes: true,
                         zoomView: true,
-                        dragView: true
+                        dragView: true,
+                        hover: true
                     }
                 };
 
                 const network = new vis.Network(graphContainer, data, options);
+
+                network.on("hoverEdge", function (params) {
+                    const edgeId = params.edge;
+                    const edge = edgesForVis.find(e => e.id === edgeId);
+                    if (edge && edge.data && edge.data.actionBugFlag) {
+                         if (typeof window.showBugTooltip === 'function') {
+                             window.showBugTooltip({ clientX: lastMouseX, clientY: lastMouseY }, null, edge.data.actionBugInfo);
+                         }
+                    }
+                });
+                
+                network.on("blurEdge", function (params) {
+                     if (typeof window.hideBugTooltip === 'function') {
+                         window.hideBugTooltip();
+                     }
+                });
 
                 // Store network reference globally for fit to screen
                 window.graphNetwork = network;
@@ -5860,7 +5889,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     originalLabels.set(node.id, originalLabel);
                 });
                 
-                // Đảm bảo tất cả edges có label rỗng khi khởi tạo
+                // Label clearing logic removed to support bug icons
+                /*
                 const allEdges = data.edges.get();
                 allEdges.forEach(edge => {
                     if (edge.label && edge.label !== '') {
@@ -5870,6 +5900,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         });
                     }
                 });
+                */
 
                 // Function to hide all edge labels
                 const hideAllEdgeLabels = () => {
@@ -7140,7 +7171,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const raiseBugHandler = async (actionItemId, note) => {
+    const raiseBugHandler = async (actionItemId, bugInfo) => {
         try {
             if (!actionItemId) {
                 console.warn('⚠️ No actionItemId provided for raiseBug');
@@ -7153,15 +7184,38 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return;
             }
 
-            await tracker.dataItemManager.updateItem(actionItemId, {
-                metadata: {
-                    ...actionItem.metadata,
-                    bug_flag: true,
-                    bug_note: note || ''
-                }
-            });
+            // Update doing_item.jsonl
+            const updates = {
+                bug_flag: true,
+                bug_info: bugInfo
+            };
 
-            console.log(`✅ Bug raised for action ${actionItemId}: ${note || 'No note'}`);
+            // Remove bug-related fields from metadata if they exist (cleanup old way)
+            if (actionItem.metadata && (actionItem.metadata.bug_flag || actionItem.metadata.bug_note)) {
+                updates.metadata = { ...actionItem.metadata };
+                delete updates.metadata.bug_flag;
+                delete updates.metadata.bug_note;
+            }
+
+            await tracker.dataItemManager.updateItem(actionItemId, updates);
+
+            // Update DB
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                
+                await exporter.connection.execute(
+                    `UPDATE doing_item SET bug_flag = 1, bug_info = ? WHERE item_id = ? AND my_ai_tool = ?`,
+                    [JSON.stringify(bugInfo), actionItemId, tracker.myAiToolCode]
+                );
+                
+                await exporter.close();
+                console.log(`✅ Updated bug info in DB for action ${actionItemId}`);
+            } catch (dbErr) {
+                console.error('⚠️ Failed to update bug info in DB:', dbErr);
+            }
+
+            console.log(`✅ Bug raised for action ${actionItemId}`);
             await tracker._broadcast({ type: 'show_toast', message: '✅ Bug raised successfully' });
 
             // Helper function to find node in tree
@@ -7192,7 +7246,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Debug: log to verify bug_flag is in tree data
                 const actionNode = findNodeInTree(panelTreeData, actionItemId);
                 if (actionNode) {
-                    console.log(`🔍 Debug: Action node bug_flag = ${actionNode.bug_flag}, bug_note = ${actionNode.bug_note}`);
+                    console.log(`🔍 Debug: Action node bug_flag = ${actionNode.bug_flag}`);
                 } else {
                     console.warn(`⚠️ Action node not found in tree: ${actionItemId}`);
                 }

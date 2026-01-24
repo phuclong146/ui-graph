@@ -1457,9 +1457,79 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <!-- RaiseBug Modal -->
+    <div id="raiseBugModal" style="display:none; position:fixed; z-index:20007; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div id="raiseBugDialog" style="background:white; width:600px; max-width:90%; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+            <div id="raiseBugHeader" style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; cursor:move;">
+                <h3 style="margin:0; font-size:18px; color:#333;">Raise Bug</h3>
+                <button id="closeRaiseBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
+            </div>
+            <div id="raiseBugContent" style="padding:20px; overflow-y:auto; flex:1;">
+                <!-- Content generated dynamically -->
+            </div>
+            <div style="padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; background:#f5f5f5;">
+                <button id="cancelRaiseBugBtn" style="padding:8px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer;">Cancel</button>
+                <button id="confirmRaiseBugBtn" style="padding:8px 16px; border:none; background:#dc3545; color:white; border-radius:4px; cursor:pointer; font-weight:600;">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-      // Panel Log Resizer - Initialize when DOM is ready
-      (function initPanelLogResizer() {
+    // Raise Bug Dialog Drag & Resize
+    (function initRaiseBugDialogFeatures() {
+      function setupDraggable() {
+        const dialog = document.getElementById('raiseBugDialog');
+        const header = document.getElementById('raiseBugHeader');
+        
+        if (!dialog || !header) {
+          setTimeout(setupDraggable, 500);
+          return;
+        }
+
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        header.addEventListener('mousedown', dragStart);
+        document.addEventListener('mouseup', dragEnd);
+        document.addEventListener('mousemove', drag);
+
+        function dragStart(e) {
+          if (e.target === header || header.contains(e.target)) {
+            if (e.target.tagName === 'BUTTON') return;
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+            isDragging = true;
+          }
+        }
+
+        function dragEnd(e) {
+          initialX = currentX;
+          initialY = currentY;
+          isDragging = false;
+        }
+
+        function drag(e) {
+          if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            xOffset = currentX;
+            yOffset = currentY;
+            dialog.style.transform = "translate3d(" + currentX + "px, " + currentY + "px, 0)";
+          }
+        }
+        console.log('✅ RaiseBugDialog drag initialized');
+      }
+      setupDraggable();
+    })();
+
+    // Panel Log Resizer - Initialize when DOM is ready
+    (function initPanelLogResizer() {
         let isResizing = false;
         let startX = 0;
         let startWidth = 0;
@@ -2917,15 +2987,21 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       if (videoValidationRaiseBugBtn) {
-        videoValidationRaiseBugBtn.addEventListener('click', () => {
+        videoValidationRaiseBugBtn.addEventListener('click', async () => {
           if (!videoValidationCurrentActionId) {
             alert('Please select an action first');
             return;
           }
-          const note = prompt('Enter bug note (optional):');
-          if (note !== null && window.raiseBug) {
-            window.raiseBug(videoValidationCurrentActionId, note || '');
+          
+          let currentBugInfo = null;
+          if (window.getActionItem) {
+              const item = await window.getActionItem(videoValidationCurrentActionId);
+              if (item) {
+                  currentBugInfo = item.bug_info || null;
+              }
           }
+          
+          showRaiseBugDialog(videoValidationCurrentActionId, currentBugInfo, item);
         });
       }
 
@@ -3619,9 +3695,7 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        if (node.item_category === 'ACTION') {
-          // Debug: log to check bug_flag
-          if (node.bug_flag || node.bug_flag === true) {
+        if (node.item_category === 'ACTION' && node.bug_flag) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
             bugIcon.style.display = 'inline-block';
@@ -3629,7 +3703,7 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.width = '14px';
             bugIcon.style.height = '14px';
             bugIcon.style.color = '#dc3545';
-            bugIcon.title = node.bug_note || 'Bug reported';
+            bugIcon.style.cursor = 'help';
             bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
               <ellipse cx="32" cy="36" rx="14" ry="18"/>
               <circle cx="32" cy="20" r="8"/>
@@ -3642,8 +3716,15 @@ export const QUEUE_BROWSER_HTML = `
               <line x1="46" y1="36" x2="56" y2="36"/>
               <line x1="46" y1="30" x2="56" y2="24"/>
             </svg>\`;
+            
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, node.bug_note, node.bug_info);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
             label.appendChild(bugIcon);
-          }
         }
         
         contentDiv.appendChild(label);
@@ -4750,6 +4831,39 @@ Bạn có chắc chắn muốn rollback?\`;
           badge.textContent = '[Chưa hoàn tất]';
           label.appendChild(badge);
         }
+
+        // Check for bug flag
+        if (node.bug_flag) {
+            const bugIcon = document.createElement('span');
+            bugIcon.style.marginLeft = '6px';
+            bugIcon.style.cursor = 'help';
+            bugIcon.style.display = 'inline-block';
+            bugIcon.style.verticalAlign = 'middle';
+            bugIcon.style.width = '14px';
+            bugIcon.style.height = '14px';
+            bugIcon.style.color = '#dc3545';
+            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
+              <ellipse cx="32" cy="36" rx="14" ry="18"/>
+              <circle cx="32" cy="20" r="8"/>
+              <line x1="28" y1="12" x2="22" y2="4"/>
+              <line x1="36" y1="12" x2="42" y2="4"/>
+              <line x1="18" y1="42" x2="8" y2="48"/>
+              <line x1="18" y1="36" x2="8" y2="36"/>
+              <line x1="18" y1="30" x2="8" y2="24"/>
+              <line x1="46" y1="42" x2="56" y2="48"/>
+              <line x1="46" y1="36" x2="56" y2="36"/>
+              <line x1="46" y1="30" x2="56" y2="24"/>
+            </svg>\`;
+            
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, node.bug_note, node.bug_info);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
+            label.appendChild(bugIcon);
+        }
         
         contentDiv.appendChild(label);
         
@@ -5014,6 +5128,260 @@ Bạn có chắc chắn muốn rollback?\`;
         setTimeout(() => {
           toast.remove();
         }, 1500);
+      }
+
+      // RaiseBug Dialog Handler
+      async function showRaiseBugDialog(actionId, currentBugInfo = null, actionItem = null) {
+          // Fetch action item if not provided
+          if (!actionItem && window.getActionItem) {
+              try {
+                  actionItem = await window.getActionItem(actionId);
+              } catch (e) {
+                  console.error('Failed to fetch action item for bug dialog:', e);
+              }
+          } else if (actionItem && (!actionItem.purpose && !actionItem.item_purpose) && window.getActionItem) {
+              // If we have an item but it seems incomplete (e.g. from UI event), try to fetch full data
+              try {
+                  const fullItem = await window.getActionItem(actionId);
+                  if (fullItem) {
+                      // Merge full item into actionItem
+                      actionItem = { ...actionItem, ...fullItem };
+                  }
+              } catch (e) {
+                  console.warn('Failed to fetch full action item:', e);
+              }
+          }
+
+          // If currentBugInfo is null, try to get it from actionItem
+          if (!currentBugInfo && actionItem && actionItem.bug_info) {
+              currentBugInfo = actionItem.bug_info;
+          }
+
+          const modal = document.getElementById('raiseBugModal');
+          const content = document.getElementById('raiseBugContent');
+          const closeBtn = document.getElementById('closeRaiseBugModalBtn');
+          const cancelBtn = document.getElementById('cancelRaiseBugBtn');
+          const confirmBtn = document.getElementById('confirmRaiseBugBtn');
+          
+          if (!modal || !content) return;
+          
+          modal.style.display = 'flex';
+          
+          // Helper to check if a specific bug type is checked
+          const isChecked = (type) => {
+              if (!currentBugInfo || !currentBugInfo.details) return false;
+              return currentBugInfo.details.some(d => d.bug_type === type && d.bug_status);
+          };
+
+          // Helper to get value from action item
+          const getActionValue = (field) => {
+              if (!actionItem) return '';
+              const val = (prop) => actionItem[prop] !== undefined ? actionItem[prop] : '';
+              
+              switch(field) {
+                  case 'action.name': return val('item_name') || val('name');
+                  case 'action.type': return val('item_type') || val('type');
+                  case 'action.verb': return val('item_verb') || val('verb');
+                  case 'action.content': return val('item_content') || val('content');
+                  case 'action.purpose': return val('item_purpose') || val('purpose');
+                  case 'action.image': return val('image_url') || val('item_image_url') || ''; 
+                  
+                  case 'panel_after.name': return val('panel_after_name');
+                  case 'panel_after.type': return val('panel_after_type');
+                  case 'panel_after.verb': return val('panel_after_verb');
+                  case 'panel_after.image': return '';
+                  default: return '';
+              }
+          };
+
+          const formatLabel = (label, value) => {
+              if (value === undefined || value === null || value === '') {
+                   return \`<span>\${label}: <span style="font-weight:normal; color:#999;">N/A</span></span>\`;
+              }
+              // Check if value is an image URL
+              if (typeof value === 'string' && value.match(/^https?:.*\.(jpg|jpeg|png|gif|webp|svg)/i)) {
+                   return \`<span>\${label}: <img src="\${value}" style="max-height: 40px; vertical-align: middle; margin-left: 5px; border: 1px solid #ddd; border-radius: 4px;" alt="Image" /></span>\`;
+              }
+              const displayValue = String(value).length > 100 ? String(value).substring(0, 100) + '...' : value;
+              return \`<span>\${label}: <span style="font-weight:normal; color:#555;">\${displayValue}</span></span>\`;
+          };
+          
+          content.innerHTML = \`
+              <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5; display: flex; align-items: start; gap: 8px;">
+                  <span style="font-size: 16px;">📋</span>
+                  <span><strong>Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>Save</strong> để báo lỗi.</span>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
+                  <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> \${formatLabel('Image', getActionValue('action.image'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
+                      </label>
+                  </div>
+              </div>
+              
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
+                  <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
+                      </label>
+                      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                          <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
+                      </label>
+                  </div>
+              </div>
+              
+              <div>
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
+                  <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
+              </div>
+          \`;
+          
+          const closeHandler = () => {
+              modal.style.display = 'none';
+              closeBtn.removeEventListener('click', closeHandler);
+              cancelBtn.removeEventListener('click', closeHandler);
+              confirmBtn.replaceWith(confirmBtn.cloneNode(true)); // remove all listeners
+          };
+          
+          closeBtn.addEventListener('click', closeHandler);
+          cancelBtn.addEventListener('click', closeHandler);
+          
+          confirmBtn.onclick = async () => {
+              const note = document.getElementById('raiseBugNote').value;
+              const checkboxes = content.querySelectorAll('input[name="bug_type"]:checked');
+              
+              const bugNameMap = {
+                  "action.name": "Action Name",
+                  "action.image": "Action Image or Position",
+                  "action.type": "Action Type",
+                  "action.verb": "Action Verb",
+                  "action.content": "Action Content",
+                  "action.purpose": "Action Purpose",
+                  "panel_after.name": "Panel After Name",
+                  "panel_after.image": "Panel After Image or Position",
+                  "panel_after.type": "Panel After Type",
+                  "panel_after.verb": "Panel After Verb"
+              };
+              
+              const details = Array.from(checkboxes).map(cb => ({
+                  bug_type: cb.value,
+                  bug_name: bugNameMap[cb.value] || cb.value,
+                  bug_status: true
+              }));
+              
+              const bugInfo = {
+                  note: note,
+                  details: details
+              };
+              
+              if (window.raiseBug) {
+                  // Disable button and show loading state
+                  confirmBtn.disabled = true;
+                  const originalText = confirmBtn.textContent;
+                  confirmBtn.textContent = 'Saving...';
+                  confirmBtn.style.opacity = '0.7';
+                  confirmBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      await window.raiseBug(actionId, bugInfo);
+                      if (typeof showToast === 'function') {
+                          showToast('✅ Bug reported successfully');
+                      } else {
+                          alert('Bug reported successfully');
+                      }
+                      closeHandler();
+                  } catch (error) {
+                      console.error('Error raising bug:', error);
+                      alert('Failed to raise bug: ' + (error.message || error));
+                      // Re-enable button on error
+                      confirmBtn.disabled = false;
+                      confirmBtn.textContent = originalText;
+                      confirmBtn.style.opacity = '1';
+                      confirmBtn.style.cursor = 'pointer';
+                  }
+              } else {
+                  console.warn('window.raiseBug is not defined');
+                  alert('RaiseBug feature is not available (function missing).');
+              }
+          };
+      }
+
+      // Bug Tooltip
+      let bugTooltip = null;
+      function showBugTooltip(e, note, bugInfo) {
+          if (bugTooltip) bugTooltip.remove();
+          
+          bugTooltip = document.createElement('div');
+          bugTooltip.style.cssText = \`
+              position: fixed;
+              left: \${e.clientX + 10}px;
+              top: \${e.clientY + 10}px;
+              background: rgba(0, 0, 0, 0.9);
+              color: white;
+              padding: 10px;
+              border-radius: 6px;
+              font-size: 12px;
+              z-index: 10000001;
+              max-width: 300px;
+              pointer-events: none;
+              white-space: pre-wrap;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          \`;
+          
+          let content = '';
+          // If bugInfo is available, use it (new format)
+          if (bugInfo) {
+              if (bugInfo.note) {
+                  content += \`<strong>Note:</strong> \${bugInfo.note}\n\`;
+              }
+              if (bugInfo.details && Array.isArray(bugInfo.details) && bugInfo.details.length > 0) {
+                  content += \`\n<strong>Details:</strong>\n\`;
+                  bugInfo.details.forEach(d => {
+                      const statusText = d.bug_status ? '[đã sửa]' : '[cần sửa]';
+                      content += \`- \${d.bug_name} \${statusText}\n\`;
+                  });
+              }
+          } 
+          // Fallback to simple note (old format)
+          else if (note) {
+               content += \`<strong>Note:</strong> \${note}\`;
+          } else {
+               content += \`Bug detected\`;
+          }
+          
+          bugTooltip.innerHTML = content;
+          document.body.appendChild(bugTooltip);
+      }
+      
+      function hideBugTooltip() {
+          if (bugTooltip) {
+              bugTooltip.remove();
+              bugTooltip = null;
+          }
       }
       
       function addClickEventToView(evt) {
@@ -6131,16 +6499,16 @@ Bạn có chắc chắn muốn rollback?\`;
         step2Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
         step2Div.appendChild(step2Title);
         
-        // Instruction text
+        // Instruction text - Simplified for this view, detailed one is in dialog
         const instructionText = document.createElement('div');
         instructionText.style.cssText = 'font-size: 13px; color: #666; margin-bottom: 12px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5;';
-        instructionText.innerHTML = \`<strong>📋 Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>RaiseBug</strong> để báo lỗi.\`;
+        instructionText.innerHTML = \`<strong>Check Bugs:</strong> Nếu thấy thông tin không đúng, nhấn nút <strong>RaiseBug</strong> để báo lỗi.\`;
         step2Div.appendChild(instructionText);
         
+        // Show current values (readonly)
         const infoBox = document.createElement('div');
         infoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px;';
         
-        // Create checkbox list for each field - check if information is incorrect
         const fields = [
           { label: 'Category', value: evt.item_category || 'N/A' },
           { label: 'Name', value: evt.item_name || 'N/A' },
@@ -6154,16 +6522,8 @@ Bạn có chắc chắn muốn rollback?\`;
           const fieldRow = document.createElement('div');
           fieldRow.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: white; border-radius: 4px;';
           
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.cssText = 'cursor: pointer; width: 18px; height: 18px;';
-          // Check if information is incorrect (you can add logic here to determine if incorrect)
-          // For now, default to unchecked
-          checkbox.checked = false;
-          fieldRow.appendChild(checkbox);
-          
           const label = document.createElement('label');
-          label.style.cssText = 'flex: 1; cursor: pointer; font-size: 13px; display: flex; align-items: center;';
+          label.style.cssText = 'flex: 1; font-size: 13px; display: flex; align-items: center;';
           const labelText = document.createElement('strong');
           labelText.textContent = field.label + ':';
           label.appendChild(labelText);
@@ -6171,34 +6531,12 @@ Bạn có chắc chắn muốn rollback?\`;
           valueSpan.style.cssText = 'margin-left: 6px; color: #555;';
           valueSpan.textContent = field.value;
           label.appendChild(valueSpan);
-          label.addEventListener('click', () => {
-            checkbox.checked = !checkbox.checked;
-          });
           fieldRow.appendChild(label);
           
           infoBox.appendChild(fieldRow);
         });
         
         step2Div.appendChild(infoBox);
-        
-        // RaiseBug button for Step 2 (if information is incorrect, check checkbox and click this button)
-        const raiseBugBtn2 = document.createElement('button');
-        raiseBugBtn2.textContent = 'RaiseBug';
-        raiseBugBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px;';
-        raiseBugBtn2.addEventListener('mouseenter', () => {
-          raiseBugBtn2.style.background = '#ff5252';
-        });
-        raiseBugBtn2.addEventListener('mouseleave', () => {
-          raiseBugBtn2.style.background = '#ff6b6b';
-        });
-        raiseBugBtn2.addEventListener('click', async () => {
-          const note = prompt('Nhập ghi chú về lỗi:');
-          if (note !== null && window.raiseBug) {
-            await window.raiseBug(evt.panel_id, note || '');
-            showToast('✅ Đã báo lỗi');
-          }
-        });
-        step2Div.appendChild(raiseBugBtn2);
         
         validateActionDiv.appendChild(step2Div);
         
@@ -6264,6 +6602,23 @@ Bạn có chắc chắn muốn rollback?\`;
         buttonsContainer.appendChild(validateVideoBtn);
         
         step3Div.appendChild(buttonsContainer);
+        
+        // RaiseBug button (moved from Step 2)
+        const raiseBugBtn2 = document.createElement('button');
+        raiseBugBtn2.textContent = 'RaiseBug';
+        raiseBugBtn2.style.cssText = 'padding: 8px 16px; background: #ff6b6b; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; margin-top: 8px; width: 100%;';
+        raiseBugBtn2.addEventListener('mouseenter', () => {
+          raiseBugBtn2.style.background = '#ff5252';
+        });
+        raiseBugBtn2.addEventListener('mouseleave', () => {
+          raiseBugBtn2.style.background = '#ff6b6b';
+        });
+        raiseBugBtn2.addEventListener('click', () => {
+             // Pass current bug info from event if available
+             const currentBugInfo = evt.bug_info || null;
+             showRaiseBugDialog(evt.panel_id, currentBugInfo, evt);
+        });
+        step3Div.appendChild(raiseBugBtn2);
         
         validateActionDiv.appendChild(step3Div);
         
