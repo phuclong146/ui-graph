@@ -1,15 +1,6 @@
-import mysql from 'mysql2/promise';
 import { promises as fsp } from 'fs';
 import path from 'path';
-
-const MYSQL_CONFIG = {
-    host: 'mysql.clevai.vn',
-    port: 3306,
-    user: 'comaker',
-    password: 'zwTe1ROMxeRRZAiXhCDmfNRTeFsroMLI',
-    database: 'comaker',
-    connectTimeout: 60000
-};
+import { getDbPool } from './db-connection.js';
 
 export class DatabaseLoader {
     constructor(sessionFolder, myAiToolCode) {
@@ -23,15 +14,14 @@ export class DatabaseLoader {
             throw new Error('❌ myAiToolCode is required!');
         }
         
-        this.connection = await mysql.createConnection(MYSQL_CONFIG);
-        console.log('✅ DatabaseLoader: MySQL connected');
+        this.connection = getDbPool();
+        // console.log('✅ DatabaseLoader: MySQL connected (via pool)');
     }
 
     async close() {
-        if (this.connection) {
-            await this.connection.end();
-            console.log('✅ DatabaseLoader: MySQL connection closed');
-        }
+        // Pool is managed globally
+        this.connection = null;
+        // console.log('✅ DatabaseLoader: MySQL connection released');
     }
 
     /**

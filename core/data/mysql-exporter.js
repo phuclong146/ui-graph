@@ -1,19 +1,10 @@
-import mysql from 'mysql2/promise';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { uploadPictureAndGetUrl } from '../media/uploader.js';
 import { saveBase64AsFile, calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
-
-const MYSQL_CONFIG = {
-    host: 'mysql.clevai.vn',
-    port: 3306,
-    user: 'comaker',
-    password: 'zwTe1ROMxeRRZAiXhCDmfNRTeFsroMLI',
-    database: 'comaker',
-    connectTimeout: 60000
-};
+import { getDbPool } from './db-connection.js';
 
 export class MySQLExporter {
     constructor(sessionFolder, trackingUrl, myAiToolCode = null) {
@@ -28,8 +19,8 @@ export class MySQLExporter {
             throw new Error('❌ myAiToolCode is required!');
         }
         
-        this.connection = await mysql.createConnection(MYSQL_CONFIG);
-        console.log('✅ MySQL connected');
+        this.connection = getDbPool();
+        // console.log('✅ MySQL connected (via pool)');
     }
 
     normalizeName(name) {
@@ -940,10 +931,9 @@ export class MySQLExporter {
     }
 
     async close() {
-        if (this.connection) {
-            await this.connection.end();
-            console.log('✅ MySQL connection closed');
-        }
+        // Pool is managed globally, no need to close individual connection
+        this.connection = null;
+        // console.log('✅ MySQL connection released (pool)');
     }
 }
 

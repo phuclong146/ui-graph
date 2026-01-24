@@ -5569,7 +5569,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             data: { isVirtual: true, type: status, actionId, actionItem }
                         });
                         virtualNodesCreated.add(virtualNodeId);
-                        console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
+                        // console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
                     }
                 }
 
@@ -5577,7 +5577,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
         });
         
-        console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
+        // console.log(`[Graph] Total nodes: ${nodes.length}, Total edges: ${edges.length}`);
 
         return { nodes, edges, itemMap, stepMap };
     };
@@ -7386,7 +7386,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             if (panelBeforeItem) {
                 panelBeforeImage = await loadPanelImage(panelBeforeItem);
-                console.log(`[StepInfo] Panel Before (${panelBeforeId}): image loaded = ${!!panelBeforeImage}, has fullscreen_base64 = ${!!panelBeforeItem.fullscreen_base64}, has fullscreen_url = ${!!panelBeforeItem.fullscreen_url}, has image_base64 = ${!!panelBeforeItem.image_base64}`);
+                // console.log(`[StepInfo] Panel Before (${panelBeforeId}): image loaded = ${!!panelBeforeImage}, has fullscreen_base64 = ${!!panelBeforeItem.fullscreen_base64}, has fullscreen_url = ${!!panelBeforeItem.fullscreen_url}, has image_base64 = ${!!panelBeforeItem.image_base64}`);
             } else {
                 console.warn(`[StepInfo] Panel Before (${panelBeforeId}): not found in DataItemManager or nodesData`);
             }
@@ -7412,7 +7412,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             
             if (panelAfterItem) {
                 panelAfterImage = await loadPanelImage(panelAfterItem);
-                console.log(`[StepInfo] Panel After (${panelAfterId}): image loaded = ${!!panelAfterImage}, has fullscreen_base64 = ${!!panelAfterItem.fullscreen_base64}, has fullscreen_url = ${!!panelAfterItem.fullscreen_url}, has image_base64 = ${!!panelAfterItem.image_base64}`);
+                // console.log(`[StepInfo] Panel After (${panelAfterId}): image loaded = ${!!panelAfterImage}, has fullscreen_base64 = ${!!panelAfterItem.fullscreen_base64}, has fullscreen_url = ${!!panelAfterItem.fullscreen_url}, has image_base64 = ${!!panelAfterItem.image_base64}`);
             } else {
                 console.warn(`[StepInfo] Panel After (${panelAfterId}): not found in DataItemManager or nodesData`);
             }

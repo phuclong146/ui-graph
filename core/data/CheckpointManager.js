@@ -1,16 +1,7 @@
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import mysql from 'mysql2/promise';
-
-const MYSQL_CONFIG = {
-    host: 'mysql.clevai.vn',
-    port: 3306,
-    user: 'comaker',
-    password: 'zwTe1ROMxeRRZAiXhCDmfNRTeFsroMLI',
-    database: 'comaker',
-    connectTimeout: 60000
-};
+import { getDbPool } from './db-connection.js';
 
 export class CheckpointManager {
     constructor(sessionFolder, myAiToolCode = null) {
@@ -40,8 +31,8 @@ export class CheckpointManager {
         // Initialize DB connection if myAiTool is provided
         if (this.myAiTool) {
             try {
-                this.connection = await mysql.createConnection(MYSQL_CONFIG);
-                console.log('✅ CheckpointManager: MySQL connected');
+                this.connection = getDbPool();
+                // console.log('✅ CheckpointManager: MySQL connected (via pool)');
             } catch (err) {
                 console.error('⚠️ CheckpointManager: Failed to connect to MySQL:', err);
                 // Continue without DB connection for local-only operations
@@ -50,10 +41,8 @@ export class CheckpointManager {
     }
 
     async close() {
-        if (this.connection) {
-            await this.connection.end();
-            this.connection = null;
-        }
+        // Pool managed globally
+        this.connection = null;
     }
 
     /**

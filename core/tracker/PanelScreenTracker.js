@@ -12,6 +12,7 @@ import { DataItemManager } from "../data/DataItemManager.js";
 import { ParentPanelManager } from "../data/ParentPanelManager.js";
 import { StepManager } from "../data/StepManager.js";
 import { PanelLogManager } from "../data/PanelLogManager.js";
+import { initDbPool } from "../data/db-connection.js";
 
 export class PanelScreenTracker {
     constructor() {
@@ -52,6 +53,7 @@ export class PanelScreenTracker {
     }
     
     async init({ startUrl = "about:blank" } = {}) {
+        await initDbPool();
         await initBrowsers(this, startUrl);
 
         console.log('DEBUG ENV.GEMINI_USE_REST:', ENV.GEMINI_USE_REST, typeof ENV.GEMINI_USE_REST);
@@ -1012,6 +1014,14 @@ export class PanelScreenTracker {
         } catch (err) {
             console.error('❌ Failed to close Gemini session:', err);
         }
+
+        try {
+            const { closeDbPool } = await import('../data/db-connection.js');
+            await closeDbPool();
+        } catch (err) {
+            console.error('❌ Failed to close DB pool:', err);
+        }
+
         console.log("🛑 Tracker closed.");
         process.exit(0);
     }
