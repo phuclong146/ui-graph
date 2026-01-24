@@ -6091,6 +6091,86 @@ Bạn có chắc chắn muốn rollback?\`;
             actionDiv.appendChild(step3Div);
           }
           
+          // Step 3: Check purpose of action (only show when action has step_info)
+          if (evt.action_info && evt.action_info.step_info) {
+            const stepHeader = document.createElement('div');
+            stepHeader.style.cssText = 'font-weight: bold; margin-bottom: 5px; margin-top: 10px; color: #333;';
+            stepHeader.textContent = 'Bước 3: Kiểm tra action purpose';
+            actionDiv.appendChild(stepHeader);
+
+            const purposeDiv = document.createElement('div');
+            purposeDiv.className = 'event';
+            purposeDiv.style.position = 'relative';
+            purposeDiv.style.background = '#ffe4ec';
+            purposeDiv.style.border = '2px solid #ff69b4';
+            purposeDiv.setAttribute('data-event-type', 'purpose');
+            
+            const purposeTitle = document.createElement('div');
+            purposeTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333; text-align: center; background: #ffb6c1; padding: 8px; border-radius: 4px;';
+            const titleStepPurpose = evt.action_info.step_purpose || evt.action_info.purpose || '';
+            const titleActionPurpose = evt.action_info.action_purpose || '';
+            const titleReason = evt.action_info.reason || evt.action_info.step_reason || '';
+            purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + (titleActionPurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + (titleStepPurpose || 'N/A') + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
+            purposeDiv.appendChild(purposeTitle);
+            
+            // ReGen button container
+            const regenContainer = document.createElement('div');
+            regenContainer.style.cssText = 'text-align: center; margin-top: 12px;';
+            
+            const regenBtn = document.createElement('button');
+            regenBtn.textContent = 'ReGen';
+            regenBtn.style.cssText = 'padding: 8px 20px; background: #ff69b4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s ease;';
+            regenBtn.addEventListener('mouseenter', () => {
+              regenBtn.style.background = '#ff1493';
+            });
+            regenBtn.addEventListener('mouseleave', () => {
+              regenBtn.style.background = '#ff69b4';
+            });
+            regenBtn.addEventListener('click', async () => {
+              regenBtn.disabled = true;
+              regenBtn.textContent = 'Đang detect...';
+              regenBtn.style.opacity = '0.6';
+              
+              try {
+                if (window.detectActionPurpose) {
+                  const result = await window.detectActionPurpose(evt.panel_id);
+                  
+                  // Update purposeTitle directly with new values
+                  if (result) {
+                    const newStepPurpose = result.step_purpose || 'N/A';
+                    const newActionPurpose = result.action_purpose || 'N/A';
+                    const newReason = result.reason || 'N/A';
+                    purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + newActionPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + newStepPurpose + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
+                  } else {
+                    // Fallback: Refresh the view
+                    if (window.selectPanel) {
+                      await window.selectPanel(evt.panel_id);
+                    }
+                  }
+                } else {
+                  showToast('❌ detectActionPurpose không khả dụng');
+                }
+              } catch (err) {
+                console.error('ReGen purpose failed:', err);
+                showToast('❌ Lỗi khi detect action purpose');
+              } finally {
+                regenBtn.disabled = false;
+                regenBtn.textContent = 'ReGen';
+                regenBtn.style.opacity = '1';
+              }
+            });
+            regenContainer.appendChild(regenBtn);
+            
+            // Helper text
+            const helperText = document.createElement('div');
+            helperText.style.cssText = 'font-size: 11px; color: #888; margin-top: 6px;';
+            helperText.textContent = 'ReGen (có thể call lại cho đến khi đúng thì thôi)';
+            regenContainer.appendChild(helperText);
+            
+            purposeDiv.appendChild(regenContainer);
+            actionDiv.appendChild(purposeDiv);
+          }
+          
           container.appendChild(actionDiv);
         }
         
@@ -6393,78 +6473,6 @@ Bạn có chắc chắn muốn rollback?\`;
             stepDiv.appendChild(stepInfo);
             insertEventSorted(stepDiv);
             
-            // Bước 3: Check purpose của action (only show when action has step_info)
-            const purposeDiv = document.createElement('div');
-            purposeDiv.className = 'event';
-            purposeDiv.style.position = 'relative';
-            purposeDiv.style.background = '#ffe4ec';
-            purposeDiv.style.border = '2px solid #ff69b4';
-            purposeDiv.setAttribute('data-event-type', 'purpose');
-            
-            const purposeTitle = document.createElement('div');
-            purposeTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333; text-align: center; background: #ffb6c1; padding: 8px; border-radius: 4px;';
-            const titleStepPurpose = evt.action_info.step_purpose || evt.action_info.purpose || '';
-            const titleActionPurpose = evt.action_info.action_purpose || '';
-            const titleReason = evt.action_info.reason || evt.action_info.step_reason || '';
-            purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + (titleActionPurpose || 'N/A') + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + (titleStepPurpose || 'N/A') + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + (titleReason || 'N/A') + '</span>';
-            purposeDiv.appendChild(purposeTitle);
-            
-            // ReGen button container
-            const regenContainer = document.createElement('div');
-            regenContainer.style.cssText = 'text-align: center; margin-top: 12px;';
-            
-            const regenBtn = document.createElement('button');
-            regenBtn.textContent = 'ReGen';
-            regenBtn.style.cssText = 'padding: 8px 20px; background: #ff69b4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s ease;';
-            regenBtn.addEventListener('mouseenter', () => {
-              regenBtn.style.background = '#ff1493';
-            });
-            regenBtn.addEventListener('mouseleave', () => {
-              regenBtn.style.background = '#ff69b4';
-            });
-            regenBtn.addEventListener('click', async () => {
-              regenBtn.disabled = true;
-              regenBtn.textContent = 'Đang detect...';
-              regenBtn.style.opacity = '0.6';
-              
-              try {
-                if (window.detectActionPurpose) {
-                  const result = await window.detectActionPurpose(evt.panel_id);
-                  
-                  // Update purposeTitle directly with new values
-                  if (result) {
-                    const newStepPurpose = result.step_purpose || 'N/A';
-                    const newActionPurpose = result.action_purpose || 'N/A';
-                    const newReason = result.reason || 'N/A';
-                    purposeTitle.innerHTML = '<strong>Action Purpose:</strong> ' + newActionPurpose + '<br><span style="font-weight: normal; font-size: 12px;"><strong>Step Purpose:</strong> ' + newStepPurpose + '</span><br><span style="font-weight: normal; font-size: 12px;"><strong>Reason:</strong> ' + newReason + '</span>';
-                  } else {
-                    // Fallback: Refresh the view
-                    if (window.selectPanel) {
-                      await window.selectPanel(evt.panel_id);
-                    }
-                  }
-                } else {
-                  showToast('❌ detectActionPurpose không khả dụng');
-                }
-              } catch (err) {
-                console.error('ReGen purpose failed:', err);
-                showToast('❌ Lỗi khi detect action purpose');
-              } finally {
-                regenBtn.disabled = false;
-                regenBtn.textContent = 'ReGen';
-                regenBtn.style.opacity = '1';
-              }
-            });
-            regenContainer.appendChild(regenBtn);
-            
-            // Helper text
-            const helperText = document.createElement('div');
-            helperText.style.cssText = 'font-size: 11px; color: #888; margin-top: 6px;';
-            helperText.textContent = 'ReGen (có thể call lại cho đến khi đúng thì thôi)';
-            regenContainer.appendChild(helperText);
-            
-            purposeDiv.appendChild(regenContainer);
-            insertEventSorted(purposeDiv);
           } else {
             const needCapture = document.createElement('div');
             needCapture.className = 'event';
