@@ -194,6 +194,17 @@ export class PanelScreenTracker {
             
             await fsp.writeFile(infoPath, JSON.stringify(updatedInfo, null, 2), 'utf8');
             
+            // Update bug info from database if role is DRAW
+            if (role === 'DRAW') {
+                try {
+                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
+                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
+                     await loader.updateBugInfoInDoingItems();
+                } catch (err) {
+                    console.error('❌ Failed to update bug info:', err);
+                }
+            }
+
             // Load data from database if role is VALIDATE
             if (role === 'VALIDATE') {
                 try {

@@ -132,6 +132,78 @@ export class DatabaseLoader {
     }
 
     /**
+     * For role=DRAW: Update bug_flag and bug_info in existing doing_item.jsonl from database
+     */
+    async updateBugInfoInDoingItems() {
+        try {
+            await this.init();
+
+            // 1. Read existing doing_item.jsonl
+            const filePath = path.join(this.sessionFolder, 'doing_item.jsonl');
+            let fileContent;
+            try {
+                fileContent = await fsp.readFile(filePath, 'utf8');
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    console.log('⚠️ doing_item.jsonl not found, skipping bug info update');
+                    return;
+                }
+                throw err;
+            }
+
+            if (!fileContent.trim()) {
+                 console.log('⚠️ doing_item.jsonl is empty, skipping bug info update');
+                 return;
+            }
+
+            const items = fileContent.trim().split('\n').filter(line => line.trim()).map(line => JSON.parse(line));
+            if (items.length === 0) return;
+
+            // 2. Query doing_item from DB to get latest bug info
+            console.log(`📊 Querying doing_item table for bug info (my_ai_tool='${this.myAiTool}')...`);
+            const [dbItems] = await this.connection.execute(
+                `SELECT item_id, bug_flag, bug_info FROM doing_item WHERE published=1 AND my_ai_tool=?`,
+                [this.myAiTool]
+            );
+            console.log(`✅ Found ${dbItems.length} items in DB for bug info update`);
+            
+            // Create map for fast lookup
+            const dbItemMap = new Map();
+            for (const dbItem of dbItems) {
+                dbItemMap.set(dbItem.item_id, dbItem);
+            }
+
+            // 3. Update items
+            let updatedCount = 0;
+            for (const item of items) {
+                const dbItem = dbItemMap.get(item.item_id);
+                if (dbItem) {
+                     // Parse bug_info if needed
+                    let bugInfo = dbItem.bug_info;
+                    if (typeof bugInfo === 'string') {
+                        bugInfo = this.parseJsonSafely(bugInfo);
+                    }
+
+                    item.bug_flag = dbItem.bug_flag === 1;
+                    item.bug_info = bugInfo;
+                    updatedCount++;
+                }
+            }
+
+            // 4. Write back to file
+            const newLines = items.map(item => JSON.stringify(item));
+            await fsp.writeFile(filePath, newLines.join('\n') + (newLines.length > 0 ? '\n' : ''), 'utf8');
+            console.log(`✅ Updated bug info for ${updatedCount} items in doing_item.jsonl`);
+
+        } catch (err) {
+            console.error('❌ Failed to update bug info:', err);
+            // Don't throw to avoid blocking session load
+        } finally {
+            await this.close();
+        }
+    }
+
+    /**
      * Create doing_item.jsonl from doing_item table
      */
     async createDoingItemJsonl(doingItems) {
