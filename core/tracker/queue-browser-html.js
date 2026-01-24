@@ -1360,6 +1360,7 @@ export const QUEUE_BROWSER_HTML = `
             </svg>
             <span>Panel Log</span>
           </button>
+          <button id="graphRaiseBugBtn" style="background:#dc3545; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;"><ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/><line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/><line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/><line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/></svg> RaiseBug</button>
           <button id="graphFitToScreenBtn" style="background:#007bff; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:600;">🔍 Fit to Screen</button>
           <button id="closeGraphViewBtn" style="background:none; border:none; font-size:28px; cursor:pointer; color:#fff; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
@@ -2826,6 +2827,63 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
 
+      // Graph View RaiseBug button
+      const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
+      if (graphRaiseBugBtn) {
+        graphRaiseBugBtn.addEventListener('click', async () => {
+          // Get selected node or edge from graph network
+          let selectedId = null;
+          
+          if (window.graphNetwork) {
+             const selectedNodes = window.graphNetwork.getSelectedNodes();
+             if (selectedNodes && selectedNodes.length > 0) {
+                selectedId = selectedNodes[0];
+             } else {
+                 const selectedEdges = window.graphNetwork.getSelectedEdges();
+                 if (selectedEdges && selectedEdges.length > 0) {
+                     const edgeId = selectedEdges[0];
+                     // Try to get edge data to find actionId
+                     if (window.graphNetwork.body && window.graphNetwork.body.data && window.graphNetwork.body.data.edges) {
+                         const edge = window.graphNetwork.body.data.edges.get(edgeId);
+                         if (edge && edge.data && edge.data.actionId) {
+                             selectedId = edge.data.actionId;
+                         } else {
+                             // Fallback to edge ID if no data (might be the action ID itself)
+                             selectedId = edgeId;
+                         }
+                     } else {
+                         selectedId = edgeId;
+                     }
+                 }
+             }
+          }
+
+          // If not selected in graph, check in panel log tree
+          if (!selectedId) {
+            const selectedNode = document.querySelector('#graphPanelLogTree .graph-tree-node-content.selected');
+            if (selectedNode) {
+              selectedId = selectedNode.getAttribute('data-panel-id');
+            }
+          }
+          
+          if (!selectedId) {
+            alert('Please select a Panel/Action in the graph or the Panel Log first');
+            return;
+          }
+          
+          let currentBugInfo = null;
+          let item = null;
+          if (window.getActionItem) {
+              item = await window.getActionItem(selectedId);
+              if (item) {
+                  currentBugInfo = item.bug_info || null;
+              }
+          }
+          
+          showRaiseBugDialog(selectedId, currentBugInfo, item);
+        });
+      }
+
       // Video Validation Modal handlers
       const videoValidationModal = document.getElementById('videoValidationModal');
       const closeVideoValidationBtn = document.getElementById('closeVideoValidationBtn');
@@ -3354,6 +3412,33 @@ export const QUEUE_BROWSER_HTML = `
           badge.className = 'graph-tree-incomplete-badge';
           badge.textContent = '[Chưa hoàn tất]';
           label.appendChild(badge);
+        }
+        
+        // Add bug icon for actions with bug_flag (after name)
+        // Check both direct property and metadata property for compatibility
+        if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
+            const bugIcon = document.createElement('span');
+            bugIcon.style.marginLeft = '4px';
+            bugIcon.style.display = 'inline-block';
+            bugIcon.style.verticalAlign = 'middle';
+            bugIcon.style.width = '16px';
+            bugIcon.style.height = '16px';
+            bugIcon.style.fontSize = '14px';
+            bugIcon.style.cursor = 'help';
+            bugIcon.textContent = '🐞';
+            
+            // Get bug info from direct property or metadata
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+
+            bugIcon.addEventListener('mouseenter', (e) => {
+                showBugTooltip(e, bugNote, bugInfo);
+            });
+            bugIcon.addEventListener('mouseleave', () => {
+                hideBugTooltip();
+            });
+            
+            label.appendChild(bugIcon);
         }
         
         contentDiv.appendChild(label);

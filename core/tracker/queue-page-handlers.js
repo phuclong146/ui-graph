@@ -7259,6 +7259,88 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }, panelTreeData);
             }
+
+            // Refresh graph view if modal is open
+            const isGraphModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('graphViewModal');
+                return modal && modal.style.display !== 'none';
+            });
+
+            if (isGraphModalOpen) {
+                 await tracker.queuePage.evaluate((itemId, bugInfo) => {
+                     if (window.graphNetwork && window.vis && window.vis.DataSet) {
+                        const network = window.graphNetwork;
+                        const edges = network.body.data.edges;
+                        const nodes = network.body.data.nodes;
+                        
+                        // Try to find as edge (Action)
+                        const allEdges = edges.get();
+                        const targetEdge = allEdges.find(e => e.data && e.data.actionId === itemId);
+                        
+                        if (targetEdge) {
+                             // Update edge
+                             targetEdge.data.actionBugFlag = true;
+                             targetEdge.data.actionBugInfo = bugInfo;
+                             targetEdge.label = '🐛';
+                             edges.update(targetEdge);
+                             console.log('Updated graph edge with bug info:', itemId);
+                        } else {
+                            // Try to find as node (Panel)
+                            const targetNode = nodes.get(itemId);
+                            if (targetNode) {
+                                if (targetNode.data && targetNode.data.item) {
+                                    targetNode.data.item.bug_flag = true;
+                                    targetNode.data.item.bug_info = bugInfo;
+                                }
+                                
+                                // Update label to show bug icon if not already there
+                                if (!targetNode.label.includes('🐞')) {
+                                    targetNode.label = targetNode.label + ' 🐞';
+                                    nodes.update(targetNode);
+                                    console.log('Updated graph node with bug info:', itemId);
+                                }
+                            }
+                        }
+                     }
+                     
+                     // Also update the Panel Log Tree in Graph View
+                     const treeContainer = document.getElementById('graphPanelLogTree');
+                     if (treeContainer) {
+                         const targetNode = treeContainer.querySelector(`[data-panel-id="${itemId}"]`);
+                         if (targetNode) {
+                             const labelSpan = targetNode.querySelector('.graph-tree-label');
+                             if (labelSpan && !labelSpan.innerHTML.includes('🐞')) {
+                                 const bugIcon = document.createElement('span');
+                                 bugIcon.style.marginLeft = '4px';
+                                 bugIcon.style.display = 'inline-block';
+                                 bugIcon.style.verticalAlign = 'middle';
+                                 bugIcon.style.width = '16px';
+                                 bugIcon.style.height = '16px';
+                                 bugIcon.style.fontSize = '14px';
+                                 bugIcon.style.cursor = 'help';
+                                 bugIcon.textContent = '🐞';
+                                 
+                                 // Add bug tooltip behavior
+                                 bugIcon.addEventListener('mouseenter', (e) => {
+                                     if (window.showBugTooltip) {
+                                         // Pass minimal bug info needed for tooltip
+                                         const note = bugInfo?.note || null;
+                                         window.showBugTooltip(e, note, bugInfo);
+                                     }
+                                 });
+                                 bugIcon.addEventListener('mouseleave', () => {
+                                     if (window.hideBugTooltip) {
+                                         window.hideBugTooltip();
+                                     }
+                                 });
+                                 
+                                 labelSpan.appendChild(bugIcon);
+                                 console.log('Updated graph panel log tree with bug icon:', itemId);
+                             }
+                         }
+                     }
+                 }, actionItemId, bugInfo);
+            }
         } catch (err) {
             console.error('Failed to raise bug:', err);
             await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to raise bug' });
