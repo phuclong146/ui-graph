@@ -3971,23 +3971,49 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Function to update button visibility based on role
       const updateButtonsVisibility = (role) => {
-        const importCookiesBtn = document.getElementById('importCookiesBtn');
-        const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
-        const saveBtn = document.getElementById('saveBtn');
-        const checkpointBtn = document.getElementById('checkpointBtn');
+        const controlsDiv = document.getElementById('controls');
         
-        if (role === 'DRAW') {
-          // Show all buttons for DRAW role
-          if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
-          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
-          if (saveBtn) saveBtn.style.display = 'inline-block';
-          if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+        if (role === 'VALIDATE') {
+          // Hide all buttons except Quit when role is VALIDATE
+          if (controlsDiv) {
+            const allButtons = controlsDiv.querySelectorAll('button');
+            allButtons.forEach(btn => {
+              if (btn.id !== 'quitBtn') {
+                btn.style.display = 'none';
+              } else {
+                btn.style.display = 'inline-block';
+              }
+            });
+          }
         } else {
-          // Hide buttons for non-DRAW roles
-          if (importCookiesBtn) importCookiesBtn.style.display = 'none';
-          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
-          if (saveBtn) saveBtn.style.display = 'none';
-          if (checkpointBtn) checkpointBtn.style.display = 'none';
+          // For other roles, use the original logic
+          const importCookiesBtn = document.getElementById('importCookiesBtn');
+          const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
+          const saveBtn = document.getElementById('saveBtn');
+          const checkpointBtn = document.getElementById('checkpointBtn');
+          const viewGraphBtn = document.getElementById('viewGraphBtn');
+          const validateBtn = document.getElementById('validateBtn');
+          const quitBtn = document.getElementById('quitBtn');
+          
+          if (role === 'DRAW') {
+            // Show all buttons for DRAW role
+            if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
+            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
+            if (saveBtn) saveBtn.style.display = 'inline-block';
+            if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+            if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
+            if (validateBtn) validateBtn.style.display = 'inline-block';
+            if (quitBtn) quitBtn.style.display = 'inline-block';
+          } else {
+            // Hide buttons for non-DRAW roles (but keep Quit visible)
+            if (importCookiesBtn) importCookiesBtn.style.display = 'none';
+            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
+            if (saveBtn) saveBtn.style.display = 'none';
+            if (checkpointBtn) checkpointBtn.style.display = 'none';
+            if (viewGraphBtn) viewGraphBtn.style.display = 'none';
+            if (validateBtn) validateBtn.style.display = 'none';
+            if (quitBtn) quitBtn.style.display = 'inline-block';
+          }
         }
       };
 
@@ -5710,6 +5736,21 @@ Bạn có chắc chắn muốn rollback?\`;
       async function handlePanelSelectedForValidate(evt) {
         selectedPanelId = evt.panel_id;
         renderPanelTree();
+        
+        // Hide all control buttons except Quit when role is VALIDATE
+        if (currentRole === 'VALIDATE') {
+          const controlsDiv = document.getElementById('controls');
+          if (controlsDiv) {
+            const allButtons = controlsDiv.querySelectorAll('button');
+            allButtons.forEach(btn => {
+              if (btn.id !== 'quitBtn') {
+                btn.style.display = 'none';
+              } else {
+                btn.style.display = 'inline-block';
+              }
+            });
+          }
+        }
         
         // Clean up existing events (same cleanup as handlePanelSelected but separate implementation)
         const existingCaptureEvent = container.querySelector('.event[data-event-type="capture"]');
