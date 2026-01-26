@@ -203,6 +203,7 @@ export async function initTrackingBrowser(tracker) {
                 allSessions.push({
                     folder: path.join(sessionsPath, folder),
                     toolName: info.toolCode,
+                    sessionName: folder,
                     formattedTime: formattedTime
                 });
             } catch (err) {

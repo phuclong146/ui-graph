@@ -1180,6 +1180,10 @@ export const QUEUE_BROWSER_HTML = `
         </div>
         <div style="background:#f8f9fa; border-radius:8px; padding:20px; margin-bottom:20px;">
           <div style="margin-bottom:12px;">
+            <strong style="color:#333; font-size:14px;">Tên session:</strong>
+            <div id="conflictSessionName" style="color:#666; font-size:14px; margin-top:4px;">-</div>
+          </div>
+          <div style="margin-bottom:12px;">
             <strong style="color:#333; font-size:14px;">Tên người đang làm:</strong>
             <div id="conflictName" style="color:#666; font-size:14px; margin-top:4px;">-</div>
           </div>
@@ -4316,6 +4320,7 @@ Bạn có chắc chắn muốn rollback?\`;
       // Session Conflict Modal handlers
       const sessionConflictModal = document.getElementById('sessionConflictModal');
       const conflictOkBtn = document.getElementById('conflictOkBtn');
+      const conflictSessionName = document.getElementById('conflictSessionName');
       const conflictName = document.getElementById('conflictName');
       const conflictCreationTime = document.getElementById('conflictCreationTime');
       const conflictLastWorkTime = document.getElementById('conflictLastWorkTime');
@@ -4331,6 +4336,7 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         console.log('⚠️ [Session Conflict] Displaying conflict dialog');
         
+        if (conflictSessionName) conflictSessionName.textContent = sessionInfo.session_name || 'N/A';
         if (conflictName) conflictName.textContent = sessionInfo.name || 'Unknown';
         if (conflictCreationTime) conflictCreationTime.textContent = sessionInfo.creationTime || 'N/A';
         if (conflictLastWorkTime) conflictLastWorkTime.textContent = sessionInfo.lastWorkTime || 'N/A';
