@@ -6018,7 +6018,8 @@ Bạn có chắc chắn muốn rollback?\`;
           if (selectedNode.item_category === 'PANEL') {
             detectActionsGeminiBtn.style.display = 'none';
             captureActionsDOMBtn.style.display = 'none';
-            drawPanelAndDetectActionsBtn.style.display = 'inline-block';
+            // Only show "Draw panel & detect actions" button for DRAW role
+            drawPanelAndDetectActionsBtn.style.display = (currentRole === 'DRAW') ? 'inline-block' : 'none';
             detectPagesBtn.style.display = 'none';
             drawPanelBtn.style.display = 'none';
             clearAllClicksBtn.style.display = 'none';
@@ -6474,24 +6475,27 @@ Bạn có chắc chắn muốn rollback?\`;
             insertEventSorted(stepDiv);
             
           } else {
-            const needCapture = document.createElement('div');
-            needCapture.className = 'event';
-            needCapture.setAttribute('data-event-type', 'capture');
-            
-            let icon, message;
-            if (evt.item_category === 'PANEL') {
-              icon = '🔍';
-              message = 'Need Detect Actions';
-            } else if (evt.item_category === 'ACTION') {
-              icon = '🖼️';
-              message = 'Need Draw Panel';
-            } else {
-              icon = '📸';
-              message = 'Need screenshot';
+            // Only show "Need Detect Actions" for DRAW role
+            if (currentRole === 'DRAW') {
+              const needCapture = document.createElement('div');
+              needCapture.className = 'event';
+              needCapture.setAttribute('data-event-type', 'capture');
+              
+              let icon, message;
+              if (evt.item_category === 'PANEL') {
+                icon = '🔍';
+                message = 'Need Detect Actions';
+              } else if (evt.item_category === 'ACTION') {
+                icon = '🖼️';
+                message = 'Need Draw Panel';
+              } else {
+                icon = '📸';
+                message = 'Need screenshot';
+              }
+              
+              needCapture.innerHTML = '<div class="screen" style="text-align:center;padding:40px;"><strong>' + icon + ' ' + message + '</strong></div>';
+              insertEventSorted(needCapture);
             }
-            
-            needCapture.innerHTML = '<div class="screen" style="text-align:center;padding:40px;"><strong>' + icon + ' ' + message + '</strong></div>';
-            insertEventSorted(needCapture);
           }
         }
         
