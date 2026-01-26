@@ -251,7 +251,7 @@ export async function injectWebsiteSelector(page, allWebsites = [], allSessions 
               sessionDiv.style.cssText = "padding: 10px; cursor: pointer; border-bottom: 1px solid #f1f3f4; display: flex; justify-content: space-between; align-items: center;";
               sessionDiv.innerHTML = \`
                 <div>
-                  <div style="font-weight: bold; color: #202124;">\${session.toolName}</div>
+                  <div style="font-weight: bold; color: #202124;">\${session.sessionName || session.toolName}</div>
                   <div style="font-size: 12px; color: #5f6368;">\${session.formattedTime}</div>
                 </div>
                 <div style="font-size: 12px; color: #1a73e8;">Tiếp tục →</div>
