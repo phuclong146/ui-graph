@@ -88,6 +88,7 @@ export async function getActiveSessionInfo(aiToolCode) {
 
         return {
             name: activeSession.name || 'Unknown',
+            session_name: activeSession.session_name || 'N/A',
             session_id: sessionId,
             creationTime: creationTime,
             lastWorkTime: lastWorkTime,
@@ -110,9 +111,14 @@ export async function upsertSessionToDb(info, account) {
         const name = account.name;
         const deviceId = account.device_id;
         const deviceInfo = typeof account.device_info === 'object' ? JSON.stringify(account.device_info) : account.device_info;
+        // Session name matches folder naming: toolCode_timestamp or VALIDATE_toolCode_timestamp
+        const sessionName = role === 'VALIDATE'
+            ? `VALIDATE_${myAiTool}_${sessionId}`
+            : `${myAiTool}_${sessionId}`;
 
         console.log('📝 [upsertSessionToDb] Input info:', JSON.stringify({
             sessionId,
+            sessionName,
             role,
             myAiTool,
             name,
@@ -131,18 +137,18 @@ export async function upsertSessionToDb(info, account) {
             // Update
             const query = `
                 UPDATE uigraph_session 
-                SET role = ?, my_ai_tool = ?, name = ?, device_id = ?, device_info = ?, active = 1, updated_at = NOW()
+                SET role = ?, my_ai_tool = ?, session_name = ?, name = ?, device_id = ?, device_info = ?, active = 1, updated_at = NOW()
                 WHERE session_id = ?
             `;
-            await pool.execute(query, [role, myAiTool, name, deviceId, deviceInfo, sessionId]);
+            await pool.execute(query, [role, myAiTool, sessionName, name, deviceId, deviceInfo, sessionId]);
             console.log(`✅ Session updated in DB: ${sessionId}`);
         } else {
             // Insert
             const query = `
-                INSERT INTO uigraph_session (session_id, role, my_ai_tool, name, device_id, device_info, active)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
+                INSERT INTO uigraph_session (session_id, role, my_ai_tool, session_name, name, device_id, device_info, active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
             `;
-            await pool.execute(query, [sessionId, role, myAiTool, name, deviceId, deviceInfo]);
+            await pool.execute(query, [sessionId, role, myAiTool, sessionName, name, deviceId, deviceInfo]);
             console.log(`✅ Session inserted into DB: ${sessionId}`);
         }
 
