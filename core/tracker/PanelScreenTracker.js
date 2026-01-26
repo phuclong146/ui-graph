@@ -187,6 +187,42 @@ export class PanelScreenTracker {
             
             // Preserve existing role or default to 'DRAW'
             const role = info.role || 'DRAW';
+            const currentSessionId = timestamps.length > 0 ? timestamps[0] : null;
+            
+            // Check for active session conflict if role is DRAW
+            if (role === 'DRAW' && currentSessionId) {
+                try {
+                    const { checkActiveSession, getActiveSessionInfo } = await import('../data/session-db.js');
+                    const activeSession = await checkActiveSession(info.toolCode);
+                    if (activeSession) {
+                        // Check if it's the same session - convert both to string for comparison
+                        const activeSessionId = String(activeSession.session_id || '');
+                        const currentSessionIdStr = String(currentSessionId || '');
+                        console.log(`🔍 [Session Check] Comparing session IDs - Active: ${activeSessionId}, Current: ${currentSessionIdStr}`);
+                        
+                        if (activeSessionId !== currentSessionIdStr) {
+                            console.log('⚠️ Different active session found for ai_tool:', info.toolCode);
+                            const activeSessionInfo = await getActiveSessionInfo(info.toolCode);
+                            if (activeSessionInfo) {
+                                await this._broadcast({
+                                    type: 'show_session_conflict',
+                                    sessionInfo: activeSessionInfo
+                                });
+                                throw new Error('Cannot open session: ai_tool is already being worked on by another user');
+                            }
+                        } else {
+                            console.log('✅ Same session, allowing to open');
+                        }
+                    }
+                } catch (err) {
+                    if (err.message && err.message.includes('Cannot open session')) {
+                        throw err; // Re-throw conflict error
+                    }
+                    console.error('❌ Failed to check active session:', err);
+                    // Continue if check fails (don't block session opening on DB error)
+                }
+            }
+            
             const updatedInfo = {
                 toolCode: info.toolCode,
                 website: info.website,
@@ -377,6 +413,31 @@ export class PanelScreenTracker {
                 }
             } catch (err) {
                 console.log('⚠️ Could not read account.json, using default role: DRAW');
+            }
+            
+            // Check for active session conflict if role is DRAW
+            if (accountRole === 'DRAW') {
+                try {
+                    const { checkActiveSession, getActiveSessionInfo } = await import('../data/session-db.js');
+                    const activeSession = await checkActiveSession(toolCode);
+                    if (activeSession) {
+                        console.log('⚠️ Active session found for ai_tool:', toolCode);
+                        const activeSessionInfo = await getActiveSessionInfo(toolCode);
+                        if (activeSessionInfo) {
+                            await this._broadcast({
+                                type: 'show_session_conflict',
+                                sessionInfo: activeSessionInfo
+                            });
+                            throw new Error('Cannot create session: ai_tool is already being worked on by another user');
+                        }
+                    }
+                } catch (err) {
+                    if (err.message && err.message.includes('Cannot create session')) {
+                        throw err; // Re-throw conflict error
+                    }
+                    console.error('❌ Failed to check active session:', err);
+                    // Continue if check fails (don't block session creation on DB error)
+                }
             }
             
             // Upsert session to DB
