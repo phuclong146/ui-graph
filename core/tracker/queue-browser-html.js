@@ -762,9 +762,18 @@ export const QUEUE_BROWSER_HTML = `
         box-shadow: 0 4px 12px rgba(0,123,255,0.5);
       }
 
-      #saveReminderLaterBtn:hover {
-        background: #5a6268;
+      #sessionConflictModal {
+        animation: fadeIn 0.3s ease;
+      }
+
+      #conflictDeviceDetailsBtn:hover {
+        background: #138496;
+        transform: translateY(-1px);
+      }
+
+      #conflictOkBtn:hover {
         transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,123,255,0.5);
       }
 
       #select-panel-container {
@@ -1149,15 +1158,55 @@ export const QUEUE_BROWSER_HTML = `
           <div style="font-size:48px; margin-bottom:15px;">💾</div>
           <h3 style="margin:0 0 10px 0; font-size:20px; color:#333;">Nhắc nhở lưu dữ liệu</h3>
           <p id="saveReminderMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6;">
-            Bạn có thay đổi chưa được lưu từ <span id="saveReminderMinutes">0</span> phút trước. Bạn có muốn lưu ngay không?
+            Bạn có thay đổi chưa được lưu từ <span id="saveReminderMinutes">0</span> phút trước. Vui lòng lưu ngay để đảm bảo dữ liệu được bảo toàn.
           </p>
         </div>
         <div style="display:flex; gap:10px; justify-content:center;">
           <button id="saveReminderSaveBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
-            Đồng ý
+            Lưu
           </button>
-          <button id="saveReminderLaterBtn" style="background:#6c757d; color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease;">
-            Để sau
+        </div>
+      </div>
+    </div>
+
+    <div id="sessionConflictModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:600px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">⚠️</div>
+          <h3 style="margin:0 0 10px 0; font-size:20px; color:#333;">AI Tool đang được sử dụng</h3>
+          <p style="margin:0; font-size:14px; color:#666; line-height:1.6;">
+            AI Tool này đang được làm bởi người khác. Vui lòng chọn AI Tool khác hoặc liên hệ Admin để chuyển cho bạn làm.
+          </p>
+        </div>
+        <div style="background:#f8f9fa; border-radius:8px; padding:20px; margin-bottom:20px;">
+          <div style="margin-bottom:12px;">
+            <strong style="color:#333; font-size:14px;">Tên người đang làm:</strong>
+            <div id="conflictName" style="color:#666; font-size:14px; margin-top:4px;">-</div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <strong style="color:#333; font-size:14px;">Thời gian tạo:</strong>
+            <div id="conflictCreationTime" style="color:#666; font-size:14px; margin-top:4px;">-</div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <strong style="color:#333; font-size:14px;">Lần làm gần nhất:</strong>
+            <div id="conflictLastWorkTime" style="color:#666; font-size:14px; margin-top:4px;">-</div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <strong style="color:#333; font-size:14px;">Device ID:</strong>
+            <div id="conflictDeviceId" style="color:#666; font-size:14px; margin-top:4px; word-break:break-all;">-</div>
+          </div>
+          <div style="margin-top:15px;">
+            <button id="conflictDeviceDetailsBtn" style="background:#17a2b8; color:white; border:none; border-radius:6px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:500; transition:all 0.2s ease;">
+              Device Details
+            </button>
+          </div>
+          <div id="conflictDeviceInfo" style="display:none; margin-top:15px; padding:12px; background:white; border:1px solid #ddd; border-radius:6px; max-height:200px; overflow-y:auto;">
+            <pre id="conflictDeviceInfoContent" style="margin:0; font-size:12px; color:#333; white-space:pre-wrap; word-wrap:break-word;"></pre>
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="conflictOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
+            Đã hiểu
           </button>
         </div>
       </div>
@@ -1984,6 +2033,14 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'hide_save_reminder') {
           console.log('🔔 [Save Reminder - Browser] Received hide_save_reminder event');
           hideSaveReminderDialog();
+          return;
+        }
+
+        if (evt.type === 'show_session_conflict') {
+          console.log('⚠️ [Session Conflict - Browser] Received show_session_conflict event');
+          if (window.showSessionConflictDialog && evt.sessionInfo) {
+            window.showSessionConflictDialog(evt.sessionInfo);
+          }
           return;
         }
         
@@ -4213,7 +4270,6 @@ Bạn có chắc chắn muốn rollback?\`;
       // Save Reminder Modal handlers
       const saveReminderModal = document.getElementById('saveReminderModal');
       const saveReminderSaveBtn = document.getElementById('saveReminderSaveBtn');
-      const saveReminderLaterBtn = document.getElementById('saveReminderLaterBtn');
       const saveReminderMinutes = document.getElementById('saveReminderMinutes');
 
       const showSaveReminderDialog = (minutesElapsed) => {
@@ -4236,20 +4292,10 @@ Bạn có chắc chắn muốn rollback?\`;
       };
 
       saveReminderSaveBtn.addEventListener('click', async () => {
-        console.log('🔔 [Save Reminder - Browser] User clicked "Đồng ý" button');
+        console.log('🔔 [Save Reminder - Browser] User clicked "Lưu" button');
         hideSaveReminderDialog();
         if (window.handleSaveReminderResponse) {
           await window.handleSaveReminderResponse('save');
-        } else {
-          console.error('🔔 [Save Reminder - Browser] Error: handleSaveReminderResponse not available');
-        }
-      });
-
-      saveReminderLaterBtn.addEventListener('click', async () => {
-        console.log('🔔 [Save Reminder - Browser] User clicked "Để sau" button');
-        hideSaveReminderDialog();
-        if (window.handleSaveReminderResponse) {
-          await window.handleSaveReminderResponse('later');
         } else {
           console.error('🔔 [Save Reminder - Browser] Error: handleSaveReminderResponse not available');
         }
@@ -4266,6 +4312,77 @@ Bạn có chắc chắn muốn rollback?\`;
           // Don't close on Escape - require explicit button click
         }
       });
+
+      // Session Conflict Modal handlers
+      const sessionConflictModal = document.getElementById('sessionConflictModal');
+      const conflictOkBtn = document.getElementById('conflictOkBtn');
+      const conflictName = document.getElementById('conflictName');
+      const conflictCreationTime = document.getElementById('conflictCreationTime');
+      const conflictLastWorkTime = document.getElementById('conflictLastWorkTime');
+      const conflictDeviceId = document.getElementById('conflictDeviceId');
+      const conflictDeviceDetailsBtn = document.getElementById('conflictDeviceDetailsBtn');
+      const conflictDeviceInfo = document.getElementById('conflictDeviceInfo');
+      const conflictDeviceInfoContent = document.getElementById('conflictDeviceInfoContent');
+
+      const showSessionConflictDialog = (sessionInfo) => {
+        if (!sessionConflictModal) {
+          console.error('sessionConflictModal not found');
+          return;
+        }
+        console.log('⚠️ [Session Conflict] Displaying conflict dialog');
+        
+        if (conflictName) conflictName.textContent = sessionInfo.name || 'Unknown';
+        if (conflictCreationTime) conflictCreationTime.textContent = sessionInfo.creationTime || 'N/A';
+        if (conflictLastWorkTime) conflictLastWorkTime.textContent = sessionInfo.lastWorkTime || 'N/A';
+        if (conflictDeviceId) conflictDeviceId.textContent = sessionInfo.device_id || 'N/A';
+        
+        // Reset device info display
+        if (conflictDeviceInfo) conflictDeviceInfo.style.display = 'none';
+        if (conflictDeviceInfoContent) {
+          conflictDeviceInfoContent.textContent = sessionInfo.device_info 
+            ? JSON.stringify(sessionInfo.device_info, null, 2) 
+            : 'N/A';
+        }
+        
+        sessionConflictModal.style.display = 'flex';
+      };
+
+      const hideSessionConflictDialog = () => {
+        if (sessionConflictModal) {
+          sessionConflictModal.style.display = 'none';
+        }
+      };
+
+      if (conflictDeviceDetailsBtn) {
+        conflictDeviceDetailsBtn.addEventListener('click', () => {
+          if (conflictDeviceInfo) {
+            const isVisible = conflictDeviceInfo.style.display !== 'none';
+            conflictDeviceInfo.style.display = isVisible ? 'none' : 'block';
+            conflictDeviceDetailsBtn.textContent = isVisible ? 'Device Details' : 'Ẩn Device Details';
+          }
+        });
+      }
+
+      if (conflictOkBtn) {
+        conflictOkBtn.addEventListener('click', () => {
+          hideSessionConflictDialog();
+        });
+      }
+
+      sessionConflictModal.addEventListener('click', (e) => {
+        if (e.target === sessionConflictModal) {
+          // Don't close on background click - require explicit button click
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sessionConflictModal.style.display === 'flex') {
+          // Don't close on Escape - require explicit button click
+        }
+      });
+
+      // Expose function to show conflict dialog
+      window.showSessionConflictDialog = showSessionConflictDialog;
 
       // Panel Type Confirmation Modal handlers
       const panelTypeConfirmationModal = document.getElementById('panelTypeConfirmationModal');
@@ -6018,7 +6135,8 @@ Bạn có chắc chắn muốn rollback?\`;
           if (selectedNode.item_category === 'PANEL') {
             detectActionsGeminiBtn.style.display = 'none';
             captureActionsDOMBtn.style.display = 'none';
-            drawPanelAndDetectActionsBtn.style.display = 'inline-block';
+            // Only show "Draw panel & detect actions" button for DRAW role
+            drawPanelAndDetectActionsBtn.style.display = (currentRole === 'DRAW') ? 'inline-block' : 'none';
             detectPagesBtn.style.display = 'none';
             drawPanelBtn.style.display = 'none';
             clearAllClicksBtn.style.display = 'none';
@@ -6474,24 +6592,27 @@ Bạn có chắc chắn muốn rollback?\`;
             insertEventSorted(stepDiv);
             
           } else {
-            const needCapture = document.createElement('div');
-            needCapture.className = 'event';
-            needCapture.setAttribute('data-event-type', 'capture');
-            
-            let icon, message;
-            if (evt.item_category === 'PANEL') {
-              icon = '🔍';
-              message = 'Need Detect Actions';
-            } else if (evt.item_category === 'ACTION') {
-              icon = '🖼️';
-              message = 'Need Draw Panel';
-            } else {
-              icon = '📸';
-              message = 'Need screenshot';
+            // Only show "Need Detect Actions" for DRAW role
+            if (currentRole === 'DRAW') {
+              const needCapture = document.createElement('div');
+              needCapture.className = 'event';
+              needCapture.setAttribute('data-event-type', 'capture');
+              
+              let icon, message;
+              if (evt.item_category === 'PANEL') {
+                icon = '🔍';
+                message = 'Need Detect Actions';
+              } else if (evt.item_category === 'ACTION') {
+                icon = '🖼️';
+                message = 'Need Draw Panel';
+              } else {
+                icon = '📸';
+                message = 'Need screenshot';
+              }
+              
+              needCapture.innerHTML = '<div class="screen" style="text-align:center;padding:40px;"><strong>' + icon + ' ' + message + '</strong></div>';
+              insertEventSorted(needCapture);
             }
-            
-            needCapture.innerHTML = '<div class="screen" style="text-align:center;padding:40px;"><strong>' + icon + ' ' + message + '</strong></div>';
-            insertEventSorted(needCapture);
           }
         }
         

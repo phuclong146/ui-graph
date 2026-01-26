@@ -580,36 +580,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         isReminderDialogShowing = false;
 
         if (response === 'save') {
-            // User chose to save
+            // User chose to save - force save (mandatory)
             console.log('🔔 [Save Reminder] User chose to save - calling saveEventsHandler');
             await saveEventsHandler();
-        } else if (response === 'later') {
-            // User chose to remind later - reset timestamp
-            // Important: We must keep the ORIGINAL saved hashes (not current hashes)
-            // so that hasChanges() will still return true (because current != saved)
-            // We only reset the timestamp to track when to remind again
-            console.log('🔔 [Save Reminder] User chose "Để sau" - resetting timestamp only');
-            const lastSavedState = await getLastSavedState();
-            const newTimestamp = Date.now();
-            
-            if (lastSavedState) {
-                // Keep the original saved hashes (don't update to current)
-                // This ensures hasChanges() will still return true
-                const originalSavedHashes = {
-                    doing_item: lastSavedState.doing_item || '',
-                    doing_step: lastSavedState.doing_step || '',
-                    myparent_panel: lastSavedState.myparent_panel || ''
-                };
-                await saveLastSavedState(originalSavedHashes, newTimestamp);
-                console.log(`🔔 [Save Reminder] ✅ Timestamp reset to: ${new Date(newTimestamp).toISOString()}`);
-                console.log(`🔔 [Save Reminder] ✅ Kept original saved hashes (changes still exist, will remind again)`);
-            } else {
-                // No previous state - this shouldn't happen, but handle it
-                const currentHashes = await calculateFileHashes();
-                await saveLastSavedState(currentHashes, newTimestamp);
-                console.log(`🔔 [Save Reminder] ✅ No previous state, saved current hashes with timestamp`);
-            }
         }
+        // Note: "later" option removed - dialog is now mandatory save only
 
         // Hide dialog
         await tracker._broadcast({
