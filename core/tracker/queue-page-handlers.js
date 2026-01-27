@@ -2210,22 +2210,53 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
                 const actionIds = parentEntry?.child_actions || [];
                 const actions = [];
+                
+                // Check if panel has crop
+                const panelCropArea = panelItem.metadata?.global_pos;
+                
                 for (const actionId of actionIds) {
                     const actionItem = await tracker.dataItemManager.getItem(actionId);
                     if (actionItem) {
+                        let actionPos;
+                        
+                        if (panelCropArea && actionItem.metadata?.global_pos) {
+                            // Panel has crop: always convert from global_pos to local_pos (relative to crop area)
+                            // This ensures consistency even if local_pos exists but might be incorrect
+                            const globalX = actionItem.metadata.global_pos.x;
+                            const globalY = actionItem.metadata.global_pos.y;
+                            const localX = globalX - panelCropArea.x;
+                            const localY = globalY - panelCropArea.y;
+                            
+                            console.log(`🔄 Converting action "${actionItem.name}": global(${globalX},${globalY}) -> local(${localX},${localY}) with crop(${panelCropArea.x},${panelCropArea.y})`);
+                            
+                            actionPos = {
+                                p: actionItem.metadata.global_pos?.p || actionItem.metadata?.local_pos?.p || Math.floor(localY / 1080) + 1,
+                                x: localX,
+                                y: localY,
+                                w: actionItem.metadata.global_pos.w,
+                                h: actionItem.metadata.global_pos.h
+                            };
+                        } else {
+                            // Panel has no crop: use local_pos if available, otherwise global_pos
+                            actionPos = actionItem.metadata?.local_pos || actionItem.metadata?.global_pos;
+                        }
+                        
                         actions.push({
                             action_id: actionItem.item_id,
                             action_name: actionItem.name,
                             action_type: actionItem.type,
                             action_verb: actionItem.verb,
                             action_content: actionItem.content,
-                            action_pos: actionItem.metadata?.local_pos || actionItem.metadata?.global_pos
+                            action_pos: actionPos
                         });
                     }
                 }
                 
+                // Get panelAfter global_pos for editor (crop area)
+                const panelAfterGlobalPos = panelItem.metadata?.global_pos || null;
+                
                 // Open editor with existing actions
-                await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
+                await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult, panelAfterGlobalPos) => {
                     if (window.queueEditor) {
                         try {
                             // Destroy previous editor directly without showing "Discard all changes?" popup
@@ -2239,10 +2270,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                     eval(editorClass);
 
-                    const editor = new window.PanelEditor(screenshot, geminiResult, 'full');
+                    const editor = new window.PanelEditor(screenshot, geminiResult, 'full', null, null, panelAfterGlobalPos);
                     await editor.init();
                     window.queueEditor = editor;
-                }, await getPanelEditorClassHandler(), displayImage, [{ panel_title: panelItem.name, actions: actions }]);
+                }, await getPanelEditorClassHandler(), displayImage, [{ panel_title: panelItem.name, actions: actions }], panelAfterGlobalPos);
                 
                 return;
             }
@@ -2937,21 +2968,34 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const updatedPanel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
             const actions = [];
+            // Get crop area for converting coordinates
+            const panelCropArea = updatedPanel?.metadata?.global_pos || null;
+            
             for (const actionId of actionIds) {
                 const actionItem = await tracker.dataItemManager.getItem(actionId);
                 if (actionItem) {
+                    // Use local_pos if available (relative to crop area), otherwise global_pos
+                    // For panel with crop, local_pos is already correct (relative to crop area)
+                    let actionPos = actionItem.metadata?.local_pos || actionItem.metadata?.global_pos;
+                    
+                    // If panel has crop but we only have global_pos, convert to local_pos
+                    if (panelCropArea && actionItem.metadata?.global_pos && !actionItem.metadata?.local_pos) {
+                        actionPos = {
+                            p: actionItem.metadata.global_pos?.p || Math.floor((actionItem.metadata.global_pos.y - panelCropArea.y) / 1080) + 1,
+                            x: actionItem.metadata.global_pos.x - panelCropArea.x,
+                            y: actionItem.metadata.global_pos.y - panelCropArea.y,
+                            w: actionItem.metadata.global_pos.w,
+                            h: actionItem.metadata.global_pos.h
+                        };
+                    }
+                    
                     actions.push({
                         action_id: actionItem.item_id,
                         action_name: actionItem.name,
                         action_type: actionItem.type,
                         action_verb: actionItem.verb,
                         action_content: actionItem.content,
-                        action_pos: {
-                            x: actionItem.metadata.global_pos.x,
-                            y: actionItem.metadata.global_pos.y,
-                            w: actionItem.metadata.global_pos.w,
-                            h: actionItem.metadata.global_pos.h
-                        }
+                        action_pos: actionPos
                     });
                 }
             }
@@ -3008,7 +3052,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }))
             }];
             
-            await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult) => {
+            // Get panelAfter global_pos for editor (crop area)
+            const panelAfterGlobalPos = updatedPanel?.metadata?.global_pos || null;
+            
+            await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult, panelAfterGlobalPos) => {
                 if (window.queueEditor) {
                     try {
                         // Destroy previous editor directly without showing "Discard all changes?" popup
@@ -3022,10 +3069,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 eval(editorClass);
 
-                const editor = new window.PanelEditor(screenshot, geminiResult, 'full');
+                const editor = new window.PanelEditor(screenshot, geminiResult, 'full', null, null, panelAfterGlobalPos);
                 await editor.init();
                 window.queueEditor = editor;
-            }, await getPanelEditorClassHandler(), displayImage, geminiResult);
+            }, await getPanelEditorClassHandler(), displayImage, geminiResult, panelAfterGlobalPos);
             
             console.log('✅ Draw Panel & Detect Actions - crop completed, editor opened!');
             
