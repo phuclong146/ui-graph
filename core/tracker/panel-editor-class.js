@@ -741,21 +741,53 @@ window.PanelEditor = class PanelEditor {
         const pageHeight = 1080;
         const pageYOffset = this.currentPageIndex * pageHeight;
         
+        // Check if panel has crop (panelAfterGlobalPos exists)
+        const hasCrop = this.panelAfterGlobalPos != null;
+        
         panel.actions.forEach((action, actionIndex) => {
             if (action.action_pos) {
-                const actionPage = action.action_pos.p || Math.floor(action.action_pos.y / pageHeight) + 1;
+                let actionPage, relativePos;
                 
-                if (actionPage === currentPage) {
-                    // Adjust position relative to current page
-                    // action.action_pos contains absolute coordinates, but canvas shows only current page
-                    const relativePos = {
-                        x: action.action_pos.x,
-                        y: action.action_pos.y - pageYOffset, // Adjust y coordinate relative to current page
-                        w: action.action_pos.w,
-                        h: action.action_pos.h,
-                        p: action.action_pos.p
-                    };
+                if (hasCrop) {
+                    // Panel has crop: action.action_pos is local_pos (relative to crop area, starts at 0,0)
+                    // Canvas shows cropped image (also starts at 0,0)
+                    // Calculate page number within crop area
+                    actionPage = action.action_pos.p || Math.floor(action.action_pos.y / pageHeight) + 1;
                     
+                    if (actionPage === currentPage) {
+                        // action.action_pos is already relative to crop area (starts at 0,0)
+                        // Canvas shows cropped image (also starts at 0,0)
+                        // So we just need to adjust for page offset within crop area (if crop spans multiple pages)
+                        const drawX = action.action_pos.x;
+                        const drawY = action.action_pos.y - pageYOffset;
+                        
+                        console.log(\`🎨 Drawing action "\${action.action_name}" with crop: action_pos(\${action.action_pos.x},\${action.action_pos.y}) -> draw(\${drawX},\${drawY}), pageYOffset=\${pageYOffset}, currentPage=\${currentPage}\`);
+                        
+                        relativePos = {
+                            x: drawX,
+                            y: drawY,
+                            w: action.action_pos.w,
+                            h: action.action_pos.h,
+                            p: action.action_pos.p
+                        };
+                    }
+                } else {
+                    // Panel has no crop: action.action_pos is absolute in panel
+                    actionPage = action.action_pos.p || Math.floor(action.action_pos.y / pageHeight) + 1;
+                    
+                    if (actionPage === currentPage) {
+                        // Adjust position relative to current page
+                        relativePos = {
+                            x: action.action_pos.x,
+                            y: action.action_pos.y - pageYOffset, // Adjust y coordinate relative to current page
+                            w: action.action_pos.w,
+                            h: action.action_pos.h,
+                            p: action.action_pos.p
+                        };
+                    }
+                }
+                
+                if (relativePos) {
                     this.drawBox(
                         relativePos,
                         '0-' + actionIndex,
