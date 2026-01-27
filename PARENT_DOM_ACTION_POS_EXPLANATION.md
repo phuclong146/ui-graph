@@ -247,9 +247,12 @@ action.local_pos = parent_dom.action_pos (relative to crop area, có thể > 108
 3. **queue-page-handlers.js**: 
    - Dòng 1579-1600: Tạo parent_dom cho panel mới (có crop)
    - Dòng 2779-2919: Tạo parent_dom và actions khi confirm crop
+   - Dòng 2217-2246: Load actions vào editor (convert `global_pos` → `local_pos` nếu panel có crop)
+   - Dòng 2970-2988: Tạo actions sau khi crop (dùng `local_pos`)
    - Dòng 1065-1107: Update action từ parent_dom (không crop)
 4. **ParentPanelManager.js**: Quản lý parent_dom storage
 5. **DataItemManager.js**: Tạo ACTION items với global_pos và local_pos
+6. **panel-editor-class.js**: Vẽ action boxes trong editor (xử lý cả panel có crop và không crop)
 
 ---
 
@@ -302,3 +305,35 @@ parent_dom.action_pos: {x: 200, y: 300, w: 80, h: 30}  // Local to crop
    Note: global_pos.y = 1500 là absolute trong fullscreen (page 2, y=420 trong page)
    KHÔNG cần thêm (pageNumber - 1) * 1080 vì cropArea.y đã là 1200 (bắt đầu từ page 2)
 ```
+
+---
+
+## 8. Sử dụng parent_dom.action_pos trong Panel Editor
+
+### Khi load actions vào editor:
+
+**Trường hợp Panel CÓ crop:**
+- `parent_dom.action_pos` là local coordinates (relative to crop area)
+- Khi load vào editor, code **luôn convert từ `global_pos` sang `local_pos`** để đảm bảo tính nhất quán
+- Editor nhận `panelAfterGlobalPos` (crop area) để biết panel có crop
+- Canvas hiển thị cropped image (bắt đầu từ 0,0), nên `local_pos` đã đúng
+
+**Trường hợp Panel KHÔNG crop:**
+- `parent_dom.action_pos` có thể là local hoặc global tùy context
+- Khi load vào editor, ưu tiên dùng `local_pos`, nếu không có thì dùng `global_pos`
+- Canvas hiển thị full panel image
+
+### Bug đã được fix:
+
+**Vấn đề:** Khi panel có crop, khung action bị lệch vị trí (lệch đúng bằng crop offset)
+
+**Nguyên nhân:**
+- Code load actions dùng `global_pos` thay vì `local_pos` khi panel có crop
+- Editor không nhận thông tin về crop area
+
+**Giải pháp:**
+- Luôn convert từ `global_pos` sang `local_pos` khi panel có crop
+- Pass `panelAfterGlobalPos` vào editor để editor biết panel có crop
+- Code vẽ xử lý đúng cho cả 2 trường hợp
+
+**Kết quả:** ✅ Khung action vẽ đúng vị trí trong cả 2 trường hợp
