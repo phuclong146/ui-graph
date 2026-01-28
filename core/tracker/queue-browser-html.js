@@ -1343,7 +1343,7 @@ export const QUEUE_BROWSER_HTML = `
     <div id="loadingModal" style="display:none; position:fixed; z-index:20010; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:40px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative; text-align:center;">
         <div style="font-size:48px; margin-bottom:20px;">⏳</div>
-        <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Đang tải dữ liệu từ database</h3>
+        <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Đang xử lý, vui lòng chờ giây lát!</h3>
         <p id="loadingModalMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6;">
           Vui lòng đợi trong khi hệ thống đang tải dữ liệu và tạo các file JSONL...
         </p>
@@ -1760,6 +1760,8 @@ export const QUEUE_BROWSER_HTML = `
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
+      let isDetectingImportantActions = false;
+      window.isDetectingImportantActions = false; // For isAnyOperationRunning check
 
       ws.onopen = () => {
         console.log('✅ WebSocket connected');
@@ -2074,12 +2076,23 @@ export const QUEUE_BROWSER_HTML = `
         }
 
         if (evt.type === 'show_loading') {
-          showLoadingModal(evt.message || 'Đang tải dữ liệu từ database...');
+          const message = evt.message || 'Đang xử lý, vui lòng chờ giây lát!';
+          showLoadingModal(message);
+          // If it's for detecting important actions, set the flag
+          if (evt.isDetectingImportantActions === true || (evt.message && (evt.message.includes('detect important actions') || evt.message.includes('Đang xử lý')))) {
+            isDetectingImportantActions = true;
+            window.isDetectingImportantActions = true;
+          }
           return;
         }
 
         if (evt.type === 'hide_loading') {
           hideLoadingModal();
+          // If it was for detecting important actions, clear the flag
+          if (isDetectingImportantActions) {
+            isDetectingImportantActions = false;
+            window.isDetectingImportantActions = false;
+          }
           return;
         }
       };
@@ -2344,6 +2357,7 @@ export const QUEUE_BROWSER_HTML = `
       });
 
       let isSaving = false;
+      window.isSaving = false; // For isAnyOperationRunning check
       const saveBtn = document.getElementById("saveBtn");
       
       const updateSaveBtnState = (hasChanges, drawFlowState = null) => {
@@ -2385,6 +2399,7 @@ export const QUEUE_BROWSER_HTML = `
         if (window.saveEvents) {
           try {
             isSaving = true;
+            window.isSaving = true; // For isAnyOperationRunning check
             saveBtn.disabled = true;
             saveBtn.style.opacity = '0.6';
             saveBtn.style.cursor = 'not-allowed';
@@ -2395,6 +2410,7 @@ export const QUEUE_BROWSER_HTML = `
             
             // Reset button để có thể save lại
             isSaving = false;
+            window.isSaving = false; // For isAnyOperationRunning check
             saveBtn.disabled = false;
             saveBtn.style.opacity = '';
             saveBtn.style.cursor = '';
@@ -2421,6 +2437,7 @@ export const QUEUE_BROWSER_HTML = `
             }
             
             isSaving = false;
+            window.isSaving = false; // For isAnyOperationRunning check
             saveBtn.disabled = false;
             saveBtn.style.opacity = '';
             saveBtn.style.cursor = '';
@@ -5286,8 +5303,13 @@ Bạn có chắc chắn muốn rollback?\`;
             detectImportantActionsOption.style.background = 'transparent';
           });
           detectImportantActionsOption.addEventListener('click', async () => {
+            // Check if already running
+            if (isDetectingImportantActions) {
+              showToast('⚠️ Đang detect important actions, vui lòng đợi...');
+              return;
+            }
+            
             menu.remove();
-            showToast('🤖 Đang detect important actions, vui lòng đợi...');
             if (window.detectImportantActionsForPanel) {
               await window.detectImportantActionsForPanel(panelId);
             }
@@ -5405,8 +5427,13 @@ Bạn có chắc chắn muốn rollback?\`;
               detectImportantActionsOption.style.background = 'transparent';
             });
             detectImportantActionsOption.addEventListener('click', async () => {
+              // Check if already running
+              if (isDetectingImportantActions) {
+                showToast('⚠️ Đang detect important actions, vui lòng đợi...');
+                return;
+              }
+              
               menu.remove();
-              showToast('🤖 Đang detect important actions, vui lòng đợi...');
               if (window.detectImportantActionsForPanel) {
                 await window.detectImportantActionsForPanel(panelId);
               }
