@@ -5090,6 +5090,107 @@ Bạn có chắc chắn muốn rollback?\`;
             label.appendChild(bugIcon);
         }
         
+        // Check for modality_stacks (important actions)
+        if (node.item_category === 'ACTION') {
+            const hasModalityStacks = node.modality_stacks && Array.isArray(node.modality_stacks) && node.modality_stacks.length > 0;
+            
+            // Add highlight icon for important actions
+            if (hasModalityStacks) {
+                const importantIcon = document.createElement('span');
+                importantIcon.style.marginLeft = '6px';
+                importantIcon.style.cursor = 'help';
+                importantIcon.style.display = 'inline-block';
+                importantIcon.style.verticalAlign = 'middle';
+                importantIcon.style.width = '16px';
+                importantIcon.style.height = '16px';
+                importantIcon.style.color = '#ffc107';
+                importantIcon.textContent = '⭐';
+                importantIcon.title = 'Important Action';
+                
+                // Add tooltip with modality_stacks info
+                importantIcon.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'modality-stacks-tooltip';
+                    tooltip.style.cssText = 'position: fixed;' +
+                        'left: ' + (e.clientX + 10) + 'px;' +
+                        'top: ' + (e.clientY + 10) + 'px;' +
+                        'background: rgba(0, 0, 0, 0.9);' +
+                        'color: white;' +
+                        'padding: 12px;' +
+                        'border-radius: 6px;' +
+                        'font-size: 12px;' +
+                        'max-width: 400px;' +
+                        'z-index: 10000;' +
+                        'pointer-events: none;' +
+                        'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    
+                    let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                    
+                    // Show reason if available
+                    if (node.modality_stacks_reason) {
+                        tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;">' +
+                            '<div style="font-weight: 600; color: #4fc3f7; font-size: 11px; margin-bottom: 4px;">Lý do lựa chọn:</div>' +
+                            '<div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div>' +
+                            '</div>';
+                    }
+                    
+                    if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
+                        node.modality_stacks_info.forEach((ms, idx) => {
+                            tooltipContent += '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">' +
+                                '<div style="font-weight: 600; color: #4fc3f7;">' + (ms.name || 'N/A') + '</div>' +
+                                '<div style="margin-top: 4px; color: #ccc;">' + (ms.description || 'N/A') + '</div>' +
+                                '<div style="margin-top: 4px; color: #ffc107; font-size: 11px;">Lý do: ' + (ms.main_feature_reason || 'N/A') + '</div>' +
+                                '</div>';
+                        });
+                    } else {
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + node.modality_stacks.join(', ') + '</div>';
+                    }
+                    
+                    tooltip.innerHTML = tooltipContent;
+                    document.body.appendChild(tooltip);
+                });
+                
+                importantIcon.addEventListener('mouseleave', () => {
+                    const tooltip = document.getElementById('modality-stacks-tooltip');
+                    if (tooltip) {
+                        tooltip.remove();
+                    }
+                });
+                
+                label.appendChild(importantIcon);
+                
+                // Add border highlight to contentDiv for important actions
+                contentDiv.style.borderLeft = '3px solid #ffc107';
+                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
+            } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
+                // Add tooltip for actions with empty modality_stacks array
+                label.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'action-tooltip';
+                    tooltip.style.cssText = 'position: fixed;' +
+                        'left: ' + (e.clientX + 10) + 'px;' +
+                        'top: ' + (e.clientY + 10) + 'px;' +
+                        'background: rgba(0, 0, 0, 0.9);' +
+                        'color: white;' +
+                        'padding: 8px 12px;' +
+                        'border-radius: 6px;' +
+                        'font-size: 12px;' +
+                        'z-index: 10000;' +
+                        'pointer-events: none;' +
+                        'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
+                    document.body.appendChild(tooltip);
+                });
+                
+                label.addEventListener('mouseleave', () => {
+                    const tooltip = document.getElementById('action-tooltip');
+                    if (tooltip) {
+                        tooltip.remove();
+                    }
+                });
+            }
+        }
+        
         contentDiv.appendChild(label);
         
         nodeDiv.appendChild(contentDiv);
@@ -5150,6 +5251,74 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const isRootPanel = (nodeName === 'After Login Panel');
         
+        // If role is not DRAW: only show menu for After Login Panel, hide for others
+        if (currentRole !== 'DRAW') {
+          if (!isRootPanel || itemCategory !== 'PANEL') {
+            // Don't show menu for non-root panels or actions when role is not DRAW
+            return;
+          }
+          // For root panel with non-DRAW role: only show Detect Important Actions
+          const menu = document.createElement('div');
+          menu.id = 'tree-context-menu';
+          menu.style.cssText = \`
+            position: fixed;
+            left: \${x}px;
+            top: \${y}px;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            min-width: 150px;
+          \`;
+          
+          const detectImportantActionsOption = document.createElement('div');
+          detectImportantActionsOption.textContent = '🎯 Detect Important Actions';
+          detectImportantActionsOption.style.cssText = \`
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+          \`;
+          detectImportantActionsOption.addEventListener('mouseenter', () => {
+            detectImportantActionsOption.style.background = '#f0f0f0';
+          });
+          detectImportantActionsOption.addEventListener('mouseleave', () => {
+            detectImportantActionsOption.style.background = 'transparent';
+          });
+          detectImportantActionsOption.addEventListener('click', async () => {
+            menu.remove();
+            showToast('🤖 Đang detect important actions, vui lòng đợi...');
+            if (window.detectImportantActionsForPanel) {
+              await window.detectImportantActionsForPanel(panelId);
+            }
+          });
+          menu.appendChild(detectImportantActionsOption);
+          
+          document.body.appendChild(menu);
+          
+          const menuRect = menu.getBoundingClientRect();
+          const viewportHeight = window.innerHeight;
+          
+          if (y + menuRect.height > viewportHeight) {
+            const newY = Math.max(10, y - menuRect.height);
+            menu.style.top = \`\${newY}px\`;
+          }
+          
+          const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+              menu.remove();
+              document.removeEventListener('click', closeMenu);
+            }
+          };
+          
+          setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+          }, 100);
+          
+          return;
+        }
+        
+        // For DRAW role: show full menu
         const menu = document.createElement('div');
         menu.id = 'tree-context-menu';
         menu.style.cssText = \`
@@ -5218,6 +5387,32 @@ Bạn có chắc chắn muốn rollback?\`;
             }
           });
           menu.appendChild(newPageOption);
+          
+          // Add "Detect Important Actions" menu item for After Login Panel
+          if (isRootPanel) {
+            const detectImportantActionsOption = document.createElement('div');
+            detectImportantActionsOption.textContent = '🎯 Detect Important Actions';
+            detectImportantActionsOption.style.cssText = \`
+              padding: 8px 12px;
+              cursor: pointer;
+              font-size: 14px;
+              border-top: 1px solid #eee;
+            \`;
+            detectImportantActionsOption.addEventListener('mouseenter', () => {
+              detectImportantActionsOption.style.background = '#f0f0f0';
+            });
+            detectImportantActionsOption.addEventListener('mouseleave', () => {
+              detectImportantActionsOption.style.background = 'transparent';
+            });
+            detectImportantActionsOption.addEventListener('click', async () => {
+              menu.remove();
+              showToast('🤖 Đang detect important actions, vui lòng đợi...');
+              if (window.detectImportantActionsForPanel) {
+                await window.detectImportantActionsForPanel(panelId);
+              }
+            });
+            menu.appendChild(detectImportantActionsOption);
+          }
         }
         
         if (itemCategory === 'ACTION') {
@@ -5271,7 +5466,8 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         });
         
-        if (status !== 'completed') {
+        // Only show "Mark as Done" for DRAW role
+        if (status !== 'completed' && currentRole === 'DRAW') {
           const markDoneOption = document.createElement('div');
           markDoneOption.textContent = '✓ Mark as Done';
           markDoneOption.style.cssText = \`
@@ -6714,11 +6910,28 @@ Bạn có chắc chắn muốn rollback?\`;
         step1Title.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
         step1Div.appendChild(step1Title);
         
-        // Action name (no icon)
+        // Action name with modality_stacks indicator
+        const actionNameContainer = document.createElement('div');
+        actionNameContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 10px;';
+        
         const actionName = document.createElement('div');
         actionName.textContent = evt.item_name || 'Action';
-        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500; margin-bottom: 10px;';
-        step1Div.appendChild(actionName);
+        actionName.style.cssText = 'font-size: 14px; color: #333; font-weight: 500;';
+        actionNameContainer.appendChild(actionName);
+        
+        // Add star icon if action has modality_stacks
+        const hasModalityStacksForTitle = evt.action_info?.modality_stacks && 
+                                         Array.isArray(evt.action_info.modality_stacks) && 
+                                         evt.action_info.modality_stacks.length > 0;
+        if (hasModalityStacksForTitle) {
+          const importantBadge = document.createElement('span');
+          importantBadge.textContent = '⭐';
+          importantBadge.style.cssText = 'font-size: 16px; color: #ffc107; cursor: help;';
+          importantBadge.title = 'Đây là tính năng quan trọng cần làm hết luồng';
+          actionNameContainer.appendChild(importantBadge);
+        }
+        
+        step1Div.appendChild(actionNameContainer);
         
         // Action image (from action_info.image_base64, action_info.image_url, or evt.image_url)
         const actionImageContainer = document.createElement('div');
