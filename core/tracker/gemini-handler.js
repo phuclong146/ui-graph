@@ -3,6 +3,7 @@ import { drawPanelBoundingBoxes, resizeBase64 } from '../media/screenshot.js';
 import { captureActionsFromDOM } from '../media/dom-capture.js';
 
 const GEMINI_TIMEOUT_MS = 30000;
+const GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS = 300000; // 60s for detectImportantActions
 
 async function fetchGeminiWithTimeout(url, options, timeoutMs = GEMINI_TIMEOUT_MS) {
     const controller = new AbortController();
@@ -1108,6 +1109,315 @@ Kết quả trả về đúng định dạng JSON:
             console.error('Gemini DetectActionPurpose API failed:', err);
         }
         return null;
+    }
+}
+
+/**
+ * Detect important actions by matching them with modality_stacks using Gemini AI
+ * @param {Object} tracker - The tracker instance
+ * @param {string} panelImageUrl - Panel image URL or base64 string
+ * @param {Array<{item_id: string, name: string}>} actions - List of actions with item_id and name
+ * @param {Array} aiToolModalityStacks - List of modality_stacks from database
+ * @returns {Promise<Array<{item_id: string, modality_stacks: string[]}>>} Array of actions with their modality_stacks
+ */
+export async function detectImportantActions(tracker, panelImageUrl, actions, aiToolModalityStacks) {
+    if (!panelImageUrl || !actions || !Array.isArray(actions) || actions.length === 0) {
+        console.warn('⚠️ detectImportantActions: Missing required parameters');
+        return [];
+    }
+
+    if (!aiToolModalityStacks || !Array.isArray(aiToolModalityStacks) || aiToolModalityStacks.length === 0) {
+        console.warn('⚠️ detectImportantActions: No modality_stacks provided, returning empty arrays');
+        // Return empty modality_stacks for all actions
+        return actions.map(action => ({ item_id: action.item_id, modality_stacks: [] }));
+    }
+
+    const { ENV } = await import('../config/env.js');
+
+    // Build prompt
+    const prompt = `Bạn nhận được:
+1. Hình ảnh panel của một trang web
+2. Danh sách các actions (nút, link, input...) trên panel này với format: ${JSON.stringify(actions, null, 2)}
+3. Danh sách các modality_stacks (tính năng quan trọng) của AI tool với đầy đủ thông tin: ${JSON.stringify(aiToolModalityStacks, null, 2)}
+
+Định nghĩa:
+- **Action**: Là một phần tử tương tác trên panel (button, link, input field, dropdown, etc.) được xác định bởi item_id và name
+- **Modality Stack**: Là một tính năng quan trọng của AI tool được định nghĩa sẵn trong hệ thống. Mỗi modality_stack có:
+  - code: mã định danh (PHẢI dùng chính xác code này trong kết quả)
+  - name: tên tính năng
+  - description: mô tả chi tiết chức năng
+  - example: ví dụ sử dụng cụ thể
+  - main_feature_reason: lý do tại sao đây là tính năng quan trọng
+
+Mục tiêu:
+Xác định xem mỗi action trên panel có liên quan đến modality_stack nào không. Một action có thể liên quan đến nhiều modality_stacks hoặc không liên quan đến modality_stack nào.
+
+QUY TRÌNH PHÂN TÍCH (PHẢI LÀM ĐÚNG TỪNG BƯỚC):
+
+BƯỚC 1: XÁC ĐỊNH TẤT CẢ ACTIONS TRÊN HÌNH
+- Xem kỹ hình ảnh panel
+- Tìm và xác định vị trí của TẤT CẢ actions trong danh sách được cung cấp
+- Đảm bảo không bỏ sót action nào
+- Ghi nhận vị trí, kích thước, và ngữ cảnh xung quanh mỗi action
+
+BƯỚC 2: PHÂN TÍCH CHI TIẾT TỪNG ACTION
+Đối với MỖI action trong danh sách, thực hiện:
+  2.1. Đọc tên action (name) - đây là thông tin quan trọng nhất
+  2.2. Quan sát vị trí của action trên panel:
+      - Action nằm ở đâu? (header, sidebar, main content, footer, popup, etc.)
+      - Action có icon hay text gì không?
+      - Action có màu sắc, style đặc biệt gì không?
+  2.3. Phân tích ngữ cảnh:
+      - Text/label xung quanh action là gì?
+      - Action nằm trong section/menu nào?
+      - Có tooltip hoặc hint text nào không?
+  2.4. Suy luận chức năng:
+      - Dựa trên tên, vị trí, ngữ cảnh, action này có thể làm gì?
+      - Action này có phải là tính năng chính hay phụ không?
+
+BƯỚC 3: SO SÁNH VỚI MODALITY_STACKS
+Đối với MỖI action, so sánh với TẤT CẢ modality_stacks trong danh sách:
+  3.1. Đọc kỹ từng modality_stack:
+      - Đọc code (để nhớ chính xác)
+      - Đọc name (tên tính năng)
+      - Đọc description (mô tả chi tiết chức năng)
+      - Đọc example (ví dụ cụ thể về cách sử dụng)
+      - Đọc main_feature_reason (lý do quan trọng)
+  
+  3.2. Kiểm tra matching criteria (PHẢI THỎA ÍT NHẤT 2/4):
+      ✓ Tên action có khớp hoặc liên quan đến name/description của modality_stack không?
+      ✓ Chức năng của action có khớp với description/example của modality_stack không?
+      ✓ Ngữ cảnh của action có phù hợp với main_feature_reason không?
+      ✓ Example của modality_stack có mô tả action tương tự không?
+  
+  3.3. Quyết định:
+      - Nếu THỎA ít nhất 1/4 criteria → Đánh dấu action này liên quan đến modality_stack này
+      - Nếu KHÔNG THỎA → KHÔNG đánh dấu
+      - Nếu KHÔNG CHẮC CHẮN → KHÔNG đánh dấu (ưu tiên false negative hơn false positive)
+
+BƯỚC 4: KIỂM TRA LẠI KẾT QUẢ
+Trước khi trả về kết quả, kiểm tra:
+  4.1. Đã xử lý TẤT CẢ actions trong danh sách chưa?
+  4.2. Mỗi action có được gán đúng item_id chưa?
+  4.3. Các code của modality_stacks có chính xác (không sai chính tả) không?
+  4.4. Có action nào bị bỏ sót không?
+  4.5. Có modality_stack nào bị gán nhầm không?
+
+BƯỚC 5: TRẢ VỀ KẾT QUẢ
+- Tạo mảng kết quả với TẤT CẢ actions trong danh sách
+- Mỗi action phải có:
+  - item_id: chính xác ID của action
+  - modality_stacks: mảng các code (string) của modality_stacks liên quan
+    + Nếu có liên quan: ["code1", "code2", ...]
+    + Nếu không liên quan: [] (mảng rỗng)
+  - reason: Lý do lựa chọn (string) - BẮT BUỘC viết bằng tiếng Việt, giải thích tại sao action này được gán các modality_stacks này
+    + Nếu có modality_stacks: Giải thích rõ ràng lý do tại sao action này liên quan đến từng modality_stack (dựa trên matching criteria đã thỏa) - BẮT BUỘC bằng tiếng Việt
+    + Nếu không có modality_stacks: Giải thích tại sao action này không liên quan đến bất kỳ modality_stack nào - BẮT BUỘC bằng tiếng Việt
+    + Ví dụ: "Action này liên quan đến export_image vì tên action là 'Export Image' khớp với name của modality_stack và chức năng xuất file ảnh phù hợp với description"
+- Đảm bảo số lượng items trong kết quả = số lượng actions trong input
+
+QUY TẮC QUAN TRỌNG:
+1. PHẢI xử lý TẤT CẢ actions - không được bỏ sót action nào
+2. PHẢI dùng chính xác code của modality_stack (không tự tạo code mới)
+3. CHỈ đánh dấu khi CHẮC CHẮN (thỏa ít nhất 2/4 matching criteria)
+4. Nếu KHÔNG CHẮC CHẮN → trả về [] (mảng rỗng)
+5. KHÔNG được bịa đặt hoặc đoán mò
+6. Một action có thể có nhiều modality_stacks nếu thỏa nhiều criteria
+7. Ưu tiên chính xác hơn đầy đủ (false negative tốt hơn false positive)
+8. PHẢI cung cấp reason rõ ràng BẰNG TIẾNG VIỆT cho mỗi action, giải thích dựa trên matching criteria đã phân tích. KHÔNG được viết bằng tiếng Anh.
+
+Kết quả trả về đúng định dạng JSON:
+Một mảng các object, mỗi object có:
+- item_id: ID của action (string) - PHẢI khớp với item_id trong input
+- modality_stacks: Mảng các code (string) của modality_stacks mà action này liên quan. Nếu không có thì trả về mảng rỗng []
+- reason: Lý do lựa chọn (string) - BẮT BUỘC viết bằng tiếng Việt, giải thích rõ ràng tại sao action này được gán các modality_stacks này hoặc tại sao không có modality_stacks. KHÔNG được viết bằng tiếng Anh.
+
+LƯU Ý CUỐI CÙNG:
+- Đảm bảo số lượng items trong kết quả = số lượng actions trong danh sách input
+- Mỗi item_id trong kết quả phải tồn tại trong danh sách actions input
+- Tất cả code trong modality_stacks phải tồn tại trong danh sách modality_stacks input
+- Nếu không chắc chắn về bất kỳ action nào, hãy trả về [] cho action đó và giải thích lý do trong reason`;
+
+    const responseSchema = {
+        type: "array",
+        items: {
+            type: "object",
+            required: ["item_id", "modality_stacks", "reason"],
+            properties: {
+                item_id: {
+                    type: "string",
+                    description: "ID của action"
+                },
+                modality_stacks: {
+                    type: "array",
+                    items: {
+                        type: "string"
+                    },
+                    description: "Danh sách code của modality_stacks mà action này liên quan. Nếu không có thì trả về mảng rỗng []"
+                },
+                reason: {
+                    type: "string",
+                    description: "Lý do lựa chọn - giải thích rõ ràng tại sao action này được gán các modality_stacks này hoặc tại sao không có modality_stacks. PHẢI viết bằng tiếng Việt."
+                }
+            }
+        }
+    };
+
+    // Build parts with text prompt and image
+    const parts = [{ text: prompt }];
+    
+    // Handle image input - check if it's URL or base64
+    const isUrl = panelImageUrl.startsWith('http://') || panelImageUrl.startsWith('https://');
+    
+    if (isUrl) {
+        // Use file_data for URL
+        parts.push({
+            file_data: {
+                mime_type: 'image/jpeg',
+                file_uri: panelImageUrl
+            }
+        });
+    } else {
+        // Use inline_data for base64
+        // Remove data URL prefix if present
+        let base64Data = panelImageUrl;
+        if (base64Data.includes(',')) {
+            base64Data = base64Data.split(',')[1];
+        }
+        
+        // Resize image for Gemini (similar to other functions)
+        const resizedBase64 = await resizeBase64(base64Data, 640);
+        
+        parts.push({
+            inline_data: {
+                mime_type: 'image/png',
+                data: resizedBase64
+            }
+        });
+    }
+
+    const requestBody = {
+        contents: [{
+            parts: parts
+        }],
+        generation_config: {
+            response_mime_type: 'application/json',
+            response_schema: responseSchema
+        }
+    };
+
+    try {
+        // Use gemini-2.5-pro for this task (recommended for accuracy)
+        const modelName = process.env.GEMINI_MODEL_IMPORTANT || 'gemini-2.5-flash';
+        
+        const response = await fetchGeminiWithTimeout(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'x-goog-api-key': ENV.GEMINI_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            },
+            GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Gemini DetectImportantActions API error response:', errorText);
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!jsonText) {
+            console.warn('⚠️ No text in Gemini DetectImportantActions response');
+            // Return empty modality_stacks for all actions
+            return actions.map(action => ({ 
+                item_id: action.item_id, 
+                modality_stacks: [],
+                reason: 'Không có response từ Gemini'
+            }));
+        }
+
+        jsonText = jsonText.trim()
+            .replace(/^```json\s*/i, '')
+            .replace(/^```/, '')
+            .replace(/```$/i, '');
+
+        let result;
+        try {
+            result = JSON.parse(jsonText);
+            console.log('✅ Parsed JSON result:', JSON.stringify(result, null, 2));
+        } catch (parseErr) {
+            console.error('❌ Failed to parse JSON:', parseErr);
+            return actions.map(action => ({ 
+                item_id: action.item_id, 
+                modality_stacks: [],
+                reason: 'Lỗi khi parse JSON response'
+            }));
+        }
+        
+        // Validate and fix response
+        if (!Array.isArray(result)) {
+            console.warn('⚠️ DetectImportantActions: Response is not an array, returning empty arrays');
+            return actions.map(action => ({ 
+                item_id: action.item_id, 
+                modality_stacks: [],
+                reason: 'Response không đúng định dạng'
+            }));
+        }
+
+        // Create a map for quick lookup
+        const resultMap = new Map();
+        result.forEach(item => {
+            if (item.item_id && Array.isArray(item.modality_stacks)) {
+                resultMap.set(item.item_id, {
+                    modality_stacks: item.modality_stacks,
+                    reason: item.reason || ''
+                });
+            }
+        });
+
+        // Ensure all actions are in the result, fill missing ones with []
+        const finalResult = actions.map(action => {
+            const resultItem = resultMap.get(action.item_id);
+            const modalityStacks = resultItem?.modality_stacks || [];
+            const reason = resultItem?.reason || 'Không có modality_stacks được phát hiện cho action này';
+            return {
+                item_id: action.item_id,
+                modality_stacks: Array.isArray(modalityStacks) ? modalityStacks : [],
+                reason: reason
+            };
+        });
+
+        // Validate: check if all modality_stack codes exist in aiToolModalityStacks
+        const validCodes = new Set(aiToolModalityStacks.map(ms => ms.code));
+        
+        const validatedResult = finalResult.map(item => ({
+            item_id: item.item_id,
+            modality_stacks: item.modality_stacks.filter(code => validCodes.has(code)),
+            reason: item.reason
+        }));
+
+        // console.log('📊 Final validated result:', JSON.stringify(validatedResult, null, 2));
+        
+        return validatedResult;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            console.error(`Gemini DetectImportantActions API timed out after ${GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS / 1000}s`);
+        } else {
+            console.error('Gemini DetectImportantActions API failed:', err);
+        }
+        // Return empty modality_stacks for all actions on error
+        return actions.map(action => ({ 
+            item_id: action.item_id, 
+            modality_stacks: [],
+            reason: 'Lỗi khi detect modality_stacks'
+        }));
     }
 }
 

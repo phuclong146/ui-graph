@@ -527,11 +527,21 @@ export class MySQLExporter {
                 const purposeUpdateClause = item.purpose ? ', purpose = VALUES(purpose)' : '';
                 const reasonUpdateClause = item.reason ? ', reason = VALUES(reason)' : '';
                 
+                // Handle modality_stacks - convert array to JSON string if present
+                let modalityStacksJson = null;
+                if (item.modality_stacks && Array.isArray(item.modality_stacks) && item.modality_stacks.length > 0) {
+                    modalityStacksJson = JSON.stringify(item.modality_stacks);
+                }
+                const modalityStacksUpdateClause = modalityStacksJson ? ', modality_stacks = VALUES(modality_stacks)' : '';
+                
+                // Handle modality_stacks_reason - update if present
+                const modalityStacksReasonUpdateClause = item.modality_stacks_reason !== undefined ? ', modality_stacks_reason = VALUES(modality_stacks_reason)' : '';
+                
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, fullscreen_url,
-                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason, item_id, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason, item_id, status, modality_stacks, modality_stacks_reason)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         type = VALUES(type),                     
                         name = VALUES(name),
@@ -545,7 +555,7 @@ export class MySQLExporter {
                         record_id = VALUES(record_id),
                         published = VALUES(published)${purposeUpdateClause}${reasonUpdateClause},
                         item_id = VALUES(item_id),
-                        status = VALUES(status),
+                        status = VALUES(status)${modalityStacksUpdateClause}${modalityStacksReasonUpdateClause},
                         updated_at = CURRENT_TIMESTAMP`,
                     [
                         code ?? null,
@@ -566,7 +576,9 @@ export class MySQLExporter {
                         item.purpose ?? null,
                         item.reason ?? null,
                         item.item_id ?? null,
-                        item.status ?? null
+                        item.status ?? null,
+                        modalityStacksJson,
+                        item.modality_stacks_reason ?? null
                     ]
                 );
                 
@@ -934,6 +946,42 @@ export class MySQLExporter {
         // Pool is managed globally, no need to close individual connection
         this.connection = null;
         // console.log('✅ MySQL connection released (pool)');
+    }
+
+    /**
+     * Update only modality_stacks and modality_stacks_reason for a specific item
+     * @param {string} itemId - The item_id to update
+     * @param {Array} modalityStacks - Array of modality stack codes
+     * @param {string|null} modalityStacksReason - Reason for modality stacks
+     * @returns {Promise<boolean>} - True if updated successfully
+     */
+    async updateItemModalityStacks(itemId, modalityStacks, modalityStacksReason) {
+        try {
+            if (!this.connection) {
+                await this.init();
+            }
+
+            // Convert modality_stacks array to JSON string
+            let modalityStacksJson = null;
+            if (modalityStacks && Array.isArray(modalityStacks) && modalityStacks.length > 0) {
+                modalityStacksJson = JSON.stringify(modalityStacks);
+            }
+
+            await this.connection.execute(
+                `UPDATE doing_item 
+                 SET modality_stacks = ?, 
+                     modality_stacks_reason = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE item_id = ? AND published = 1`,
+                [modalityStacksJson, modalityStacksReason || null, itemId]
+            );
+
+            console.log(`✅ Updated modality_stacks for item ${itemId}`);
+            return true;
+        } catch (err) {
+            console.error(`❌ Failed to update modality_stacks for item ${itemId}:`, err);
+            return false;
+        }
     }
 }
 

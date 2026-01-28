@@ -6,6 +6,7 @@ import { CheckpointManager } from '../data/CheckpointManager.js';
 import { calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 import { cropBase64Image } from '../media/screenshot.js';
+import { getDbPool } from '../data/db-connection.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -56,6 +57,39 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (actionIds.includes(actionId)) {
                 await selectPanelHandler(tracker.selectedPanelId);
             }
+        }
+    };
+
+    /**
+     * Get modality_stacks for an AI tool from database
+     * @param {string} aiToolCode - The AI tool code
+     * @returns {Promise<Array>} Array of modality_stack objects
+     */
+    const getAiToolModalityStacks = async (aiToolCode) => {
+        try {
+            if (!aiToolCode) {
+                console.warn('⚠️ No aiToolCode provided to getAiToolModalityStacks');
+                return [];
+            }
+
+            const pool = getDbPool();
+            const [rows] = await pool.execute(
+                `SELECT f.code, CONCAT(m.name, ' ', f.name) AS name, f.description, f.example, 
+                        tf.main_feature_list, tf.main_feature_reason
+                 FROM at_tool_feature tf
+                 JOIN at_feature f ON tf.my_feature = f.code AND f.level = 'L2'
+                 JOIN at_feature m ON f.parent_code = m.code AND m.level = 'L1'
+                 WHERE tf.published AND tf.available
+                   AND tf.my_ai_tool = ?
+                   AND tf.main_feature > 0`,
+                [aiToolCode]
+            );
+
+            console.log(`✅ Retrieved ${rows.length} modality_stacks for ai_tool: ${aiToolCode}`);
+            return rows;
+        } catch (err) {
+            console.error('❌ Failed to get modality_stacks from database:', err);
+            return [];
         }
     };
 
@@ -3018,6 +3052,121 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
+            // Detect important actions (modality_stacks) for After Login Panel
+            const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
+            if (panelItem?.name === 'After Login Panel' && actionIds.length > 0) {
+                try {
+                    console.log('🎯 Detecting important actions (modality_stacks) for After Login Panel...');
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '🤖 Đang detect important actions, vui lòng đợi...'
+                    });
+
+                    // Get panel image URL or base64
+                    let panelImageUrl = updatedPanel?.image_url || updatedPanel?.fullscreen_url || null;
+                    if (!panelImageUrl && updatedPanel?.image_base64) {
+                        // Use base64 if no URL available
+                        panelImageUrl = await tracker.dataItemManager.loadBase64FromFile(updatedPanel.image_base64);
+                        console.log('📸 Using base64 image for modality_stacks detection');
+                    }
+                    
+                    if (panelImageUrl) {
+                        // Get actions list for detectImportantActions
+                        const actionsForDetection = [];
+                        for (const actionId of actionIds) {
+                            const actionItem = await tracker.dataItemManager.getItem(actionId);
+                            if (actionItem) {
+                                actionsForDetection.push({
+                                    item_id: actionId,
+                                    name: actionItem.name || 'Unknown Action'
+                                });
+                            }
+                        }
+
+                        // Get modality_stacks from database
+                        const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
+                        
+                        if (aiToolModalityStacks.length > 0) {
+                            // Import detectImportantActions
+                            const { detectImportantActions } = await import('./gemini-handler.js');
+                            
+                            // Call detectImportantActions
+                            const detectionResult = await detectImportantActions(
+                                tracker,
+                                panelImageUrl,
+                                actionsForDetection,
+                                aiToolModalityStacks
+                            );
+
+                            // Update actions with modality_stacks and reason
+                            let dbUpdatedCount = 0;
+                            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                            
+                            try {
+                                await exporter.init();
+                                
+                                for (const resultItem of detectionResult) {
+                                    const actionItem = await tracker.dataItemManager.getItem(resultItem.item_id);
+                                    if (actionItem) {
+                                        // Check if there are changes
+                                        const oldModalityStacks = JSON.stringify(actionItem.modality_stacks || []);
+                                        const newModalityStacks = JSON.stringify(resultItem.modality_stacks || []);
+                                        const oldReason = actionItem.modality_stacks_reason || null;
+                                        const newReason = resultItem.reason || null;
+                                        
+                                        const hasChanges = oldModalityStacks !== newModalityStacks || oldReason !== newReason;
+                                        
+                                        if (hasChanges) {
+                                            // Save modality_stacks and reason to action item (JSONL)
+                                            const updates = {
+                                                modality_stacks: resultItem.modality_stacks,
+                                                modality_stacks_reason: resultItem.reason || null
+                                            };
+                                            
+                                            await tracker.dataItemManager.updateItem(resultItem.item_id, updates);
+                                            
+                                            // Update database for this item
+                                            const dbUpdated = await exporter.updateItemModalityStacks(
+                                                resultItem.item_id,
+                                                resultItem.modality_stacks,
+                                                resultItem.reason || null
+                                            );
+                                            
+                                            if (dbUpdated) {
+                                                dbUpdatedCount++;
+                                            }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                await exporter.close();
+                            }
+                            
+                            if (dbUpdatedCount > 0) {
+                                console.log(`✅ Updated ${dbUpdatedCount} items in database with modality_stacks`);
+                            }
+
+                            const actionsWithModalityStacks = detectionResult.filter(r => r.modality_stacks.length > 0).length;
+                            console.log(`✅ Detected modality_stacks: ${actionsWithModalityStacks}/${detectionResult.length} actions have modality_stacks`);
+                            
+                            await tracker._broadcast({
+                                type: 'show_toast',
+                                message: `✅ Detected ${actionsWithModalityStacks} important actions`
+                            });
+                        } else {
+                            console.log('⚠️ No modality_stacks found in database, skipping detection');
+                        }
+                    }
+                } catch (err) {
+                    console.error('❌ Failed to detect important actions:', err);
+                    // Don't block the flow if detection fails
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '⚠️ Failed to detect important actions, but panel saved successfully'
+                    });
+                }
+            }
+
             // Set flow state to 'edit_actions' and open editor
             await setPanelDrawFlowState(tracker.selectedPanelId, 'edit_actions');
             
@@ -3084,6 +3233,173 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker._broadcast({
                 type: 'show_toast',
                 message: '❌ Failed to save panel!'
+            });
+        }
+    };
+
+    /**
+     * Handler to detect important actions (modality_stacks) for a panel
+     * @param {string} panelId - The panel ID
+     */
+    const detectImportantActionsForPanelHandler = async (panelId) => {
+        try {
+            if (!panelId) {
+                panelId = tracker.selectedPanelId;
+            }
+            
+            if (!panelId) {
+                console.error('No panel selected');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Vui lòng chọn panel trước!'
+                });
+                return;
+            }
+
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem || panelItem.item_category !== 'PANEL') {
+                console.error('Selected item is not a PANEL');
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Item không phải PANEL!'
+                });
+                return;
+            }
+
+            // Get actions for the panel
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+            const actionIds = parentEntry?.child_actions || [];
+            
+            if (actionIds.length === 0) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Panel chưa có actions! Vui lòng detect actions trước.'
+                });
+                return;
+            }
+
+            console.log(`🎯 Detecting important actions for panel: ${panelItem.name} (${actionIds.length} actions)`);
+            
+            // Get panel image URL or base64
+            let panelImageUrl = panelItem?.image_url || panelItem?.fullscreen_url || null;
+            if (!panelImageUrl && panelItem?.image_base64) {
+                panelImageUrl = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+                console.log('📸 Using base64 image for modality_stacks detection');
+            }
+            
+            if (!panelImageUrl) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Panel chưa có ảnh! Vui lòng draw panel trước.'
+                });
+                return;
+            }
+
+            // Get actions list for detectImportantActions
+            const actionsForDetection = [];
+            for (const actionId of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                if (actionItem) {
+                    actionsForDetection.push({
+                        item_id: actionId,
+                        name: actionItem.name || 'Unknown Action'
+                    });
+                }
+            }
+
+            // Get modality_stacks from database
+            const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
+            
+            if (aiToolModalityStacks.length === 0) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không tìm thấy modality_stacks trong database'
+                });
+                return;
+            }
+
+            // Import detectImportantActions
+            const { detectImportantActions } = await import('./gemini-handler.js');
+            
+            // Call detectImportantActions
+            const detectionResult = await detectImportantActions(
+                tracker,
+                panelImageUrl,
+                actionsForDetection,
+                aiToolModalityStacks
+            );
+
+            // Update actions with modality_stacks and reason
+            let updatedCount = 0;
+            let dbUpdatedCount = 0;
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+            
+            try {
+                await exporter.init();
+                
+                for (const resultItem of detectionResult) {
+                    const actionItem = await tracker.dataItemManager.getItem(resultItem.item_id);
+                    if (actionItem) {
+                        // Check if there are changes
+                        const oldModalityStacks = JSON.stringify(actionItem.modality_stacks || []);
+                        const newModalityStacks = JSON.stringify(resultItem.modality_stacks || []);
+                        const oldReason = actionItem.modality_stacks_reason || null;
+                        const newReason = resultItem.reason || null;
+                        
+                        const hasChanges = oldModalityStacks !== newModalityStacks || oldReason !== newReason;
+                        
+                        if (hasChanges) {
+                            // Save modality_stacks and reason to action item (JSONL)
+                            const updates = {
+                                modality_stacks: resultItem.modality_stacks,
+                                modality_stacks_reason: resultItem.reason || null
+                            };
+                            
+                            await tracker.dataItemManager.updateItem(resultItem.item_id, updates);
+                            
+                            // Update database for this item
+                            const dbUpdated = await exporter.updateItemModalityStacks(
+                                resultItem.item_id,
+                                resultItem.modality_stacks,
+                                resultItem.reason || null
+                            );
+                            
+                            if (dbUpdated) {
+                                dbUpdatedCount++;
+                            }
+                            
+                            if (resultItem.modality_stacks.length > 0) {
+                                updatedCount++;
+                            }
+                        }
+                    }
+                }
+            } finally {
+                await exporter.close();
+            }
+            
+            if (dbUpdatedCount > 0) {
+                console.log(`✅ Updated ${dbUpdatedCount} items in database with modality_stacks`);
+            }
+
+            const actionsWithModalityStacks = detectionResult.filter(r => r.modality_stacks.length > 0).length;
+            console.log(`✅ Detected modality_stacks: ${actionsWithModalityStacks}/${detectionResult.length} actions have modality_stacks`);
+            
+            // Refresh tree to show updated modality_stacks
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+            
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: `✅ Đã detect ${actionsWithModalityStacks} important actions`
+            });
+        } catch (err) {
+            console.error('❌ Failed to detect important actions for panel:', err);
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '❌ Lỗi khi detect important actions: ' + err.message
             });
         }
     };
@@ -4016,6 +4332,30 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 actionInfo.purpose = item.purpose || null;
                 actionInfo.action_purpose = item.purpose || null;  // UI expects action_purpose
                 actionInfo.reason = item.reason || null;
+                
+                // Add modality_stacks and modality_stacks_info
+                actionInfo.modality_stacks = item.modality_stacks || null;
+                actionInfo.modality_stacks_reason = item.modality_stacks_reason || null;
+                
+                // Load modality_stacks_info (detailed info) if modality_stacks exist
+                if (item.modality_stacks && Array.isArray(item.modality_stacks) && item.modality_stacks.length > 0) {
+                    try {
+                        const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
+                        const modalityStacksMap = new Map();
+                        aiToolModalityStacks.forEach(ms => {
+                            modalityStacksMap.set(ms.code, ms);
+                        });
+                        
+                        actionInfo.modality_stacks_info = item.modality_stacks
+                            .map(code => modalityStacksMap.get(code))
+                            .filter(Boolean);
+                    } catch (err) {
+                        console.error('Failed to load modality_stacks_info:', err);
+                        actionInfo.modality_stacks_info = [];
+                    }
+                } else {
+                    actionInfo.modality_stacks_info = [];
+                }
             }
 
             // Get draw_flow_state for panels
@@ -5528,6 +5868,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const step = stepMap.get(actionId);
                 const status = getEdgeStatus(actionId, stepMap, itemMap);
                 
+                // Check if action has modality_stacks (important action)
+                const hasModalityStacks = actionItem.modality_stacks && 
+                                         Array.isArray(actionItem.modality_stacks) && 
+                                         actionItem.modality_stacks.length > 0;
+                
                 // Debug logging
                 if (status === 'in_progress') {
                     console.log(`[Graph] Action ${actionId} (${actionItem.name}) has step but no panel_after - status: in_progress`);
@@ -5536,8 +5881,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 let edge = {
                     id: `edge_${panelBeforeId}_${actionId}`,
                     from: panelBeforeId,
-                    label: '', // Không hiện action name mặc định
-                    data: { actionId, actionItem, step }
+                    label: hasModalityStacks ? '⭐' : '', // Show star icon for important actions
+                    data: { actionId, actionItem, step, hasModalityStacks }
                 };
 
                 if (status === 'normal' && step?.panel_after?.item_id) {
@@ -5580,15 +5925,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     // Create virtual node if not already created
                     if (!virtualNodesCreated.has(virtualNodeId)) {
+                        // Add star icon for important actions
+                        const actionLabel = hasModalityStacks 
+                            ? `⭐ [${actionName}] [${statusLabel}]`
+                            : `[${actionName}] [${statusLabel}]`;
+                        
+                        // Highlight important actions with yellow border
+                        const finalBorderColor = hasModalityStacks ? '#ffc107' : virtualNodeBorderColor;
+                        const finalBorderWidth = hasModalityStacks ? 3 : 2;
+                        
                         nodes.push({
                             id: virtualNodeId,
-                            label: `[${actionName}] [${statusLabel}]`,
+                            label: actionLabel,
                             color: virtualNodeColor,
                             shape: 'box',
                             font: { color: '#fff', size: 14 },
-                            borderWidth: 2,
-                            borderColor: virtualNodeBorderColor,
-                            data: { isVirtual: true, type: status, actionId, actionItem }
+                            borderWidth: finalBorderWidth,
+                            borderColor: finalBorderColor,
+                            data: { isVirtual: true, type: status, actionId, actionItem, hasModalityStacks, modality_stacks: actionItem.modality_stacks }
                         });
                         virtualNodesCreated.add(virtualNodeId);
                         // console.log(`[Graph] Created virtual node ${virtualNodeId} for action ${actionId} (${actionName}) with status ${status}`);
@@ -5686,14 +6040,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             buildNodesWithChildren(panelTreeData);
 
             const edgesData = edges.map(e => {
+                const hasModalityStacks = e.data.hasModalityStacks || false;
                 const edgeData = {
                     id: e.id,
                     from: e.from,
                     to: e.to,
-                    label: '', // Đảm bảo label luôn rỗng khi khởi tạo
-                    color: e.color,
+                    label: hasModalityStacks ? '⭐' : '', // Show star icon for important actions
+                    color: hasModalityStacks ? { color: '#ffc107', highlight: '#ffc107' } : e.color,
                     dashes: e.dashes,
                     font: { color: '#fff', size: 11, face: 'Roboto', align: 'middle' },
+                    width: hasModalityStacks ? 3 : 2, // Thicker edge for important actions
                     data: {
                         actionId: e.data.actionId,
                         actionName: e.data.actionItem.name,
@@ -5704,6 +6060,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         actionMetadata: e.data.actionItem.metadata,
                         actionBugFlag: e.data.actionItem.bug_flag || e.data.actionItem.metadata?.bug_flag || false,
                         actionBugInfo: e.data.actionItem.bug_info || null,
+                        actionModalityStacks: e.data.actionItem.modality_stacks || null,
+                        hasModalityStacks: hasModalityStacks,
                         step: e.data.step ? {
                             step_id: e.data.step.step_id,
                             panel_before: e.data.step.panel_before,
@@ -5856,16 +6214,73 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 network.on("hoverEdge", function (params) {
                     const edgeId = params.edge;
                     const edge = edgesForVis.find(e => e.id === edgeId);
-                    if (edge && edge.data && edge.data.actionBugFlag) {
+                    if (!edge || !edge.data) return;
+                    
+                    // Show bug tooltip if action has bug
+                    if (edge.data.actionBugFlag) {
                          if (typeof window.showBugTooltip === 'function') {
                              window.showBugTooltip({ clientX: lastMouseX, clientY: lastMouseY }, null, edge.data.actionBugInfo);
                          }
+                    }
+                    
+                    // Show modality_stacks tooltip if action has modality_stacks
+                    if (edge.data.hasModalityStacks && edge.data.actionModalityStacks && edge.data.actionModalityStacks.length > 0) {
+                        const tooltip = document.createElement('div');
+                        tooltip.id = 'graph-modality-stacks-tooltip';
+                        tooltip.style.cssText = 'position: fixed;' +
+                            'left: ' + (lastMouseX + 10) + 'px;' +
+                            'top: ' + (lastMouseY + 10) + 'px;' +
+                            'background: rgba(0, 0, 0, 0.9);' +
+                            'color: white;' +
+                            'padding: 12px;' +
+                            'border-radius: 6px;' +
+                            'font-size: 12px;' +
+                            'max-width: 400px;' +
+                            'z-index: 10000;' +
+                            'pointer-events: none;' +
+                            'box-shadow: 0 4px 12px rgba(0,0,0,0.3);' +
+                            'border: 2px solid #ffc107;';
+                        
+                        let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + edge.data.actionModalityStacks.join(', ') + '</div>';
+                        
+                        tooltip.innerHTML = tooltipContent;
+                        document.body.appendChild(tooltip);
+                    } else if (!edge.data.actionBugFlag && 
+                               Array.isArray(edge.data.actionModalityStacks) && 
+                               edge.data.actionModalityStacks.length === 0) {
+                        // Show tooltip for actions with empty modality_stacks array (if no bug)
+                        const tooltip = document.createElement('div');
+                        tooltip.id = 'graph-action-tooltip';
+                        tooltip.style.cssText = 'position: fixed;' +
+                            'left: ' + (lastMouseX + 10) + 'px;' +
+                            'top: ' + (lastMouseY + 10) + 'px;' +
+                            'background: rgba(0, 0, 0, 0.9);' +
+                            'color: white;' +
+                            'padding: 8px 12px;' +
+                            'border-radius: 6px;' +
+                            'font-size: 12px;' +
+                            'z-index: 10000;' +
+                            'pointer-events: none;' +
+                            'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                        tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
+                        document.body.appendChild(tooltip);
                     }
                 });
                 
                 network.on("blurEdge", function (params) {
                      if (typeof window.hideBugTooltip === 'function') {
                          window.hideBugTooltip();
+                     }
+                     // Remove modality_stacks tooltip
+                     const modalityTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                     if (modalityTooltip) {
+                         modalityTooltip.remove();
+                     }
+                     // Remove action tooltip
+                     const actionTooltip = document.getElementById('graph-action-tooltip');
+                     if (actionTooltip) {
+                         actionTooltip.remove();
                      }
                 });
 
@@ -8104,6 +8519,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,
         detectActionPurpose: detectActionPurposeHandler,
+        detectImportantActionsForPanel: detectImportantActionsForPanelHandler,
         renamePanel: renamePanelHandler,
         renameActionByAI: renameActionByAIHandler,
         getClickEventsForPanel: getClickEventsForPanelHandler,

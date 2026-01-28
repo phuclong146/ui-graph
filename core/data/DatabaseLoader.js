@@ -55,6 +55,7 @@ export class DatabaseLoader {
         delete cleaned.child_actions;
         delete cleaned.child_panels;
         delete cleaned.parent_dom;
+        delete cleaned.modality_stacks_reason;
         return cleaned;
     }
 
@@ -149,10 +150,10 @@ export class DatabaseLoader {
             const items = fileContent.trim().split('\n').filter(line => line.trim()).map(line => JSON.parse(line));
             if (items.length === 0) return;
 
-            // 2. Query doing_item from DB to get latest bug info
-            console.log(`📊 Querying doing_item table for bug info (my_ai_tool='${this.myAiTool}')...`);
+            // 2. Query doing_item from DB to get latest bug info, modality_stacks, and modality_stacks_reason
+            console.log(`📊 Querying doing_item table for bug info, modality_stacks, and modality_stacks_reason (my_ai_tool='${this.myAiTool}')...`);
             const [dbItems] = await this.connection.execute(
-                `SELECT item_id, bug_flag, bug_info FROM doing_item WHERE published=1 AND my_ai_tool=?`,
+                `SELECT item_id, bug_flag, bug_info, modality_stacks, modality_stacks_reason FROM doing_item WHERE published=1 AND my_ai_tool=?`,
                 [this.myAiTool]
             );
             console.log(`✅ Found ${dbItems.length} items in DB for bug info update`);
@@ -176,6 +177,21 @@ export class DatabaseLoader {
 
                     item.bug_flag = dbItem.bug_flag === 1;
                     item.bug_info = bugInfo;
+
+                    // Parse and update modality_stacks
+                    let modalityStacks = null;
+                    if (dbItem.modality_stacks) {
+                        if (typeof dbItem.modality_stacks === 'string') {
+                            modalityStacks = this.parseJsonSafely(dbItem.modality_stacks);
+                        } else if (Array.isArray(dbItem.modality_stacks)) {
+                            modalityStacks = dbItem.modality_stacks;
+                        }
+                    }
+                    item.modality_stacks = modalityStacks;
+
+                    // Update modality_stacks_reason from database column
+                    item.modality_stacks_reason = dbItem.modality_stacks_reason || null;
+
                     updatedCount++;
                 }
             }
@@ -183,7 +199,7 @@ export class DatabaseLoader {
             // 4. Write back to file
             const newLines = items.map(item => JSON.stringify(item));
             await fsp.writeFile(filePath, newLines.join('\n') + (newLines.length > 0 ? '\n' : ''), 'utf8');
-            console.log(`✅ Updated bug info for ${updatedCount} items in doing_item.jsonl`);
+            console.log(`✅ Updated bug info, modality_stacks, and modality_stacks_reason for ${updatedCount} items in doing_item.jsonl`);
 
         } catch (err) {
             console.error('❌ Failed to update bug info:', err);
@@ -214,6 +230,16 @@ export class DatabaseLoader {
             // Parse bug_info if exists
             const bugInfo = this.parseJsonSafely(item.bug_info);
 
+            // Parse modality_stacks if exists (JSON string from database)
+            let modalityStacks = null;
+            if (item.modality_stacks) {
+                if (typeof item.modality_stacks === 'string') {
+                    modalityStacks = this.parseJsonSafely(item.modality_stacks);
+                } else if (Array.isArray(item.modality_stacks)) {
+                    modalityStacks = item.modality_stacks;
+                }
+            }
+
             const jsonlItem = {
                 item_id: item.item_id,
                 item_category: item.item_category,
@@ -229,7 +255,9 @@ export class DatabaseLoader {
                 status: item.status,
                 metadata: cleanedMetadata,
                 bug_flag: item.bug_flag === 1,
-                bug_info: bugInfo
+                bug_info: bugInfo,
+                modality_stacks: modalityStacks,
+                modality_stacks_reason: item.modality_stacks_reason || null
             };
 
             lines.push(JSON.stringify(jsonlItem));

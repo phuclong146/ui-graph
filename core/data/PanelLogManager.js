@@ -108,6 +108,8 @@ export class PanelLogManager {
                     bug_flag: item.bug_flag || false,
                     bug_info: item.bug_info || null,
                     bug_note: item.bug_info?.note || null,
+                    modality_stacks: item.modality_stacks || null,
+                    modality_stacks_reason: item.modality_stacks_reason || null,
                     children: []
                 });
             });
@@ -207,6 +209,8 @@ export class PanelLogManager {
                     bug_flag: item.bug_flag || false,
                     bug_info: item.bug_info || null,
                     bug_note: item.bug_info?.note || null,
+                    modality_stacks: item.modality_stacks || null,
+                    modality_stacks_reason: item.modality_stacks_reason || null,
                     children: []
                 });
             });

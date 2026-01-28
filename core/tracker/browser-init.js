@@ -375,6 +375,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("saveRole", handlers.saveRole);
     await tracker.queuePage.exposeFunction("getAccountInfo", handlers.getAccountInfo);
     await tracker.queuePage.exposeFunction("saveAccountInfo", handlers.saveAccountInfo);
+    await tracker.queuePage.exposeFunction("detectImportantActionsForPanel", handlers.detectImportantActionsForPanel);
 
     // Show RoleSelectionModal immediately when queue tracker opens
     const accountInfo = await handlers.getAccountInfo();
