@@ -510,7 +510,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     isCapturing: typeof isCapturing !== 'undefined' && isCapturing === true,
                     isGeminiDetecting: typeof isGeminiDetecting !== 'undefined' && isGeminiDetecting === true,
                     isDrawingPanel: typeof isDrawingPanel !== 'undefined' && isDrawingPanel === true,
-                    isQuitting: typeof isQuitting !== 'undefined' && isQuitting === true
+                    isQuitting: typeof isQuitting !== 'undefined' && isQuitting === true,
+                    isDetectingImportantActions: typeof window.isDetectingImportantActions !== 'undefined' && window.isDetectingImportantActions === true
                 };
                 
                 const anyRunning = (
@@ -518,7 +519,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     flags.isCapturing ||
                     flags.isGeminiDetecting ||
                     flags.isDrawingPanel ||
-                    flags.isQuitting
+                    flags.isQuitting ||
+                    flags.isDetectingImportantActions
                 );
                 
                 return { anyRunning, flags };
@@ -2722,6 +2724,158 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Set state to completed
             await setPanelDrawFlowState(panelId, 'completed');
             
+            // Detect important actions (modality_stacks) for After Login Panel after completion
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (panelItem?.name === 'After Login Panel') {
+                try {
+                    // Get panel actions
+                    const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+                    const actionIds = parentEntry?.child_actions || [];
+                    
+                    if (actionIds.length > 0) {
+                        console.log('🎯 Detecting important actions (modality_stacks) for After Login Panel after completion...');
+                        
+                        // Set flag and show loading modal
+                        await tracker.queuePage.evaluate(() => {
+                            window.isDetectingImportantActions = true;
+                        });
+                        
+                        await tracker._broadcast({
+                            type: 'show_loading',
+                            message: '🤖 Đang detect important actions...',
+                            isDetectingImportantActions: true // Flag để browser context biết đây là detect important actions
+                        });
+
+                        // Get panel image URL or base64
+                        let panelImageUrl = panelItem?.image_url || panelItem?.fullscreen_url || null;
+                        if (!panelImageUrl && panelItem?.image_base64) {
+                            // Use base64 if no URL available
+                            panelImageUrl = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+                            console.log('📸 Using base64 image for modality_stacks detection');
+                        }
+                        
+                        if (panelImageUrl) {
+                            // Get actions list for detectImportantActions
+                            const actionsForDetection = [];
+                            for (const actionId of actionIds) {
+                                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                                if (actionItem) {
+                                    actionsForDetection.push({
+                                        item_id: actionId,
+                                        name: actionItem.name || 'Unknown Action'
+                                    });
+                                }
+                            }
+
+                            // Get modality_stacks from database
+                            const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
+                            
+                            if (aiToolModalityStacks.length > 0) {
+                                // Import detectImportantActions
+                                const { detectImportantActions } = await import('./gemini-handler.js');
+                                
+                                // Call detectImportantActions
+                                const detectionResult = await detectImportantActions(
+                                    tracker,
+                                    panelImageUrl,
+                                    actionsForDetection,
+                                    aiToolModalityStacks
+                                );
+
+                                // Update actions with modality_stacks and reason
+                                let dbUpdatedCount = 0;
+                                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                                
+                                try {
+                                    await exporter.init();
+                                    
+                                    for (const resultItem of detectionResult) {
+                                        const actionItem = await tracker.dataItemManager.getItem(resultItem.item_id);
+                                        if (actionItem) {
+                                            // Check if there are changes
+                                            const oldModalityStacks = JSON.stringify(actionItem.modality_stacks || []);
+                                            const newModalityStacks = JSON.stringify(resultItem.modality_stacks || []);
+                                            const oldReason = actionItem.modality_stacks_reason || null;
+                                            const newReason = resultItem.reason || null;
+                                            
+                                            const hasChanges = oldModalityStacks !== newModalityStacks || oldReason !== newReason;
+                                            
+                                            if (hasChanges) {
+                                                // Save modality_stacks and reason to action item (JSONL)
+                                                const updates = {
+                                                    modality_stacks: resultItem.modality_stacks,
+                                                    modality_stacks_reason: resultItem.reason || null
+                                                };
+                                                
+                                                await tracker.dataItemManager.updateItem(resultItem.item_id, updates);
+                                                
+                                                // Update database for this item
+                                                const dbUpdated = await exporter.updateItemModalityStacks(
+                                                    resultItem.item_id,
+                                                    resultItem.modality_stacks,
+                                                    resultItem.reason || null
+                                                );
+                                                
+                                                if (dbUpdated) {
+                                                    dbUpdatedCount++;
+                                                }
+                                            }
+                                        }
+                                    }
+                                } finally {
+                                    await exporter.close();
+                                }
+                                
+                                if (dbUpdatedCount > 0) {
+                                    console.log(`✅ Updated ${dbUpdatedCount} items in database with modality_stacks`);
+                                }
+
+                                const actionsWithModalityStacks = detectionResult.filter(r => r.modality_stacks.length > 0).length;
+                                console.log(`✅ Detected modality_stacks: ${actionsWithModalityStacks}/${detectionResult.length} actions have modality_stacks`);
+                                
+                                await tracker._broadcast({
+                                    type: 'show_toast',
+                                    message: `✅ Detected ${actionsWithModalityStacks} important actions`
+                                });
+                            } else {
+                                console.log('⚠️ No modality_stacks found in database, skipping detection');
+                            }
+                        } else {
+                            // No panel image, clear flag and hide loading
+                            await tracker.queuePage.evaluate(() => {
+                                window.isDetectingImportantActions = false;
+                            });
+                            await tracker._broadcast({
+                                type: 'hide_loading'
+                            });
+                        }
+                    } else {
+                        // No actions, clear flag and hide loading
+                        await tracker.queuePage.evaluate(() => {
+                            window.isDetectingImportantActions = false;
+                        });
+                        await tracker._broadcast({
+                            type: 'hide_loading'
+                        });
+                    }
+                } catch (err) {
+                    console.error('❌ Failed to detect important actions:', err);
+                    // Don't block the flow if detection fails
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: '⚠️ Failed to detect important actions, but panel completed successfully'
+                    });
+                } finally {
+                    // Clear flag and hide loading modal
+                    await tracker.queuePage.evaluate(() => {
+                        window.isDetectingImportantActions = false;
+                    });
+                    await tracker._broadcast({
+                        type: 'hide_loading'
+                    });
+                }
+            }
+            
             // Auto-call detectActionPurpose after draw new panel completion (wrapped in try-catch to not break main flow)
             try {
                 // Find step with panel_after matching this panelId to get the action ID
@@ -3052,121 +3206,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 message: `✅ Panel Saved + ${adjustedActions.length} actions detected`
             });
 
-            // Detect important actions (modality_stacks) for After Login Panel
-            const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
-            if (panelItem?.name === 'After Login Panel' && actionIds.length > 0) {
-                try {
-                    console.log('🎯 Detecting important actions (modality_stacks) for After Login Panel...');
-                    await tracker._broadcast({
-                        type: 'show_toast',
-                        message: '🤖 Đang detect important actions, vui lòng đợi...'
-                    });
-
-                    // Get panel image URL or base64
-                    let panelImageUrl = updatedPanel?.image_url || updatedPanel?.fullscreen_url || null;
-                    if (!panelImageUrl && updatedPanel?.image_base64) {
-                        // Use base64 if no URL available
-                        panelImageUrl = await tracker.dataItemManager.loadBase64FromFile(updatedPanel.image_base64);
-                        console.log('📸 Using base64 image for modality_stacks detection');
-                    }
-                    
-                    if (panelImageUrl) {
-                        // Get actions list for detectImportantActions
-                        const actionsForDetection = [];
-                        for (const actionId of actionIds) {
-                            const actionItem = await tracker.dataItemManager.getItem(actionId);
-                            if (actionItem) {
-                                actionsForDetection.push({
-                                    item_id: actionId,
-                                    name: actionItem.name || 'Unknown Action'
-                                });
-                            }
-                        }
-
-                        // Get modality_stacks from database
-                        const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
-                        
-                        if (aiToolModalityStacks.length > 0) {
-                            // Import detectImportantActions
-                            const { detectImportantActions } = await import('./gemini-handler.js');
-                            
-                            // Call detectImportantActions
-                            const detectionResult = await detectImportantActions(
-                                tracker,
-                                panelImageUrl,
-                                actionsForDetection,
-                                aiToolModalityStacks
-                            );
-
-                            // Update actions with modality_stacks and reason
-                            let dbUpdatedCount = 0;
-                            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
-                            
-                            try {
-                                await exporter.init();
-                                
-                                for (const resultItem of detectionResult) {
-                                    const actionItem = await tracker.dataItemManager.getItem(resultItem.item_id);
-                                    if (actionItem) {
-                                        // Check if there are changes
-                                        const oldModalityStacks = JSON.stringify(actionItem.modality_stacks || []);
-                                        const newModalityStacks = JSON.stringify(resultItem.modality_stacks || []);
-                                        const oldReason = actionItem.modality_stacks_reason || null;
-                                        const newReason = resultItem.reason || null;
-                                        
-                                        const hasChanges = oldModalityStacks !== newModalityStacks || oldReason !== newReason;
-                                        
-                                        if (hasChanges) {
-                                            // Save modality_stacks and reason to action item (JSONL)
-                                            const updates = {
-                                                modality_stacks: resultItem.modality_stacks,
-                                                modality_stacks_reason: resultItem.reason || null
-                                            };
-                                            
-                                            await tracker.dataItemManager.updateItem(resultItem.item_id, updates);
-                                            
-                                            // Update database for this item
-                                            const dbUpdated = await exporter.updateItemModalityStacks(
-                                                resultItem.item_id,
-                                                resultItem.modality_stacks,
-                                                resultItem.reason || null
-                                            );
-                                            
-                                            if (dbUpdated) {
-                                                dbUpdatedCount++;
-                                            }
-                                        }
-                                    }
-                                }
-                            } finally {
-                                await exporter.close();
-                            }
-                            
-                            if (dbUpdatedCount > 0) {
-                                console.log(`✅ Updated ${dbUpdatedCount} items in database with modality_stacks`);
-                            }
-
-                            const actionsWithModalityStacks = detectionResult.filter(r => r.modality_stacks.length > 0).length;
-                            console.log(`✅ Detected modality_stacks: ${actionsWithModalityStacks}/${detectionResult.length} actions have modality_stacks`);
-                            
-                            await tracker._broadcast({
-                                type: 'show_toast',
-                                message: `✅ Detected ${actionsWithModalityStacks} important actions`
-                            });
-                        } else {
-                            console.log('⚠️ No modality_stacks found in database, skipping detection');
-                        }
-                    }
-                } catch (err) {
-                    console.error('❌ Failed to detect important actions:', err);
-                    // Don't block the flow if detection fails
-                    await tracker._broadcast({
-                        type: 'show_toast',
-                        message: '⚠️ Failed to detect important actions, but panel saved successfully'
-                    });
-                }
-            }
-
             // Set flow state to 'edit_actions' and open editor
             await setPanelDrawFlowState(tracker.selectedPanelId, 'edit_actions');
             
@@ -3242,6 +3281,30 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
      * @param {string} panelId - The panel ID
      */
     const detectImportantActionsForPanelHandler = async (panelId) => {
+        // Check if already running
+        const isAlreadyRunning = await tracker.queuePage.evaluate(() => {
+            return typeof window.isDetectingImportantActions !== 'undefined' && window.isDetectingImportantActions === true;
+        });
+        
+        if (isAlreadyRunning) {
+            await tracker._broadcast({
+                type: 'show_toast',
+                message: '⚠️ Đang detect important actions, vui lòng đợi...'
+            });
+            return;
+        }
+
+        // Set flag and show loading modal
+        await tracker.queuePage.evaluate(() => {
+            window.isDetectingImportantActions = true;
+        });
+        
+        await tracker._broadcast({
+            type: 'show_loading',
+            message: '🤖 Đang detect important actions...',
+            isDetectingImportantActions: true // Flag để browser context biết đây là detect important actions
+        });
+
         try {
             if (!panelId) {
                 panelId = tracker.selectedPanelId;
@@ -3400,6 +3463,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker._broadcast({
                 type: 'show_toast',
                 message: '❌ Lỗi khi detect important actions: ' + err.message
+            });
+        } finally {
+            // Clear flag and hide loading modal
+            await tracker.queuePage.evaluate(() => {
+                window.isDetectingImportantActions = false;
+            });
+            
+            await tracker._broadcast({
+                type: 'hide_loading'
             });
         }
     };
