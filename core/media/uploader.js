@@ -1,4 +1,6 @@
 import fs from "fs";
+import { refreshApiToken, isTokenExpiredError } from "../config/token-refresh.js";
+import { reloadApiToken, ENV } from "../config/env.js";
 
 export async function uploadPictureAndGetUrl(filePath, pictureCode, apiKey) {
     if (!filePath || !fs.existsSync(filePath)) {
@@ -20,17 +22,54 @@ export async function uploadPictureAndGetUrl(filePath, pictureCode, apiKey) {
     formData.append('file', blob, fileName);
     formData.append('content_type', 'image/jpeg');
 
-    const response = await fetch('https://api-gateway.mikai.tech/api/v1/authoring/admin/picture', {
+    let currentApiKey = apiKey || ENV.API_TOKEN;
+    let response = await fetch('https://api-gateway.mikai.tech/api/v1/authoring/admin/picture', {
         method: 'POST',
         headers: {
             'accept': 'application/json',
-            'authorization': apiKey,
+            'authorization': currentApiKey,
         },
         body: formData
     });
 
     const responseText = await response.text();
     console.log('Upload xong:', responseText);
+    
+    // Check if token expired and retry with refreshed token
+    if (!response.ok && isTokenExpiredError(new Error(responseText), response.status)) {
+        console.log('🔄 Token expired, refreshing...');
+        try {
+            const newToken = await refreshApiToken();
+            reloadApiToken();
+            currentApiKey = newToken;
+            
+            // Retry the request with new token
+            response = await fetch('https://api-gateway.mikai.tech/api/v1/authoring/admin/picture', {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'authorization': currentApiKey,
+                },
+                body: formData
+            });
+            
+            const retryResponseText = await response.text();
+            console.log('Upload xong (after refresh):', retryResponseText);
+            
+            if (!response.ok) {
+                throw new Error(`Upload failed with status ${response.status}: ${response.statusText} - ${retryResponseText}`);
+            }
+            
+            const retryResponseData = JSON.parse(retryResponseText);
+            if (retryResponseData.status === 200 && retryResponseData.message) {
+                return retryResponseData.message;
+            } else {
+                throw new Error(`Upload failed: ${retryResponseText}`);
+            }
+        } catch (refreshError) {
+            throw new Error(`Token refresh failed: ${refreshError.message}. Original error: ${responseText}`);
+        }
+    }
     
     // Check if HTTP response is ok
     if (!response.ok) {
@@ -75,13 +114,15 @@ export async function uploadVideo(filePath, videoCode, apiKey) {
 
     const uploadUrl = 'https://upload.clevai.edu.vn/admin/video';
     
+    let currentApiKey = apiKey || ENV.API_TOKEN;
+    
     // Log request details for Postman testing
     console.log('[UPLOAD VIDEO] Request details:');
     console.log('  URL:', uploadUrl);
     console.log('  Method: POST');
     console.log('  Headers:');
     console.log('    accept: application/json');
-    console.log('    authorization:', apiKey ? `${apiKey.substring(0, 20)}...` : '(empty)');
+    console.log('    authorization:', currentApiKey ? `${currentApiKey.substring(0, 20)}...` : '(empty)');
     console.log('  FormData fields:');
     console.log('    source_name:', videoCode);
     console.log('    source_code:', videoCode);
@@ -89,17 +130,42 @@ export async function uploadVideo(filePath, videoCode, apiKey) {
     console.log('    content_type: video/mp4');
     console.log('[UPLOAD VIDEO] Sending request...');
 
-    const response = await fetch(uploadUrl, {
+    let response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
             'accept': 'application/json',
-            'authorization': apiKey,
+            'authorization': currentApiKey,
         },
         body: formData
     });
 
-    const responseText = await response.text();
+    let responseText = await response.text();
     console.log('Upload xong:', responseText);
+    
+    // Check if token expired and retry with refreshed token
+    if (!response.ok && isTokenExpiredError(new Error(responseText), response.status)) {
+        console.log('🔄 Token expired, refreshing...');
+        try {
+            const newToken = await refreshApiToken();
+            reloadApiToken();
+            currentApiKey = newToken;
+            
+            // Retry the request with new token
+            response = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    'accept': 'application/json',
+                    'authorization': currentApiKey,
+                },
+                body: formData
+            });
+            
+            responseText = await response.text();
+            console.log('Upload xong (after refresh):', responseText);
+        } catch (refreshError) {
+            throw new Error(`Token refresh failed: ${refreshError.message}. Original error: ${responseText}`);
+        }
+    }
     
     // Check if upload was successful - check both response.ok and status field in JSON
     let isError = !response.ok;
@@ -139,15 +205,44 @@ export async function uploadVideo(filePath, videoCode, apiKey) {
 export async function getVideoLink(videoCode, apiKey) {
     const url = `https://api.clevai.edu.vn/api/v1/authoring/resource?source_code=${videoCode}&source_name=&content_type=video%2Fmp4&page=0&size=10`;
     
-    const response = await fetch(url, {
+    let currentApiKey = apiKey || ENV.API_TOKEN;
+    let response = await fetch(url, {
         method: 'GET',
         headers: {
             'accept': 'application/json',
-            'authorization': apiKey,
+            'authorization': currentApiKey,
         }
     });
 
-    const responseText = await response.text();
+    let responseText = await response.text();
+    
+    // Check if token expired and retry with refreshed token
+    if (!response.ok && isTokenExpiredError(new Error(responseText), response.status)) {
+        console.log('🔄 Token expired, refreshing...');
+        try {
+            const newToken = await refreshApiToken();
+            reloadApiToken();
+            currentApiKey = newToken;
+            
+            // Retry the request with new token
+            response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'accept': 'application/json',
+                    'authorization': currentApiKey,
+                }
+            });
+            
+            responseText = await response.text();
+        } catch (refreshError) {
+            throw new Error(`Token refresh failed: ${refreshError.message}. Original error: ${responseText}`);
+        }
+    }
+    
+    if (!response.ok) {
+        throw new Error(`Get video link failed with status ${response.status}: ${response.statusText} - ${responseText}`);
+    }
+    
     const data = JSON.parse(responseText);
     
     if (
