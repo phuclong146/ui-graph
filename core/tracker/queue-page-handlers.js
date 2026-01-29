@@ -1575,7 +1575,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
                     // Pass both full screenshot and crop area for better popup detection (Solution 1)
-                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, originalImageBase64, cropPos);
+                    detectedPanelType = await detectPanelTypeByGemini(croppedBase64, originalImageBase64, cropPos, tracker);
                     console.log(`✅ Detected panel type: ${detectedPanelType}`);
                 } catch (err) {
                     console.error('⚠️ Failed to detect panel type, using default "screen":', err);
@@ -2464,7 +2464,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         
                         const { detectPanelTypeByGemini } = await import('./gemini-handler.js');
                         // Call with full screenshot (use screenshot as croppedScreenshotB64, no cropArea)
-                        detectedPanelType = await detectPanelTypeByGemini(screenshot, null, null);
+                        detectedPanelType = await detectPanelTypeByGemini(screenshot, null, null, tracker);
                         console.log(`✅ Detected panel type: ${detectedPanelType}`);
                     } catch (err) {
                         console.error('⚠️ Failed to detect panel type, using default "screen":', err);
@@ -4949,7 +4949,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 action_content: actionItem.content
             };
 
-            const aiResult = await askGeminiForActionRename(croppedImage, actionMetadata);
+            const aiResult = await askGeminiForActionRename(croppedImage, actionMetadata, tracker);
 
             if (!aiResult) {
                 console.error('Gemini API returned null');

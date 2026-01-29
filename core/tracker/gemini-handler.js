@@ -5,6 +5,40 @@ import { captureActionsFromDOM } from '../media/dom-capture.js';
 const GEMINI_TIMEOUT_MS = 30000;
 const GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS = 300000; // 60s for detectImportantActions
 
+/**
+ * Check if error indicates Gemini billing/quota issues
+ * @param {number} statusCode - HTTP status code
+ * @param {string} errorText - Error response text
+ * @returns {boolean} True if billing/quota error detected
+ */
+function isGeminiBillingError(statusCode, errorText) {
+    // Check HTTP status codes that indicate billing/quota issues
+    if (statusCode === 429 || statusCode === 403) {
+        return true;
+    }
+    
+    // Check error message for billing/quota keywords
+    if (!errorText) return false;
+    
+    const lowerErrorText = errorText.toLowerCase();
+    const billingKeywords = [
+        'quota',
+        'billing',
+        'payment',
+        'credit',
+        'insufficient',
+        'exceeded',
+        'limit',
+        'resource exhausted',
+        'billing account',
+        'payment method',
+        'not available',
+        'unavailable'
+    ];
+    
+    return billingKeywords.some(keyword => lowerErrorText.includes(keyword));
+}
+
 async function fetchGeminiWithTimeout(url, options, timeoutMs = GEMINI_TIMEOUT_MS) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -208,6 +242,16 @@ export async function askGeminiREST(tracker, screenshotB64) {
             console.error(`Gemini REST API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
         } else {
             console.error('Gemini REST API failed:', err);
+            // Check if error message contains billing/quota keywords
+            const errorMessage = err.message || '';
+            if (isGeminiBillingError(0, errorMessage)) {
+                console.error('⚠️ Gemini billing/quota error detected in catch block');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
         }
         return null;
     }
@@ -712,7 +756,7 @@ export async function detectScreenByDOM(tracker, panelId, fullPage = false, imag
  * @param {object} cropArea - Crop area {x, y, w, h} (optional, when fullScreenshotB64 is provided)
  * @returns {Promise<string>} - Panel type: 'screen', 'popup', or 'newtab'
  */
-export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreenshotB64 = null, cropArea = null) {
+export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreenshotB64 = null, cropArea = null, tracker = null) {
     if (!croppedScreenshotB64) return 'screen';
 
     const { ENV } = await import('../config/env.js');
@@ -817,6 +861,17 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Gemini Panel Type API error response:', errorText);
+            
+            // Check for billing/quota errors
+            if (isGeminiBillingError(response.status, errorText)) {
+                console.error('⚠️ Gemini billing/quota error detected');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
+            
             return 'screen'; // Default to screen on error
         }
 
@@ -849,12 +904,22 @@ export async function detectPanelTypeByGemini(croppedScreenshotB64, fullScreensh
             console.error(`Gemini Panel Type API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
         } else {
             console.error('Gemini Panel Type API failed:', err);
+            // Check if error message contains billing/quota keywords
+            const errorMessage = err.message || '';
+            if (isGeminiBillingError(0, errorMessage)) {
+                console.error('⚠️ Gemini billing/quota error detected in catch block');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
         }
         return 'screen'; // Default to screen on error
     }
 }
 
-export async function askGeminiForActionRename(croppedImageB64, actionMetadata) {
+export async function askGeminiForActionRename(croppedImageB64, actionMetadata, tracker = null) {
     if (!croppedImageB64) return null;
 
     const { ENV } = await import('../config/env.js');
@@ -961,6 +1026,17 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata) 
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Gemini API error response:', errorText);
+            
+            // Check for billing/quota errors
+            if (isGeminiBillingError(response.status, errorText)) {
+                console.error('⚠️ Gemini billing/quota error detected in askGeminiForActionRename');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
+            
             throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
         }
 
@@ -986,6 +1062,16 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata) 
             console.error(`Gemini Rename API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
         } else {
             console.error('Gemini Rename API failed:', err);
+            // Check if error message contains billing/quota keywords
+            const errorMessage = err.message || '';
+            if (isGeminiBillingError(0, errorMessage)) {
+                console.error('⚠️ Gemini billing/quota error detected in catch block');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
         }
         return null;
     }
@@ -1081,6 +1167,17 @@ Kết quả trả về đúng định dạng JSON:
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Gemini DetectActionPurpose API error response:', errorText);
+            
+            // Check for billing/quota errors
+            if (isGeminiBillingError(response.status, errorText)) {
+                console.error('⚠️ Gemini billing/quota error detected');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
+            
             throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
         }
 
@@ -1107,6 +1204,12 @@ Kết quả trả về đúng định dạng JSON:
             console.error(`Gemini DetectActionPurpose API timed out after ${GEMINI_TIMEOUT_MS / 1000}s`);
         } else {
             console.error('Gemini DetectActionPurpose API failed:', err);
+            // Check if error message contains billing/quota keywords
+            const errorMessage = err.message || '';
+            if (isGeminiBillingError(0, errorMessage)) {
+                console.error('⚠️ Gemini billing/quota error detected in catch block');
+                // Note: tracker not available in this function context
+            }
         }
         return null;
     }
@@ -1326,6 +1429,17 @@ LƯU Ý CUỐI CÙNG:
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Gemini DetectImportantActions API error response:', errorText);
+            
+            // Check for billing/quota errors
+            if (isGeminiBillingError(response.status, errorText)) {
+                console.error('⚠️ Gemini billing/quota error detected');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
+            
             throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
         }
 
@@ -1411,6 +1525,16 @@ LƯU Ý CUỐI CÙNG:
             console.error(`Gemini DetectImportantActions API timed out after ${GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS / 1000}s`);
         } else {
             console.error('Gemini DetectImportantActions API failed:', err);
+            // Check if error message contains billing/quota keywords
+            const errorMessage = err.message || '';
+            if (isGeminiBillingError(0, errorMessage)) {
+                console.error('⚠️ Gemini billing/quota error detected in catch block');
+                if (tracker && tracker._broadcast) {
+                    await tracker._broadcast({ 
+                        type: 'show_gemini_billing_error' 
+                    });
+                }
+            }
         }
         // Return empty modality_stacks for all actions on error
         return actions.map(action => ({ 
