@@ -1,6 +1,9 @@
 import { promises as fs } from "node:fs";
 import sharp from "sharp";
 
+// Giới hạn tối đa số trang/sections khi capture (3 trang = 3 × 1080px = 3240px)
+export const MAX_CAPTURE_PAGES = 3;
+
 const waitForStableDOM = async (page, timeout = 5000, stableTime = 500) => {
   await page.evaluate((stableTime) => {
     if (window.__domStableObserver) {
@@ -390,7 +393,7 @@ const captureByStitching = async (page, options, progressCallback = null) => {
       };
     });
 
-    const maxSections = options.maxSections ?? 3;
+    const maxSections = options.maxSections ?? MAX_CAPTURE_PAGES;
     let numSections = Math.ceil(dimensions.scrollHeight / dimensions.viewportHeight);
 
     if (numSections > maxSections) {
@@ -590,7 +593,7 @@ const internalCaptureWebsiteCore = async (options, page, progressCallback = null
     defaultBackground: true,
     delay: 1,
     useStitching: false,
-    maxSections: 3,
+    maxSections: MAX_CAPTURE_PAGES,
     ...options,
   };
 
@@ -629,7 +632,7 @@ const internalCaptureWebsiteCore = async (options, page, progressCallback = null
           devicePixelRatio: window.devicePixelRatio
         };
       });
-      const maxSections = options.maxSections ?? 3;
+      const maxSections = options.maxSections ?? MAX_CAPTURE_PAGES;
       const maxHeight = Math.round(options.height * maxSections);
       const height = rawHeight > maxHeight ? maxHeight : rawHeight;
 

@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { pathToFileURL } from 'url';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,6 +51,7 @@ export async function captureScreenshot(page, asType = "base64", fullPage = fals
                 width: 1920,
                 height: 1080,
                 scaleFactor: 1,
+                maxSections: MAX_CAPTURE_PAGES,
             }, progressCallback);
 
             if (!buffer || buffer.length === 0) {

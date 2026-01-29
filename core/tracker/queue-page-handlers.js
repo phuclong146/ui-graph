@@ -7,6 +7,7 @@ import { calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 import { cropBase64Image } from '../media/screenshot.js';
 import { getDbPool } from '../data/db-connection.js';
+import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -2475,7 +2476,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log(`✅ Detected ${fullPageDomActions.length} DOM actions from full page`);
 
             const pageHeight = 1080;
-            const numPages = Math.ceil(imageHeight / pageHeight);
+            let numPages = Math.ceil(imageHeight / pageHeight);
+            
+            // Áp dụng giới hạn tối đa số trang
+            if (numPages > MAX_CAPTURE_PAGES) {
+                console.log(`⚠️ Limiting pages from ${numPages} to ${MAX_CAPTURE_PAGES} pages (maxSections limit)`);
+                numPages = MAX_CAPTURE_PAGES;
+                // Giới hạn imageHeight tương ứng
+                imageHeight = MAX_CAPTURE_PAGES * pageHeight;
+            }
+            
             const pagesData = [];
 
             for (let i = 0; i < numPages; i++) {
@@ -4004,6 +4014,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const pageHeight = 1080;
                 const pageWidth = Math.min(1920, imageWidth);
                 numPages = Math.ceil(imageHeight / pageHeight);
+                
+                // Áp dụng giới hạn tối đa số trang
+                if (numPages > MAX_CAPTURE_PAGES) {
+                    console.log(`⚠️ Limiting pages from ${numPages} to ${MAX_CAPTURE_PAGES} pages (maxSections limit)`);
+                    numPages = MAX_CAPTURE_PAGES;
+                }
 
                 const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
