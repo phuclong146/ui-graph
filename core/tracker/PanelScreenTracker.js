@@ -118,7 +118,14 @@ export class PanelScreenTracker {
                 const accountData = JSON.parse(content);
                 
                 if (accountData) {
-                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    // Generate collaborator_code if missing (for backward compatibility)
+                    if (!accountData.collaborator_code && accountData.device_id) {
+                        accountData.collaborator_code = `COLLAB_${accountData.device_id.toUpperCase()}`;
+                        // Update account.json with collaborator_code
+                        await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
+                        console.log(`✅ Generated and saved collaborator_code: ${accountData.collaborator_code}`);
+                    }
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}, collaborator_code: ${accountData.collaborator_code || 'N/A'}`);
                     return accountData;
                 }
             } catch (readErr) {
@@ -129,8 +136,12 @@ export class PanelScreenTracker {
             const { randomUUID } = await import('crypto');
             const os = await import('os');
             
+            const deviceId = randomUUID();
+            const collaboratorCode = `COLLAB_${deviceId.toUpperCase()}`;
+            
             const newAccount = {
-                device_id: randomUUID(),
+                device_id: deviceId,
+                collaborator_code: collaboratorCode,
                 device_info: {
                     platform: os.platform(),
                     arch: os.arch(),
