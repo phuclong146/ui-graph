@@ -113,6 +113,9 @@ export class DatabaseLoader {
             // 8. Create click.jsonl from doing_item.metadata.clicks
             await this.createClickJsonl(doingItems);
 
+            // 9. Create uigraph_validation.jsonl from uigraph_validation table
+            await this.createValidationJsonl(doingItems, codeToItemIdMap);
+
             console.log('✅ Successfully loaded all data from database');
         } catch (err) {
             console.error('❌ Failed to load data from database:', err);
@@ -414,5 +417,55 @@ export class DatabaseLoader {
 
         await fsp.writeFile(filePath, lines.join('\n') + (lines.length > 0 ? '\n' : ''), 'utf8');
         console.log(`✅ Created click.jsonl with ${lines.length} clicks`);
+    }
+
+    /**
+     * Create uigraph_validation.jsonl from uigraph_validation table
+     */
+    async createValidationJsonl(doingItems, codeToItemIdMap) {
+        const filePath = path.join(this.sessionFolder, 'uigraph_validation.jsonl');
+        
+        try {
+            // Query uigraph_validation table
+            console.log(`📊 Querying uigraph_validation table for my_ai_tool='${this.myAiTool}'...`);
+            const [validations] = await this.connection.execute(
+                `SELECT * FROM uigraph_validation WHERE published=1 AND my_ai_tool=?`,
+                [this.myAiTool]
+            );
+            console.log(`✅ Found ${validations.length} validation records`);
+
+            // Map my_snapshot (code) to item_id using codeToItemIdMap
+            const lines = [];
+            for (const validation of validations) {
+                const itemId = codeToItemIdMap.get(validation.my_snapshot);
+                if (!itemId) {
+                    console.warn(`⚠️ Could not find item_id for validation with my_snapshot='${validation.my_snapshot}', skipping...`);
+                    continue;
+                }
+
+                // Convert created_at datetime to timestamp
+                const createdAt = validation.created_at instanceof Date 
+                    ? validation.created_at.getTime() 
+                    : new Date(validation.created_at).getTime();
+
+                const jsonlEntry = {
+                    item_id: itemId,
+                    created_at: createdAt,
+                    my_ai_tool: validation.my_ai_tool,
+                    my_day: validation.my_day,
+                    my_session: validation.my_session,
+                    my_scene: validation.my_scene
+                };
+
+                lines.push(JSON.stringify(jsonlEntry));
+            }
+
+            // Write to file in JSONL format (one line per entry)
+            await fsp.writeFile(filePath, lines.join('\n') + (lines.length > 0 ? '\n' : ''), 'utf8');
+            console.log(`✅ Created uigraph_validation.jsonl with ${lines.length} entries`);
+        } catch (err) {
+            console.error('❌ Failed to create uigraph_validation.jsonl:', err);
+            // Don't throw - allow load to continue
+        }
     }
 }

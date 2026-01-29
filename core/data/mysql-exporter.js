@@ -293,6 +293,10 @@ export class MySQLExporter {
                     `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ?`,
                     [`${this.myAiTool}_%`]
                 );
+                await this.connection.execute(
+                    `UPDATE uigraph_validation SET published = 0 WHERE my_ai_tool = ?`,
+                    [this.myAiTool]
+                );
                 console.log(`✅ Marked all existing records for ai_tool=${this.myAiTool} as published=false`);
             } catch (err) {
                 console.warn('⚠️ Could not mark existing records as published=false:', err.message);
@@ -935,6 +939,118 @@ export class MySQLExporter {
                 console.warn('⚠️ Backfill error:', backfillErr.message);
             }
             // ========== END BACKFILL LOGIC ==========
+            
+            // ========== EXPORT VALIDATION ==========
+            try {
+                const validationPath = path.join(this.sessionFolder, 'uigraph_validation.jsonl');
+                let validationContent;
+                try {
+                    validationContent = await fsp.readFile(validationPath, 'utf8');
+                } catch (err) {
+                    if (err.code === 'ENOENT') {
+                        console.log('⚠️ uigraph_validation.jsonl not found, skipping validation export');
+                    } else {
+                        throw err;
+                    }
+                }
+
+                if (validationContent && validationContent.trim()) {
+                    // Parse JSONL format (one JSON object per line)
+                    const validations = {};
+                    const lines = validationContent.trim().split('\n').filter(line => line.trim());
+                    for (const line of lines) {
+                        try {
+                            const entry = JSON.parse(line);
+                            if (entry.item_id) {
+                                validations[entry.item_id] = {
+                                    created_at: entry.created_at,
+                                    my_ai_tool: entry.my_ai_tool,
+                                    my_day: entry.my_day,
+                                    my_session: entry.my_session,
+                                    my_scene: entry.my_scene
+                                };
+                            }
+                        } catch (parseErr) {
+                            console.warn(`Failed to parse validation line: ${line}`, parseErr);
+                        }
+                    }
+                    const validationEntries = Object.entries(validations);
+                    
+                    if (validationEntries.length > 0) {
+                        console.log(`📊 Exporting ${validationEntries.length} validation entries...`);
+                        
+                        // Build itemId -> item map từ doing_item.jsonl để generate code
+                        const itemIdToItemMap = new Map();
+                        for (const item of items) {
+                            if (item.item_id) {
+                                itemIdToItemMap.set(item.item_id, item);
+                            }
+                        }
+                        
+                        let exportedCount = 0;
+                        for (const [itemId, validationData] of validationEntries) {
+                            try {
+                                // Lấy item từ doing_item.jsonl
+                                const item = itemIdToItemMap.get(itemId);
+                                if (!item || !item.item_id || !item.name) {
+                                    console.warn(`⚠️ Could not find item for item_id ${itemId} in doing_item.jsonl, skipping validation`);
+                                    continue;
+                                }
+                                
+                                // Generate code giống như doing_item (dòng 381-392)
+                                let panelName = null;
+                                if (item.item_category === 'ACTION') {
+                                    const panelId = actionIdToPanelIdMap.get(item.item_id);
+                                    if (panelId) {
+                                        panelName = panelIdToPanelNameMap.get(panelId);
+                                    }
+                                }
+                                
+                                const code = this.generateCode(item.item_category, item.name, panelName);
+                                
+                                // Convert created_at timestamp to datetime
+                                const createdAt = new Date(validationData.created_at);
+                                
+                                // Upsert vào bảng uigraph_validation
+                                await this.connection.execute(
+                                    `INSERT INTO uigraph_validation 
+                                     (my_snapshot, my_ai_tool, created_at, my_day, my_session, my_scene, record_id, item_id, published)
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                                     ON DUPLICATE KEY UPDATE
+                                     my_ai_tool = VALUES(my_ai_tool),
+                                     created_at = VALUES(created_at),
+                                     my_day = VALUES(my_day),
+                                     my_session = VALUES(my_session),
+                                     my_scene = VALUES(my_scene),
+                                     record_id = VALUES(record_id),
+                                     published = 1`,
+                                    [
+                                        code, // my_snapshot
+                                        validationData.my_ai_tool,
+                                        createdAt, // created_at (datetime)
+                                        validationData.my_day,
+                                        validationData.my_session,
+                                        validationData.my_scene,
+                                        recordId, // record_id từ đầu hàm
+                                        itemId
+                                    ]
+                                );
+                                
+                                exportedCount++;
+                            } catch (validationErr) {
+                                console.error(`❌ Failed to export validation for item ${itemId}:`, validationErr);
+                                // Continue with next entry
+                            }
+                        }
+                        
+                        console.log(`✅ Exported ${exportedCount}/${validationEntries.length} validation entries to DB`);
+                    }
+                }
+            } catch (validationExportErr) {
+                console.error('❌ Failed to export validation to DB:', validationExportErr);
+                // Don't throw - allow export to complete
+            }
+            // ========== END EXPORT VALIDATION ==========
             
         } catch (err) {
             console.error('Failed to export to MySQL:', err);

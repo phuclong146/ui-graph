@@ -12,6 +12,7 @@ import { DataItemManager } from "../data/DataItemManager.js";
 import { ParentPanelManager } from "../data/ParentPanelManager.js";
 import { StepManager } from "../data/StepManager.js";
 import { PanelLogManager } from "../data/PanelLogManager.js";
+import { ValidationManager } from "../data/ValidationManager.js";
 import { initDbPool } from "../data/db-connection.js";
 
 export class PanelScreenTracker {
@@ -46,6 +47,7 @@ export class PanelScreenTracker {
         this.dataItemManager = null;
         this.parentPanelManager = null;
         this.stepManager = null;
+        this.validationManager = null;
         this.newlyOpenedTabs = []; // Track newly opened tabs
         this.originalPage = null; // Store original page before switching to new tab
         this.frozenScreenshot = null; // Store frozen screenshot for capturing dropdowns/popups
@@ -299,6 +301,13 @@ export class PanelScreenTracker {
             await this.stepManager.init();
             await this.stepManager.cleanupInvalidSteps();
 
+            console.log(`[VALIDATION] Initializing ValidationManager in loadSession - sessionFolder: ${this.sessionFolder}, myAiToolCode: ${this.myAiToolCode}`);
+            if (!this.myAiToolCode) {
+                console.error(`[VALIDATION] ERROR: myAiToolCode is null/undefined when initializing ValidationManager in loadSession!`);
+            }
+            this.validationManager = new ValidationManager(this.sessionFolder, this.myAiToolCode);
+            console.log(`[VALIDATION] ValidationManager initialized in loadSession: ${!!this.validationManager}, myAiToolCode: ${this.validationManager?.myAiToolCode}`);
+
             if (!this._navigationListenerSetup) {
                 await setupNavigationListener(this);
                 this._navigationListenerSetup = true;
@@ -500,6 +509,13 @@ export class PanelScreenTracker {
             
             this.stepManager = new StepManager(this.sessionFolder);
             await this.stepManager.init();
+            
+            console.log(`[VALIDATION] Initializing ValidationManager - sessionFolder: ${this.sessionFolder}, myAiToolCode: ${this.myAiToolCode}`);
+            if (!this.myAiToolCode) {
+                console.error(`[VALIDATION] ERROR: myAiToolCode is null/undefined when initializing ValidationManager!`);
+            }
+            this.validationManager = new ValidationManager(this.sessionFolder, this.myAiToolCode);
+            console.log(`[VALIDATION] ValidationManager initialized: ${!!this.validationManager}`);
             
             console.log(`✅ Validated tracking permission for website: ${url}`);
 

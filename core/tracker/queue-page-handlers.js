@@ -1830,7 +1830,40 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 status: 'completed'
             });
 
+            // Scenario C: Ghi validation khi role=DRAW chọn action và bấm Mark Done
             if (item.item_category === 'ACTION') {
+                try {
+                    // Read role from account.json
+                    let accountRole = 'DRAW';
+                    try {
+                        const { fileURLToPath } = await import('url');
+                        const __filename = fileURLToPath(import.meta.url);
+                        const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+                        const accountPath = path.join(projectRoot, 'account.json');
+                        const accountContent = await fsp.readFile(accountPath, 'utf8');
+                        const accountData = JSON.parse(accountContent);
+                        accountRole = accountData.role || 'DRAW';
+                    } catch (err) {
+                        console.log('⚠️ Could not read account.json for role check, using default: DRAW');
+                    }
+
+                    console.log(`[VALIDATION] Scenario C - accountRole: ${accountRole}, validationManager: ${!!tracker.validationManager}, itemId: ${targetItemId}`);
+
+                    // Chỉ ghi validation cho role=DRAW
+                    if (accountRole === 'DRAW' && tracker.validationManager) {
+                        const createdAt = Date.now(); // UTC timestamp
+                        console.log(`[VALIDATION] Adding validation for action ${targetItemId}...`);
+                        await tracker.validationManager.addValidation(targetItemId, createdAt);
+                        console.log(`✅ Added validation for action ${targetItemId} (Mark Done scenario)`);
+                    } else {
+                        console.log(`[VALIDATION] Skipping validation - accountRole: ${accountRole}, validationManager exists: ${!!tracker.validationManager}`);
+                    }
+                } catch (validationErr) {
+                    console.error('Failed to add validation in markAsDoneHandler:', validationErr);
+                    console.error('Validation error stack:', validationErr.stack);
+                    // Don't throw - allow operation to continue
+                }
+
                 const actionParentPanelId = await getParentPanelOfActionHandler(targetItemId);
                 if (actionParentPanelId) {
                     await checkAndUpdatePanelStatusHandler(actionParentPanelId);
@@ -1948,6 +1981,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log(`🔄 Updated parent panel ${parentPanelId} status`);
                 }
             } catch (err) {
+            }
+
+            // Xóa validation cho các ACTION items bị xóa
+            if (tracker.validationManager) {
+                try {
+                    for (const id of itemsToDelete) {
+                        const deletedItem = await tracker.dataItemManager.getItem(id);
+                        if (deletedItem && deletedItem.item_category === 'ACTION') {
+                            await tracker.validationManager.removeValidation(id);
+                        }
+                    }
+                } catch (validationErr) {
+                    console.error('Failed to remove validation in deleteEventHandler:', validationErr);
+                    // Don't throw - allow operation to continue
+                }
             }
 
             await tracker.dataItemManager.deleteItems(itemsToDelete);
@@ -2691,6 +2739,48 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (!panelId) {
                 console.error('No panel ID provided for completion');
                 return;
+            }
+
+            // Scenario B: Ghi validation trước khi gọi makeChild khi role=DRAW hoàn tất draw panel & detect actions
+            try {
+                // Read role from account.json
+                let accountRole = 'DRAW';
+                try {
+                    const { fileURLToPath } = await import('url');
+                    const __filename = fileURLToPath(import.meta.url);
+                    const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+                    const accountPath = path.join(projectRoot, 'account.json');
+                    const accountContent = await fsp.readFile(accountPath, 'utf8');
+                    const accountData = JSON.parse(accountContent);
+                    accountRole = accountData.role || 'DRAW';
+                } catch (err) {
+                    console.log('⚠️ Could not read account.json for role check, using default: DRAW');
+                }
+
+                console.log(`[VALIDATION] Scenario B - accountRole: ${accountRole}, validationManager: ${!!tracker.validationManager}, panelId: ${panelId}`);
+
+                // Tìm action liên quan từ step
+                if (accountRole === 'DRAW' && tracker.validationManager) {
+                    const stepContent = await tracker.stepManager.getAllSteps();
+                    console.log(`[VALIDATION] Found ${stepContent.length} steps, looking for panel_after=${panelId}`);
+                    const relatedStep = stepContent.find(step => step.panel_after?.item_id === panelId);
+                    
+                    if (relatedStep && relatedStep.action?.item_id) {
+                        const actionId = relatedStep.action.item_id;
+                        const createdAt = Date.now(); // UTC timestamp
+                        console.log(`[VALIDATION] Found action ${actionId} for panel ${panelId}, adding validation...`);
+                        await tracker.validationManager.addValidation(actionId, createdAt);
+                        console.log(`✅ Added validation for action ${actionId} (Draw New Panel scenario)`);
+                    } else {
+                        console.log(`[VALIDATION] No related step or action found for panel ${panelId}`);
+                    }
+                } else {
+                    console.log(`[VALIDATION] Skipping validation - accountRole: ${accountRole}, validationManager exists: ${!!tracker.validationManager}`);
+                }
+            } catch (validationErr) {
+                console.error('Failed to add validation in confirmPanelCompletionHandler:', validationErr);
+                console.error('Validation error stack:', validationErr.stack);
+                // Don't throw - allow operation to continue
             }
 
             // Call makeChild
@@ -4482,6 +4572,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             await tracker._broadcast(updatedEvent);
+
+            // Scenario A (Save trong SELECT PANEL) ghi validation ở useSelectPanelHandler, không ở đây.
         } catch (err) {
             console.error('Failed to select panel:', err);
         } finally {
@@ -4592,6 +4684,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             await tracker.stepManager.deleteStepsForAction(actionItemId);
+
+            // Xóa validation khi reset action
+            if (tracker.validationManager) {
+                try {
+                    await tracker.validationManager.removeValidation(actionItemId);
+                } catch (validationErr) {
+                    console.error('Failed to remove validation in resetActionStepHandler:', validationErr);
+                    // Don't throw - allow operation to continue
+                }
+            }
 
             const actionItem = await tracker.dataItemManager.getItem(actionItemId);
             await tracker.dataItemManager.updateItem(actionItemId, { 
@@ -5226,6 +5328,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
 
                 await checkAndUpdatePanelStatusHandler(parentPanelId);
+
+                // Scenario A: Ghi validation khi role=DRAW bấm Save trong màn hình SELECT PANEL
+                try {
+                    let accountRole = 'DRAW';
+                    try {
+                        const { fileURLToPath } = await import('url');
+                        const __filename = fileURLToPath(import.meta.url);
+                        const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+                        const accountPath = path.join(projectRoot, 'account.json');
+                        const accountContent = await fsp.readFile(accountPath, 'utf8');
+                        const accountData = JSON.parse(accountContent);
+                        accountRole = accountData.role || 'DRAW';
+                    } catch (err) {
+                        console.log('⚠️ Could not read account.json for role check, using default: DRAW');
+                    }
+                    if (accountRole === 'DRAW' && tracker.validationManager) {
+                        const createdAt = Date.now();
+                        await tracker.validationManager.addValidation(actionItemId, createdAt);
+                        console.log(`✅ Added validation for action ${actionItemId} (Scenario A: Save in SELECT PANEL)`);
+                    }
+                } catch (validationErr) {
+                    console.error('Failed to add validation in useSelectPanelHandler:', validationErr);
+                }
 
                 await selectPanelHandler(actionItemId);
             } else {
