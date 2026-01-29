@@ -1272,6 +1272,23 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="geminiBillingErrorModal" style="display:none; position:fixed; z-index:20006; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:500px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
+        <div style="text-align:center; margin-bottom:25px;">
+          <div style="font-size:48px; margin-bottom:15px;">⚠️</div>
+          <h3 style="margin:0 0 15px 0; font-size:20px; color:#333;">Cảnh báo Gemini</h3>
+          <p style="margin:0; padding:12px; background-color:#fff3cd; border:1px solid #ffc107; border-radius:6px; font-size:14px; color:#856404; font-weight:600; line-height:1.6;">
+            Tài khoản Gemini đang không sẵn sàng, liên hệ Admin để hỗ trợ!
+          </p>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center;">
+          <button id="geminiBillingErrorOkBtn" style="background:linear-gradient(135deg, #dc3545 0%, #c82333 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(220,53,69,0.3);">
+            Đã hiểu
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="roleSelectionModal" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:30px; max-width:500px; min-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.3); position:relative;">
         <div style="text-align:center; margin-bottom:25px;">
@@ -2072,6 +2089,14 @@ export const QUEUE_BROWSER_HTML = `
 
         if (evt.type === 'hide_role_selection') {
           hideRoleSelectionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_gemini_billing_error') {
+          console.log('⚠️ [Gemini Billing Error - Browser] Received show_gemini_billing_error event');
+          if (window.showGeminiBillingErrorDialog) {
+            window.showGeminiBillingErrorDialog();
+          }
           return;
         }
 
@@ -4406,6 +4431,46 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Expose function to show conflict dialog
       window.showSessionConflictDialog = showSessionConflictDialog;
+
+      // Gemini Billing Error Modal handlers
+      const geminiBillingErrorModal = document.getElementById('geminiBillingErrorModal');
+      const geminiBillingErrorOkBtn = document.getElementById('geminiBillingErrorOkBtn');
+
+      const showGeminiBillingErrorDialog = () => {
+        if (!geminiBillingErrorModal) {
+          console.error('geminiBillingErrorModal not found');
+          return;
+        }
+        console.log('⚠️ [Gemini Billing Error] Displaying billing error dialog');
+        geminiBillingErrorModal.style.display = 'flex';
+      };
+
+      const hideGeminiBillingErrorDialog = () => {
+        if (geminiBillingErrorModal) {
+          geminiBillingErrorModal.style.display = 'none';
+        }
+      };
+
+      if (geminiBillingErrorOkBtn) {
+        geminiBillingErrorOkBtn.addEventListener('click', () => {
+          hideGeminiBillingErrorDialog();
+        });
+      }
+
+      geminiBillingErrorModal.addEventListener('click', (e) => {
+        if (e.target === geminiBillingErrorModal) {
+          // Don't close on background click - require explicit button click
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && geminiBillingErrorModal.style.display === 'flex') {
+          // Don't close on Escape - require explicit button click
+        }
+      });
+
+      // Expose function to show billing error dialog
+      window.showGeminiBillingErrorDialog = showGeminiBillingErrorDialog;
 
       // Panel Type Confirmation Modal handlers
       const panelTypeConfirmationModal = document.getElementById('panelTypeConfirmationModal');
