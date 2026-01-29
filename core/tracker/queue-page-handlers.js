@@ -8411,7 +8411,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const accountData = JSON.parse(content);
                 
                 if (accountData) {
-                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}`);
+                    // Generate collaborator_code if missing (for backward compatibility)
+                    if (!accountData.collaborator_code && accountData.device_id) {
+                        accountData.collaborator_code = `COLLAB_${accountData.device_id.toUpperCase()}`;
+                        // Update account.json with collaborator_code
+                        await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
+                        console.log(`✅ Generated and saved collaborator_code: ${accountData.collaborator_code}`);
+                    }
+                    console.log(`✅ Loaded account info: ${accountData.name || 'No name'}, role: ${accountData.role || 'No role'}, collaborator_code: ${accountData.collaborator_code || 'N/A'}`);
                     return { success: true, data: accountData };
                 }
             } catch (readErr) {
@@ -8423,8 +8430,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const { randomUUID } = await import('crypto');
             const os = await import('os');
             
+            const deviceId = randomUUID();
+            const collaboratorCode = `COLLAB_${deviceId.toUpperCase()}`;
+            
             const newAccount = {
-                device_id: randomUUID(),
+                device_id: deviceId,
+                collaborator_code: collaboratorCode,
                 device_info: {
                     platform: os.platform(),
                     arch: os.arch(),
@@ -8449,7 +8460,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 updated_at: new Date().toISOString()
             };
             
-            console.log(`✅ Created new account with device_id: ${newAccount.device_id}`);
+            console.log(`✅ Created new account with device_id: ${newAccount.device_id}, collaborator_code: ${newAccount.collaborator_code}`);
             return { success: true, data: newAccount };
         } catch (err) {
             console.error('Failed to get account info:', err);
@@ -8482,8 +8493,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const { randomUUID } = await import('crypto');
             const os = await import('os');
             
+            const deviceId = existingAccount?.device_id || randomUUID();
+            const collaboratorCode = existingAccount?.collaborator_code || `COLLAB_${deviceId.toUpperCase()}`;
+            
             const accountData = {
-                device_id: existingAccount?.device_id || randomUUID(),
+                device_id: deviceId,
+                collaborator_code: collaboratorCode,
                 device_info: {
                     platform: os.platform(),
                     arch: os.arch(),
@@ -8511,7 +8526,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Upsert - overwrite the entire file with updated account data
             await fsp.writeFile(accountPath, JSON.stringify(accountData, null, 2), 'utf8');
             
-            console.log(`✅ Account info saved: ${name}, role: ${role}, device_id: ${accountData.device_id}`);
+            console.log(`✅ Account info saved: ${name}, role: ${role}, device_id: ${accountData.device_id}, collaborator_code: ${accountData.collaborator_code}`);
 
             // Update current role and manage save reminder timer
             const previousRole = currentRole;
