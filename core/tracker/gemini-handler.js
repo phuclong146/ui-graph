@@ -1,5 +1,5 @@
 import { sleep } from '../utils/utils.js';
-import { drawPanelBoundingBoxes, resizeBase64 } from '../media/screenshot.js';
+import { drawPanelBoundingBoxes, resizeBase64, cropBase64Image } from '../media/screenshot.js';
 import { captureActionsFromDOM } from '../media/dom-capture.js';
 
 const GEMINI_TIMEOUT_MS = 30000;
@@ -1235,13 +1235,111 @@ export async function detectImportantActions(tracker, panelImageUrl, actions, ai
         return actions.map(action => ({ item_id: action.item_id, modality_stacks: [] }));
     }
 
+    // Log input data for debugging
+    console.log('🔍 detectImportantActions: Starting detection');
+    console.log('📊 Input data summary:', {
+        actionsCount: actions.length,
+        modalityStacksCount: aiToolModalityStacks.length,
+        panelImageUrlType: panelImageUrl.startsWith('http') ? 'URL' : 'base64',
+        panelImageUrlLength: panelImageUrl.length
+    });
+
+    // Check for special characters in actions
+    try {
+        const actionsStr = JSON.stringify(actions);
+        const hasSpecialChars = /[^\x20-\x7E\u00A0-\uFFFF]/.test(actionsStr);
+        if (hasSpecialChars) {
+            console.warn('⚠️ detectImportantActions: Special characters detected in actions data');
+            // Log problematic characters
+            const specialChars = actionsStr.match(/[^\x20-\x7E\u00A0-\uFFFF]/g);
+            if (specialChars) {
+                console.warn('⚠️ Special characters found:', Array.from(new Set(specialChars)).map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase()}`));
+            }
+        }
+        console.log('📝 Actions data (first 500 chars):', actionsStr.substring(0, 500));
+    } catch (err) {
+        console.error('❌ detectImportantActions: Error stringifying actions:', err);
+    }
+
+    // Check for special characters in aiToolModalityStacks
+    try {
+        const modalityStacksStr = JSON.stringify(aiToolModalityStacks);
+        const hasSpecialChars = /[^\x20-\x7E\u00A0-\uFFFF]/.test(modalityStacksStr);
+        if (hasSpecialChars) {
+            console.warn('⚠️ detectImportantActions: Special characters detected in modality_stacks data');
+            // Log problematic characters
+            const specialChars = modalityStacksStr.match(/[^\x20-\x7E\u00A0-\uFFFF]/g);
+            if (specialChars) {
+                console.warn('⚠️ Special characters found:', Array.from(new Set(specialChars)).map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase()}`));
+            }
+        }
+        console.log('📝 Modality stacks data (first 500 chars):', modalityStacksStr.substring(0, 500));
+        
+        // Log each modality stack code and name for debugging
+        aiToolModalityStacks.forEach((ms, idx) => {
+            console.log(`📋 Modality stack [${idx}]:`, {
+                code: ms.code,
+                name: ms.name?.substring(0, 100),
+                descriptionLength: ms.description?.length || 0,
+                exampleLength: ms.example?.length || 0
+            });
+        });
+    } catch (err) {
+        console.error('❌ detectImportantActions: Error stringifying modality_stacks:', err);
+    }
+
     const { ENV } = await import('../config/env.js');
 
-    // Build prompt
+    // Sanitize data before stringifying to avoid JSON issues
+    const sanitizeForJSON = (obj) => {
+        try {
+            // Deep clone to avoid mutating original
+            const cloned = JSON.parse(JSON.stringify(obj));
+            return cloned;
+        } catch (err) {
+            console.warn('⚠️ Failed to sanitize data, using original:', err);
+            return obj;
+        }
+    };
+
+    // Sanitize actions and modality_stacks
+    let sanitizedActions, sanitizedModalityStacks;
+    try {
+        sanitizedActions = sanitizeForJSON(actions);
+        sanitizedModalityStacks = sanitizeForJSON(aiToolModalityStacks);
+        console.log('✅ Data sanitized successfully');
+    } catch (sanitizeErr) {
+        console.error('❌ Failed to sanitize data:', sanitizeErr);
+        sanitizedActions = actions;
+        sanitizedModalityStacks = aiToolModalityStacks;
+    }
+
+    // Build prompt with sanitized data
+    let actionsJsonStr, modalityStacksJsonStr;
+    try {
+        actionsJsonStr = JSON.stringify(sanitizedActions, null, 2);
+        modalityStacksJsonStr = JSON.stringify(sanitizedModalityStacks, null, 2);
+        console.log('✅ JSON stringified successfully', {
+            actionsJsonLength: actionsJsonStr.length,
+            modalityStacksJsonLength: modalityStacksJsonStr.length
+        });
+    } catch (stringifyErr) {
+        console.error('❌ Failed to stringify data for prompt:', stringifyErr);
+        // Fallback: use simplified format
+        actionsJsonStr = JSON.stringify(sanitizedActions.map(a => ({ item_id: a.item_id, name: a.name || '' })));
+        modalityStacksJsonStr = JSON.stringify(sanitizedModalityStacks.map(ms => ({
+            code: ms.code || '',
+            name: ms.name || '',
+            description: (ms.description || '').substring(0, 200),
+            example: (ms.example || '').substring(0, 200)
+        })));
+        console.warn('⚠️ Using simplified format due to stringify error');
+    }
+
     const prompt = `Bạn nhận được:
 1. Hình ảnh panel của một trang web
-2. Danh sách các actions (nút, link, input...) trên panel này với format: ${JSON.stringify(actions, null, 2)}
-3. Danh sách các modality_stacks (tính năng quan trọng) của AI tool với đầy đủ thông tin: ${JSON.stringify(aiToolModalityStacks, null, 2)}
+2. Danh sách các actions (nút, link, input...) trên panel này với format: ${actionsJsonStr}
+3. Danh sách các modality_stacks (tính năng quan trọng) của AI tool với đầy đủ thông tin: ${modalityStacksJsonStr}
 
 Định nghĩa:
 - **Action**: Là một phần tử tương tác trên panel (button, link, input field, dropdown, etc.) được xác định bởi item_id và name
@@ -1372,31 +1470,146 @@ LƯU Ý CUỐI CÙNG:
     // Handle image input - check if it's URL or base64
     const isUrl = panelImageUrl.startsWith('http://') || panelImageUrl.startsWith('https://');
     
-    if (isUrl) {
-        // Use file_data for URL
-        parts.push({
-            file_data: {
-                mime_type: 'image/jpeg',
-                file_uri: panelImageUrl
+    // Log image URL info for debugging
+    console.log('🖼️ Image input info:', {
+        isUrl: isUrl,
+        urlLength: panelImageUrl.length,
+        urlPreview: isUrl ? panelImageUrl.substring(0, 100) : 'base64 data',
+        urlType: isUrl ? 'file_uri' : 'inline_data'
+    });
+    
+    // Process image: download if URL, then crop if too large, then resize
+    let processedBase64 = null;
+    const sharp = (await import('sharp')).default;
+    const MAX_HEIGHT = 3240;
+    
+    try {
+        if (isUrl) {
+            // Validate URL format
+            try {
+                const urlObj = new URL(panelImageUrl);
+                console.log('✅ Image URL is valid:', {
+                    protocol: urlObj.protocol,
+                    hostname: urlObj.hostname,
+                    pathname: urlObj.pathname.substring(0, 50)
+                });
+            } catch (urlErr) {
+                console.error('❌ Invalid image URL format:', urlErr);
+                throw new Error(`Invalid image URL format: ${urlErr.message}`);
             }
-        });
-    } else {
-        // Use inline_data for base64
-        // Remove data URL prefix if present
-        let base64Data = panelImageUrl;
-        if (base64Data.includes(',')) {
-            base64Data = base64Data.split(',')[1];
+            
+            // Download image from URL
+            console.log('📥 Downloading image from URL...');
+            const imageResponse = await fetch(panelImageUrl);
+            if (!imageResponse.ok) {
+                throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+            }
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+            processedBase64 = imageBase64;
+            console.log('✅ Image downloaded successfully');
+        } else {
+            // Use base64 directly
+            // Remove data URL prefix if present
+            let base64Data = panelImageUrl;
+            if (base64Data.includes(',')) {
+                base64Data = base64Data.split(',')[1];
+            }
+            processedBase64 = base64Data;
         }
         
-        // Resize image for Gemini (similar to other functions)
-        const resizedBase64 = await resizeBase64(base64Data, 640);
+        // Get image metadata to check size
+        const imageBuffer = Buffer.from(processedBase64, 'base64');
+        const metadata = await sharp(imageBuffer).metadata();
+        const imageWidth = metadata.width;
+        const imageHeight = metadata.height;
         
+        console.log('📐 Image dimensions:', {
+            width: imageWidth,
+            height: imageHeight,
+            size: (imageBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+        
+        // Crop if height > MAX_HEIGHT
+        if (imageHeight > MAX_HEIGHT) {
+            console.log(`✂️ Image height (${imageHeight}) exceeds max (${MAX_HEIGHT}), cropping...`);
+            try {
+                const cropPos = {
+                    x: 0,
+                    y: 0,
+                    w: imageWidth,
+                    h: MAX_HEIGHT
+                };
+                const croppedBase64 = await cropBase64Image(processedBase64, cropPos);
+                
+                // Verify cropped result is valid
+                if (croppedBase64 && croppedBase64 !== processedBase64) {
+                    processedBase64 = croppedBase64;
+                    console.log(`✅ Image cropped to height ${MAX_HEIGHT}`);
+                    
+                    // Verify cropped size
+                    const croppedBuffer = Buffer.from(processedBase64, 'base64');
+                    const croppedMetadata = await sharp(croppedBuffer).metadata();
+                    console.log('📐 Cropped image dimensions:', {
+                        width: croppedMetadata.width,
+                        height: croppedMetadata.height,
+                        size: (croppedBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+                    });
+                } else {
+                    console.warn('⚠️ Crop returned same image, skipping crop');
+                }
+            } catch (cropErr) {
+                console.error('❌ Failed to crop image, continuing with original:', cropErr);
+                // Continue with original image, resize will handle it
+            }
+        }
+        
+        // Resize image for Gemini (max width 640, maintain aspect ratio)
+        const resizedBase64 = await resizeBase64(processedBase64, 640);
+        
+        // Verify final size
+        const finalBuffer = Buffer.from(resizedBase64, 'base64');
+        const finalMetadata = await sharp(finalBuffer).metadata();
+        console.log('📐 Final image dimensions:', {
+            width: finalMetadata.width,
+            height: finalMetadata.height,
+            size: (finalBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+        
+        // Use inline_data for processed base64
         parts.push({
             inline_data: {
                 mime_type: 'image/png',
                 data: resizedBase64
             }
         });
+        
+        console.log('✅ Image processed and added to request');
+    } catch (imageErr) {
+        console.error('❌ Failed to process image:', imageErr);
+        // Fallback: try to use original URL if it was a URL
+        if (isUrl) {
+            console.warn('⚠️ Falling back to file_uri method');
+            parts.push({
+                file_data: {
+                    mime_type: 'image/jpeg',
+                    file_uri: panelImageUrl
+                }
+            });
+        } else {
+            // For base64, try to use original
+            let base64Data = panelImageUrl;
+            if (base64Data.includes(',')) {
+                base64Data = base64Data.split(',')[1];
+            }
+            const resizedBase64 = await resizeBase64(base64Data, 640);
+            parts.push({
+                inline_data: {
+                    mime_type: 'image/png',
+                    data: resizedBase64
+                }
+            });
+        }
     }
 
     const requestBody = {
@@ -1410,25 +1623,185 @@ LƯU Ý CUỐI CÙNG:
     };
 
     try {
+        // Log request body info before stringifying
+        console.log('📦 Building request body...');
+        console.log('📊 Request body structure:', {
+            hasContents: !!requestBody.contents,
+            contentsLength: requestBody.contents?.length || 0,
+            hasParts: !!requestBody.contents?.[0]?.parts,
+            partsCount: requestBody.contents?.[0]?.parts?.length || 0,
+            hasTextPart: !!requestBody.contents?.[0]?.parts?.[0]?.text,
+            textPartLength: requestBody.contents?.[0]?.parts?.[0]?.text?.length || 0,
+            hasImagePart: !!requestBody.contents?.[0]?.parts?.[1],
+            imagePartType: requestBody.contents?.[0]?.parts?.[1]?.file_data ? 'file_data' : 
+                          requestBody.contents?.[0]?.parts?.[1]?.inline_data ? 'inline_data' : 'none'
+        });
+
+        // Try to stringify request body and check for issues
+        let requestBodyStr;
+        try {
+            requestBodyStr = JSON.stringify(requestBody);
+            console.log('✅ Request body stringified successfully');
+            console.log('📏 Request body size:', {
+                totalSize: requestBodyStr.length,
+                totalSizeKB: (requestBodyStr.length / 1024).toFixed(2) + ' KB',
+                totalSizeMB: (requestBodyStr.length / (1024 * 1024)).toFixed(2) + ' MB'
+            });
+            
+            // Check for special characters in request body
+            const hasSpecialChars = /[^\x20-\x7E\u00A0-\uFFFF]/.test(requestBodyStr);
+            if (hasSpecialChars) {
+                console.warn('⚠️ detectImportantActions: Special characters detected in request body');
+                const specialChars = requestBodyStr.match(/[^\x20-\x7E\u00A0-\uFFFF]/g);
+                if (specialChars) {
+                    const uniqueChars = Array.from(new Set(specialChars));
+                    console.warn('⚠️ Special characters in request body:', uniqueChars.map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase()}`));
+                }
+            }
+            
+            // Log first 1000 chars of request body for debugging
+            console.log('📝 Request body preview (first 1000 chars):', requestBodyStr.substring(0, 1000));
+        } catch (stringifyErr) {
+            console.error('❌ detectImportantActions: Failed to stringify request body:', stringifyErr);
+            console.error('❌ Stringify error details:', {
+                message: stringifyErr.message,
+                stack: stringifyErr.stack,
+                name: stringifyErr.name
+            });
+            throw new Error(`Failed to stringify request body: ${stringifyErr.message}`);
+        }
+
         // Use gemini-2.5-pro for this task (recommended for accuracy)
         const modelName = process.env.GEMINI_MODEL_IMPORTANT || 'gemini-2.5-flash';
         
-        const response = await fetchGeminiWithTimeout(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-            {
-                method: 'POST',
-                headers: {
-                    'x-goog-api-key': ENV.GEMINI_API_KEY,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            },
-            GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS
-        );
+        console.log('🚀 Sending request to Gemini API...', {
+            model: modelName,
+            url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            requestBodySize: requestBodyStr.length
+        });
+        
+        // Retry logic for 500 errors
+        const maxRetries = 3;
+        let lastError = null;
+        let response = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                response = await fetchGeminiWithTimeout(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'x-goog-api-key': ENV.GEMINI_API_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: requestBodyStr
+                    },
+                    GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS
+                );
+                
+                // If not 500 error, break retry loop
+                if (response.status !== 500) {
+                    break;
+                }
+                
+                // If 500 error and not last attempt, retry
+                if (attempt < maxRetries) {
+                    const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff, max 5s
+                    console.warn(`⚠️ Got 500 error, retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
+                    await sleep(retryDelay);
+                    continue;
+                }
+                
+                // Last attempt with 500 error, break to handle it
+                break;
+            } catch (fetchErr) {
+                lastError = fetchErr;
+                // If timeout or network error and not last attempt, retry
+                if (attempt < maxRetries && (fetchErr.name === 'AbortError' || fetchErr.message.includes('fetch'))) {
+                    const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                    console.warn(`⚠️ Request failed, retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`, fetchErr.message);
+                    await sleep(retryDelay);
+                    continue;
+                }
+                // Re-throw if last attempt or non-retryable error
+                throw fetchErr;
+            }
+        }
+        
+        // If we still have a 500 error after retries, log detailed info
+        if (response && response.status === 500) {
+            console.error('❌ Still getting 500 error after all retries');
+        }
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('Gemini DetectImportantActions API error response:', errorText);
+            console.error('❌ Gemini DetectImportantActions API error response:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorText: errorText,
+                errorTextLength: errorText.length,
+                errorTextPreview: errorText.substring(0, 1000)
+            });
+            
+            // Log request details for debugging 500 errors
+            if (response.status === 500) {
+                console.error('❌ 500 Internal Server Error - Request details:', {
+                    model: modelName,
+                    requestBodySize: requestBodyStr.length,
+                    actionsCount: actions.length,
+                    modalityStacksCount: aiToolModalityStacks.length,
+                    actionsPreview: actions.map(a => ({ item_id: a.item_id, name: a.name?.substring(0, 50) })),
+                    modalityStacksCodes: aiToolModalityStacks.map(ms => ms.code),
+                    imageUrlType: isUrl ? 'file_uri' : 'inline_data',
+                    imageUrl: isUrl ? panelImageUrl.substring(0, 100) : 'base64 (hidden)',
+                    promptLength: prompt.length,
+                    partsCount: parts.length
+                });
+                
+                // Log request body structure for debugging
+                try {
+                    const requestBodyParsed = JSON.parse(requestBodyStr);
+                    console.error('❌ 500 Error - Request body structure:', {
+                        hasContents: !!requestBodyParsed.contents,
+                        contentsLength: requestBodyParsed.contents?.length || 0,
+                        partsCount: requestBodyParsed.contents?.[0]?.parts?.length || 0,
+                        textPartLength: requestBodyParsed.contents?.[0]?.parts?.[0]?.text?.length || 0,
+                        imagePartType: requestBodyParsed.contents?.[0]?.parts?.[1]?.file_data ? 'file_data' : 
+                                      requestBodyParsed.contents?.[0]?.parts?.[1]?.inline_data ? 'inline_data' : 'none',
+                        imagePartFileUri: requestBodyParsed.contents?.[0]?.parts?.[1]?.file_data?.file_uri?.substring(0, 100) || 'N/A',
+                        hasGenerationConfig: !!requestBodyParsed.generation_config
+                    });
+                } catch (parseErr) {
+                    console.error('❌ Failed to parse request body for debugging:', parseErr);
+                }
+                
+                // Try to identify problematic data
+                try {
+                    const actionsStr = JSON.stringify(actions);
+                    const modalityStacksStr = JSON.stringify(aiToolModalityStacks);
+                    console.error('❌ 500 Error - Data analysis:', {
+                        actionsStringLength: actionsStr.length,
+                        modalityStacksStringLength: modalityStacksStr.length,
+                        actionsHasSpecialChars: /[^\x20-\x7E\u00A0-\uFFFF]/.test(actionsStr),
+                        modalityStacksHasSpecialChars: /[^\x20-\x7E\u00A0-\uFFFF]/.test(modalityStacksStr),
+                        actionsJsonValid: (() => {
+                            try {
+                                JSON.parse(actionsStr);
+                                return true;
+                            } catch { return false; }
+                        })(),
+                        modalityStacksJsonValid: (() => {
+                            try {
+                                JSON.parse(modalityStacksStr);
+                                return true;
+                            } catch { return false; }
+                        })()
+                    });
+                } catch (analysisErr) {
+                    console.error('❌ Failed to analyze data for 500 error:', analysisErr);
+                }
+            }
             
             // Check for billing/quota errors
             if (isGeminiBillingError(response.status, errorText)) {
@@ -1440,7 +1813,7 @@ LƯU Ý CUỐI CÙNG:
                 }
             }
             
-            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText.substring(0, 500)}`);
         }
 
         const data = await response.json();
@@ -1522,9 +1895,40 @@ LƯU Ý CUỐI CÙNG:
         return validatedResult;
     } catch (err) {
         if (err.name === 'AbortError') {
-            console.error(`Gemini DetectImportantActions API timed out after ${GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS / 1000}s`);
+            console.error(`❌ Gemini DetectImportantActions API timed out after ${GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS / 1000}s`);
         } else {
-            console.error('Gemini DetectImportantActions API failed:', err);
+            console.error('❌ Gemini DetectImportantActions API failed:', {
+                name: err.name,
+                message: err.message,
+                stack: err.stack,
+                errorType: err.constructor.name
+            });
+            
+            // Log additional context for debugging
+            console.error('❌ Error context:', {
+                actionsCount: actions?.length || 0,
+                modalityStacksCount: aiToolModalityStacks?.length || 0,
+                panelImageUrlType: panelImageUrl?.startsWith('http') ? 'URL' : 'base64',
+                panelImageUrlLength: panelImageUrl?.length || 0
+            });
+            
+            // Check if error is related to JSON stringify
+            if (err.message && (err.message.includes('stringify') || err.message.includes('JSON'))) {
+                console.error('❌ JSON stringify error detected - checking data for problematic characters...');
+                try {
+                    const actionsStr = JSON.stringify(actions);
+                    const modalityStacksStr = JSON.stringify(aiToolModalityStacks);
+                    console.error('❌ Data that failed to stringify:', {
+                        actionsLength: actionsStr.length,
+                        modalityStacksLength: modalityStacksStr.length,
+                        actionsPreview: actionsStr.substring(0, 500),
+                        modalityStacksPreview: modalityStacksStr.substring(0, 500)
+                    });
+                } catch (stringifyErr) {
+                    console.error('❌ Cannot stringify data for debugging:', stringifyErr);
+                }
+            }
+            
             // Check if error message contains billing/quota keywords
             const errorMessage = err.message || '';
             if (isGeminiBillingError(0, errorMessage)) {

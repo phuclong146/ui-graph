@@ -2874,6 +2874,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 // Import detectImportantActions
                                 const { detectImportantActions } = await import('./gemini-handler.js');
                                 
+                                // Log before calling detectImportantActions
+                                console.log('🔍 Calling detectImportantActions with:', {
+                                    panelId: panelItem?.item_id,
+                                    panelName: panelItem?.name,
+                                    actionsCount: actionsForDetection.length,
+                                    modalityStacksCount: aiToolModalityStacks.length,
+                                    aiToolCode: tracker.myAiToolCode,
+                                    panelImageUrlType: panelImageUrl?.startsWith('http') ? 'URL' : 'base64',
+                                    panelImageUrlLength: panelImageUrl?.length || 0
+                                });
+                                
+                                // Log actions data for debugging
+                                actionsForDetection.forEach((action, idx) => {
+                                    console.log(`📋 Action [${idx}]:`, {
+                                        item_id: action.item_id,
+                                        name: action.name,
+                                        nameLength: action.name?.length || 0,
+                                        hasSpecialChars: action.name ? /[^\x20-\x7E\u00A0-\uFFFF]/.test(action.name) : false
+                                    });
+                                });
+                                
                                 // Call detectImportantActions
                                 const detectionResult = await detectImportantActions(
                                     tracker,
@@ -3483,6 +3504,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Import detectImportantActions
             const { detectImportantActions } = await import('./gemini-handler.js');
+            
+            // Log before calling detectImportantActions
+            console.log('🔍 Calling detectImportantActions (handler) with:', {
+                panelId: panelItem?.item_id,
+                panelName: panelItem?.name,
+                actionsCount: actionsForDetection.length,
+                modalityStacksCount: aiToolModalityStacks.length,
+                aiToolCode: tracker.myAiToolCode,
+                panelImageUrlType: panelImageUrl?.startsWith('http') ? 'URL' : 'base64',
+                panelImageUrlLength: panelImageUrl?.length || 0
+            });
+            
+            // Log actions data for debugging
+            actionsForDetection.forEach((action, idx) => {
+                console.log(`📋 Action [${idx}]:`, {
+                    item_id: action.item_id,
+                    name: action.name,
+                    nameLength: action.name?.length || 0,
+                    hasSpecialChars: action.name ? /[^\x20-\x7E\u00A0-\uFFFF]/.test(action.name) : false
+                });
+            });
             
             // Call detectImportantActions
             const detectionResult = await detectImportantActions(
