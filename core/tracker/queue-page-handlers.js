@@ -8,6 +8,7 @@ import { ENV } from '../config/env.js';
 import { cropBase64Image } from '../media/screenshot.js';
 import { getDbPool } from '../data/db-connection.js';
 import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
+import { fetchWebsiteList } from '../media/uploader.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -8746,6 +8747,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /** Admin password hash (MD5). Compare with md5(userInput) to allow ADMIN role. */
+    const ADMIN_PASSWORD = 'a71857ea45bf9e9a3fca1e6842759dc0';
+
+    /**
+     * Validate admin password. Returns true if md5(password) === ADMIN_PASSWORD.
+     * @param {string} password - Plain password from user
+     * @returns {Promise<boolean>}
+     */
+    const validateAdminPasswordHandler = async (password) => {
+        if (typeof password !== 'string') return false;
+        const { createHash } = await import('crypto');
+        const hash = createHash('md5').update(password, 'utf8').digest('hex');
+        return hash === ADMIN_PASSWORD;
+    };
+
     /**
      * Save account info to account.json (in project root, outside sessions folder)
      * Upserts by deviceId - overwrites existing account data
@@ -8834,8 +8850,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await initTrackingBrowser(tracker);
                 console.log(`🚀 Tracking browser launched for ${role} role`);
             } else {
-                // ADMIN role - no tracking browser needed
-                console.log(`📋 ${role} role - tracking browser not launched`);
+                // ADMIN role - broadcast ai_tools list for Queue Tracker to show
+                const toolsRes = await getAiToolsListHandler();
+                const tools = (toolsRes.data || []);
+                await tracker._broadcast({ type: 'show_admin_ai_tools', tools });
+                console.log(`📋 ${role} role - ai_tools list broadcast (${tools.length} tools)`);
             }
 
             return { success: true, data: accountData };
@@ -8852,6 +8871,97 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     const saveRoleHandler = async (role) => {
         // Redirect to new saveAccountInfoHandler
         return await saveAccountInfoHandler(role, 'Unknown');
+    };
+
+    /**
+     * Get list of ai_tools for ADMIN (from API, same as website selector).
+     * @returns {Promise<{ success: boolean, data?: Array<{code:string, website:string, toolName:string}> }>}
+     */
+    const getAiToolsListHandler = async () => {
+        try {
+            const raw = await fetchWebsiteList();
+            const tools = (raw || []).map((w) => ({
+                code: w.code || w.id || '',
+                website: w.website || w.url || '',
+                toolName: w.toolName || w.name || w.website || ''
+            })).filter((t) => t.code && t.website);
+            return { success: true, data: tools };
+        } catch (err) {
+            console.error('Failed to get ai_tools list:', err);
+            return { success: false, data: [] };
+        }
+    };
+
+    /**
+     * ADMIN: Open existing session for ai_tool or create new one (launch tracking browser if needed).
+     * @param {string} toolCode - AI tool code
+     * @returns {Promise<{ success: boolean, error?: string }>}
+     */
+    const adminOpenOrCreateSessionHandler = async (toolCode) => {
+        if (!toolCode) {
+            return { success: false, error: 'toolCode is required' };
+        }
+        try {
+            const toolsRes = await getAiToolsListHandler();
+            const tools = (toolsRes.data || []);
+            const tool = tools.find((t) => t.code === toolCode);
+            if (!tool) {
+                return { success: false, error: `AI tool not found: ${toolCode}` };
+            }
+
+            const { fileURLToPath } = await import('url');
+            const __filename = fileURLToPath(import.meta.url);
+            const projectRoot = path.dirname(path.dirname(path.dirname(__filename)));
+            const sessionsPath = path.join(projectRoot, 'sessions');
+
+            let accountRole = 'ADMIN';
+            try {
+                const accountPath = path.join(projectRoot, 'account.json');
+                const accountContent = await fsp.readFile(accountPath, 'utf8');
+                const accountData = JSON.parse(accountContent);
+                if (accountData && accountData.role) accountRole = accountData.role;
+            } catch (_) { /* use default */ }
+
+            let allSessions = [];
+            try {
+                const sessionFolders = await fsp.readdir(sessionsPath);
+                for (const folder of sessionFolders) {
+                    const infoPath = path.join(sessionsPath, folder, 'info.json');
+                    try {
+                        const infoContent = await fsp.readFile(infoPath, 'utf8');
+                        const info = JSON.parse(infoContent);
+                        const sessionRole = info.role || 'DRAW';
+                        if (info.toolCode === toolCode && sessionRole === accountRole) {
+                            const timestamps = info.timestamps || [];
+                            const lastTs = timestamps.length > 0 ? timestamps[timestamps.length - 1] : Date.now();
+                            allSessions.push({
+                                folder: path.join(sessionsPath, folder),
+                                lastTs
+                            });
+                        }
+                    } catch (_) { /* skip invalid */ }
+                }
+                allSessions.sort((a, b) => b.lastTs - a.lastTs);
+            } catch (_) {
+                // no sessions dir
+            }
+
+            if (!tracker.browser) {
+                const { initTrackingBrowser } = await import('./browser-init.js');
+                await initTrackingBrowser(tracker);
+            }
+
+            if (allSessions.length > 0) {
+                await tracker.loadSession(allSessions[0].folder);
+                return { success: true };
+            }
+
+            await tracker.startTracking(tool.website, toolCode);
+            return { success: true };
+        } catch (err) {
+            console.error('adminOpenOrCreateSession failed:', err);
+            return { success: false, error: err.message };
+        }
     };
 
     return {
@@ -8923,6 +9033,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         regenerateStepVideo: regenerateStepVideoHandler,
         saveRole: saveRoleHandler,
         getAccountInfo: getAccountInfoHandler,
-        saveAccountInfo: saveAccountInfoHandler
+        saveAccountInfo: saveAccountInfoHandler,
+        validateAdminPassword: validateAdminPasswordHandler,
+        getAiToolsList: getAiToolsListHandler,
+        adminOpenOrCreateSession: adminOpenOrCreateSessionHandler
     };
 }

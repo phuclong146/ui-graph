@@ -178,10 +178,12 @@ export async function upsertSessionToDb(info, account) {
         const deviceInfo = typeof account.device_info === 'object' ? JSON.stringify(account.device_info) : account.device_info;
         // Generate collaborator_code if not present
         const collaboratorCode = account.collaborator_code || generateCollaboratorCode(deviceId);
-        // Session name matches folder naming: toolCode_timestamp or VALIDATE_toolCode_timestamp
+        // Session name matches folder naming: toolCode_timestamp, VALIDATE_..., or ADMIN_...
         const sessionName = role === 'VALIDATE'
             ? `VALIDATE_${myAiTool}_${sessionId}`
-            : `${myAiTool}_${sessionId}`;
+            : role === 'ADMIN'
+                ? `ADMIN_${myAiTool}_${sessionId}`
+                : `${myAiTool}_${sessionId}`;
 
         console.log('📝 [upsertSessionToDb] Input info:', JSON.stringify({
             sessionId,

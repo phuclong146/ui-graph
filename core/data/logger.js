@@ -24,10 +24,12 @@ export class TrackingLogger {
             console.log('⚠️ Could not read account.json, using default role: DRAW');
         }
 
-        // Session folder: VALIDATE_ prefix when role is VALIDATE, to distinguish from DRAW sessions
+        // Session folder: VALIDATE_/ADMIN_ prefix when role is VALIDATE/ADMIN, to distinguish from DRAW sessions
         const folderName = accountRole === 'VALIDATE'
             ? `VALIDATE_${toolCode}_${timestamp}`
-            : `${toolCode}_${timestamp}`;
+            : accountRole === 'ADMIN'
+                ? `ADMIN_${toolCode}_${timestamp}`
+                : `${toolCode}_${timestamp}`;
         this.sessionFolder = path.resolve(__dirname, 'sessions', folderName);
         await fsp.mkdir(this.sessionFolder, { recursive: true });
         

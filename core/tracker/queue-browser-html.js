@@ -79,6 +79,44 @@ export const QUEUE_BROWSER_HTML = `
         width: 4px;
       }
       
+      #admin-ai-tools-sidebar {
+        position: relative;
+      }
+      #admin-ai-tools-resizer {
+        position: absolute;
+        top: 0;
+        right: -6px;
+        width: 12px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 1001;
+        user-select: none;
+        touch-action: none;
+        pointer-events: auto;
+      }
+      #admin-ai-tools-resizer:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+      #admin-ai-tools-resizer.resizing {
+        background: rgba(0, 0, 0, 0.1);
+      }
+      #admin-ai-tools-resizer::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #dee2e6;
+        transform: translateX(-50%);
+      }
+      #admin-ai-tools-resizer:hover::before,
+      #admin-ai-tools-resizer.resizing::before {
+        background: #adb5bd;
+        width: 3px;
+      }
+      
       #panel-tree-container h3 {
         margin: 0 0 10px 0;
         padding: 10px 10px;
@@ -1081,6 +1119,17 @@ export const QUEUE_BROWSER_HTML = `
   </head>
   <body>
     <div id="main-container">
+      <div id="admin-ai-tools-sidebar" style="display:none; width:260px; min-width:180px; max-width:480px; background:linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%); border-right:1px solid #dee2e6; flex-shrink:0; flex-direction:column; overflow:hidden;">
+        <div style="padding:10px 12px; border-bottom:1px solid #dee2e6; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+          <span style="font-size:13px; font-weight:600; color:#495057;">AI Tools</span>
+          <button id="admin-ai-tools-close-btn" style="background:transparent; border:none; color:#6c757d; cursor:pointer; padding:2px 6px; font-size:16px; line-height:1;" title="Đóng">×</button>
+        </div>
+        <div style="padding:8px; border-bottom:1px solid #dee2e6; flex-shrink:0;">
+          <input type="text" id="admin-ai-tools-filter" placeholder="Lọc theo tên hoặc URL..." style="width:100%; padding:8px 10px; border:1px solid #ced4da; border-radius:6px; background:#fff; color:#212529; font-size:12px; outline:none; box-sizing:border-box;" />
+        </div>
+        <div id="admin-ai-tools-list" style="flex:1; overflow-y:auto; padding:8px; background:#f1f3f5;"></div>
+        <div id="admin-ai-tools-resizer"></div>
+      </div>
       <div id="panel-tree-container">
         <h3>
           <span>Panel Log</span>
@@ -1120,6 +1169,7 @@ export const QUEUE_BROWSER_HTML = `
         View Graph
       </button>
       <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
+      <button id="aiToolsBtn" style="display:none; background:#9c27b0; color:white;">AI Tools</button>
       <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -1337,8 +1387,7 @@ export const QUEUE_BROWSER_HTML = `
             <button id="roleValidateBtn" style="background:linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,152,0,0.3);">
               VALIDATE
             </button>
-            <!-- Tạm ẩn nút ADMIN -->
-            <button id="roleAdminBtn" style="display:none; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
+            <button id="roleAdminBtn" style="background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
               ADMIN
             </button>
           </div>
@@ -1353,6 +1402,26 @@ export const QUEUE_BROWSER_HTML = `
               📋 Copy
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminPasswordModal" style="display:none; position:fixed; z-index:20006; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:400px; min-width:320px; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="text-align:center; margin-bottom:20px;">
+          <div style="font-size:40px; margin-bottom:10px;">🔐</div>
+          <h3 style="margin:0 0 8px 0; font-size:18px; color:#333;">Mật khẩu ADMIN</h3>
+          <p style="margin:0; font-size:13px; color:#666;">Nhập mật khẩu để đăng nhập role ADMIN</p>
+        </div>
+        <input type="password" id="adminPasswordInput" placeholder="Nhập mật khẩu..." style="width:100%; padding:12px 15px; border:2px solid #ddd; border-radius:8px; font-size:14px; margin-bottom:8px; outline:none; box-sizing:border-box;" />
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13px; color:#666; cursor:pointer;">
+          <input type="checkbox" id="adminPasswordShowCheckbox" style="cursor:pointer;" />
+          <span>Hiện mật khẩu</span>
+        </label>
+        <p id="adminPasswordError" style="display:none; color:#dc3545; font-size:12px; margin:0 0 12px 0;">Mật khẩu không đúng</p>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="adminPasswordCancelBtn" style="padding:10px 20px; background:#f0f0f0; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Hủy</button>
+          <button id="adminPasswordOkBtn" style="padding:10px 20px; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">OK</button>
         </div>
       </div>
     </div>
@@ -2089,6 +2158,13 @@ export const QUEUE_BROWSER_HTML = `
 
         if (evt.type === 'hide_role_selection') {
           hideRoleSelectionDialog();
+          hideAdminAiToolsList();
+          return;
+        }
+
+        if (evt.type === 'show_admin_ai_tools') {
+          const tools = evt.tools || [];
+          showAdminAiToolsList(tools);
           return;
         }
 
@@ -4607,12 +4683,17 @@ Bạn có chắc chắn muốn rollback?\`;
         const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
         const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
         
+        const aiToolsBtn = document.getElementById('aiToolsBtn');
+        if (aiToolsBtn) {
+          aiToolsBtn.style.display = (role === 'ADMIN' || role === 'VALIDATE') ? 'inline-block' : 'none';
+        }
+
         if (role === 'VALIDATE') {
-          // Hide all buttons except Quit when role is VALIDATE
+          // Hide all buttons except Quit and AI Tools when role is VALIDATE
           if (controlsDiv) {
             const allButtons = controlsDiv.querySelectorAll('button');
             allButtons.forEach(btn => {
-              if (btn.id !== 'quitBtn') {
+              if (btn.id !== 'quitBtn' && btn.id !== 'aiToolsBtn') {
                 btn.style.display = 'none';
               } else {
                 btn.style.display = 'inline-block';
@@ -4634,7 +4715,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const quitBtn = document.getElementById('quitBtn');
           
           if (role === 'DRAW') {
-            // Show all buttons for DRAW role
+            // Show all buttons for DRAW role (AI Tools hidden)
             if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
             if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
             if (saveBtn) saveBtn.style.display = 'inline-block';
@@ -4642,12 +4723,13 @@ Bạn có chắc chắn muốn rollback?\`;
             if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
             if (validateBtn) validateBtn.style.display = 'inline-block';
             if (quitBtn) quitBtn.style.display = 'inline-block';
+            if (aiToolsBtn) aiToolsBtn.style.display = 'none';
             
             // Ensure RaiseBug buttons are HIDDEN for DRAW role
             if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
             if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
           } else {
-            // Hide buttons for non-DRAW roles (but keep Quit visible)
+            // ADMIN: hide most buttons, keep Quit and AI Tools
             if (importCookiesBtn) importCookiesBtn.style.display = 'none';
             if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
             if (saveBtn) saveBtn.style.display = 'none';
@@ -4655,6 +4737,7 @@ Bạn có chắc chắn muốn rollback?\`;
             if (viewGraphBtn) viewGraphBtn.style.display = 'none';
             if (validateBtn) validateBtn.style.display = 'none';
             if (quitBtn) quitBtn.style.display = 'inline-block';
+            if (aiToolsBtn) aiToolsBtn.style.display = 'inline-block';
           }
         }
       };
@@ -4709,6 +4792,15 @@ Bạn có chắc chắn muốn rollback?\`;
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
         }
+
+        // ADMIN: load and show ai_tools list so they can open/create session without re-clicking OK
+        if (accountInfo && accountInfo.role === 'ADMIN' && typeof window.getAiToolsList === 'function') {
+          window.getAiToolsList().then((res) => {
+            if (res && res.success && res.data && res.data.length) {
+              showAdminAiToolsList(res.data);
+            }
+          }).catch(() => {});
+        }
         
         roleSelectionModal.style.display = 'flex';
       };
@@ -4730,6 +4822,186 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         }
       };
+
+      const adminAiToolsSidebar = document.getElementById('admin-ai-tools-sidebar');
+      const adminAiToolsListEl = document.getElementById('admin-ai-tools-list');
+      const adminAiToolsFilterInput = document.getElementById('admin-ai-tools-filter');
+      let adminAiToolsFullList = [];
+
+      const renderAdminAiToolsFiltered = (filterText) => {
+        if (!adminAiToolsListEl) return;
+        const q = (filterText || '').trim().toLowerCase();
+        const filtered = q
+          ? adminAiToolsFullList.filter((t) => {
+              const name = (t.toolName || t.code || '').toLowerCase();
+              const code = (t.code || '').toLowerCase();
+              const website = (t.website || '').toLowerCase();
+              return name.includes(q) || code.includes(q) || website.includes(q);
+            })
+          : adminAiToolsFullList;
+        adminAiToolsListEl.innerHTML = '';
+        if (filtered.length === 0) {
+          adminAiToolsListEl.innerHTML = '<div style="padding:12px; color:#6c757d; font-size:12px;">' + (q ? 'Không có kết quả phù hợp' : 'Chưa có ai_tool nào') + '</div>';
+          return;
+        }
+        const viewIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:8px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        filtered.forEach((t) => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:10px 12px; margin-bottom:4px; background:#fff; border:1px solid #e9ecef; border-radius:8px; cursor:pointer; font-size:12px; color:#495057; transition:background 0.2s ease; position:relative;';
+          item.textContent = t.toolName || t.code || t.website;
+          item.title = (t.toolName || t.code) + (t.website ? ' - ' + t.website : '');
+          item.dataset.toolCode = t.code;
+          const showToolContextMenu = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const existing = document.getElementById('admin-ai-tool-context-menu');
+            if (existing) existing.remove();
+            const menu = document.createElement('div');
+            menu.id = 'admin-ai-tool-context-menu';
+            menu.style.cssText = 'position:fixed; background:#fff; border:1px solid #dee2e6; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:20010; padding:4px 0; min-width:160px;';
+            const x = e.clientX;
+            const y = e.clientY;
+            const gap = 4;
+            menu.style.left = x + gap + 'px';
+            menu.style.top = y + gap + 'px';
+            const viewToolBtn = document.createElement('button');
+            viewToolBtn.style.cssText = 'display:flex; align-items:center; width:100%; padding:10px 14px; border:none; background:transparent; color:#495057; text-align:left; cursor:pointer; font-size:13px; border-radius:4px; box-sizing:border-box;';
+            viewToolBtn.innerHTML = viewIconSvg + '<span>View tool</span>';
+            viewToolBtn.addEventListener('mouseenter', () => { viewToolBtn.style.background = '#f8f9fa'; });
+            viewToolBtn.addEventListener('mouseleave', () => { viewToolBtn.style.background = 'transparent'; });
+            viewToolBtn.addEventListener('click', async (ev) => {
+              ev.stopPropagation();
+              menu.remove();
+              if (typeof window.adminOpenOrCreateSession !== 'function') return;
+              item.style.opacity = '0.7';
+              item.style.pointerEvents = 'none';
+              try {
+                const res = await window.adminOpenOrCreateSession(t.code);
+                if (res && !res.success && res.error) {
+                  if (window.broadcastToast) window.broadcastToast(res.error, 'error');
+                }
+              } finally {
+                item.style.opacity = '';
+                item.style.pointerEvents = '';
+              }
+            });
+            menu.appendChild(viewToolBtn);
+            document.body.appendChild(menu);
+            const closeMenu = () => {
+              const m = document.getElementById('admin-ai-tool-context-menu');
+              if (m) m.remove();
+              document.removeEventListener('click', closeMenu);
+              document.removeEventListener('contextmenu', closeMenu);
+            };
+            setTimeout(() => {
+              document.addEventListener('click', closeMenu);
+              document.addEventListener('contextmenu', closeMenu);
+            }, 0);
+          };
+          item.addEventListener('click', showToolContextMenu);
+          item.addEventListener('contextmenu', showToolContextMenu);
+          item.addEventListener('mouseenter', () => { item.style.background = '#e9ecef'; });
+          item.addEventListener('mouseleave', () => { item.style.background = '#fff'; });
+          adminAiToolsListEl.appendChild(item);
+        });
+      };
+
+      const showAdminAiToolsList = (tools) => {
+        if (!adminAiToolsSidebar || !adminAiToolsListEl) return;
+        adminAiToolsFullList = Array.isArray(tools) ? tools : [];
+        if (adminAiToolsFilterInput) adminAiToolsFilterInput.value = '';
+        renderAdminAiToolsFiltered('');
+        adminAiToolsSidebar.style.display = 'flex';
+        adminAiToolsSidebar.style.flexDirection = 'column';
+      };
+
+      const hideAdminAiToolsList = () => {
+        if (adminAiToolsSidebar) adminAiToolsSidebar.style.display = 'none';
+        const menu = document.getElementById('admin-ai-tool-context-menu');
+        if (menu) menu.remove();
+      };
+
+      const toggleAdminAiToolsSidebar = async () => {
+        if (adminAiToolsSidebar.style.display === 'flex') {
+          hideAdminAiToolsList();
+          return;
+        }
+        if (adminAiToolsFullList.length === 0 && typeof window.getAiToolsList === 'function') {
+          try {
+            const res = await window.getAiToolsList();
+            if (res && res.success && res.data) showAdminAiToolsList(res.data);
+            else showAdminAiToolsList([]);
+          } catch (_) {
+            showAdminAiToolsList([]);
+          }
+        } else {
+          adminAiToolsSidebar.style.display = 'flex';
+          adminAiToolsSidebar.style.flexDirection = 'column';
+          renderAdminAiToolsFiltered(adminAiToolsFilterInput ? adminAiToolsFilterInput.value : '');
+        }
+      };
+
+      if (adminAiToolsFilterInput) {
+        adminAiToolsFilterInput.addEventListener('input', () => {
+          renderAdminAiToolsFiltered(adminAiToolsFilterInput.value);
+        });
+      }
+      const adminAiToolsCloseBtn = document.getElementById('admin-ai-tools-close-btn');
+      if (adminAiToolsCloseBtn) {
+        adminAiToolsCloseBtn.addEventListener('click', () => hideAdminAiToolsList());
+      }
+      const aiToolsBtn = document.getElementById('aiToolsBtn');
+      if (aiToolsBtn) {
+        aiToolsBtn.addEventListener('click', () => toggleAdminAiToolsSidebar());
+      }
+
+      (function setupAdminAiToolsResizer() {
+        const sidebar = document.getElementById('admin-ai-tools-sidebar');
+        const resizer = document.getElementById('admin-ai-tools-resizer');
+        if (!sidebar || !resizer) return;
+        const MIN_WIDTH = 180;
+        const MAX_WIDTH = 520;
+        let aiToolsResizing = false;
+        let aiToolsStartX = 0;
+        let aiToolsStartWidth = 0;
+        try {
+          const saved = localStorage.getItem('admin-ai-tools-sidebar-width');
+          if (saved) {
+            const w = parseInt(saved, 10);
+            if (w >= MIN_WIDTH && w <= MAX_WIDTH) sidebar.style.width = w + 'px';
+          }
+        } catch (_) {}
+        const onMove = (e) => {
+          if (!aiToolsResizing) return;
+          const diff = e.clientX - aiToolsStartX;
+          let newWidth = aiToolsStartWidth + diff;
+          newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth));
+          sidebar.style.width = newWidth + 'px';
+        };
+        const onUp = () => {
+          if (!aiToolsResizing) return;
+          aiToolsResizing = false;
+          resizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          try {
+            localStorage.setItem('admin-ai-tools-sidebar-width', String(sidebar.offsetWidth));
+          } catch (_) {}
+        };
+        resizer.addEventListener('mousedown', (e) => {
+          aiToolsResizing = true;
+          aiToolsStartX = e.clientX;
+          aiToolsStartWidth = sidebar.offsetWidth;
+          resizer.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+          e.preventDefault();
+        });
+      })();
 
       // Change name button handler - toggles between edit mode and view mode
       if (changeNameBtn) {
@@ -4930,9 +5202,81 @@ Bạn có chắc chắn muốn rollback?\`;
       }
 
       const roleAdminBtn = document.getElementById('roleAdminBtn');
+      const adminPasswordModal = document.getElementById('adminPasswordModal');
+      const adminPasswordInput = document.getElementById('adminPasswordInput');
+      const adminPasswordError = document.getElementById('adminPasswordError');
+      const adminPasswordOkBtn = document.getElementById('adminPasswordOkBtn');
+      const adminPasswordCancelBtn = document.getElementById('adminPasswordCancelBtn');
+
+      const adminPasswordShowCheckbox = document.getElementById('adminPasswordShowCheckbox');
+      if (adminPasswordShowCheckbox && adminPasswordInput) {
+        adminPasswordShowCheckbox.addEventListener('change', () => {
+          adminPasswordInput.type = adminPasswordShowCheckbox.checked ? 'text' : 'password';
+        });
+      }
+
+      const showAdminPasswordModal = () => {
+        if (adminPasswordModal) {
+          adminPasswordModal.style.display = 'flex';
+          if (adminPasswordInput) {
+            adminPasswordInput.value = '';
+            adminPasswordInput.type = 'password';
+            adminPasswordInput.focus();
+          }
+          if (adminPasswordShowCheckbox) adminPasswordShowCheckbox.checked = false;
+          if (adminPasswordError) adminPasswordError.style.display = 'none';
+        }
+      };
+
+      const hideAdminPasswordModal = () => {
+        if (adminPasswordModal) adminPasswordModal.style.display = 'none';
+      };
+
       if (roleAdminBtn) {
-        roleAdminBtn.addEventListener('click', async () => {
-          await validateAndSaveRole('ADMIN');
+        roleAdminBtn.addEventListener('click', () => {
+          showAdminPasswordModal();
+        });
+      }
+
+      if (adminPasswordOkBtn && adminPasswordInput) {
+        const tryAdminLogin = async () => {
+          const pass = adminPasswordInput.value.trim();
+          if (!pass) {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Vui lòng nhập mật khẩu';
+              adminPasswordError.style.display = 'block';
+            }
+            return;
+          }
+          if (!window.validateAdminPassword) {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Lỗi xác thực';
+              adminPasswordError.style.display = 'block';
+            }
+            return;
+          }
+          const ok = await window.validateAdminPassword(pass);
+          if (ok) {
+            hideAdminPasswordModal();
+            await validateAndSaveRole('ADMIN');
+          } else {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Mật khẩu không đúng';
+              adminPasswordError.style.display = 'block';
+            }
+            adminPasswordInput.value = '';
+            adminPasswordInput.focus();
+          }
+        };
+        adminPasswordOkBtn.addEventListener('click', tryAdminLogin);
+        adminPasswordInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') tryAdminLogin();
+        });
+      }
+
+      if (adminPasswordCancelBtn) {
+        adminPasswordCancelBtn.addEventListener('click', () => {
+          hideAdminPasswordModal();
         });
       }
 
