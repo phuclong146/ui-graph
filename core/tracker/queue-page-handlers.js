@@ -4607,29 +4607,37 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (step && step.panel_before.item_id !== step.panel_after.item_id) {
                 const panelAfterId = step.panel_after.item_id;
 
-                const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
-                const allItemsToDelete = [panelAfterId, ...descendants];
+                // Check if panel_after is used in other steps
+                const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
+                
+                // Only delete panel_after if it appears exactly once (only in this step)
+                if (panelUsageCount === 1) {
+                    const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
+                    const allItemsToDelete = [panelAfterId, ...descendants];
 
-                console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants`);
+                    console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants (used only once)`);
 
-                for (const itemId of allItemsToDelete) {
-                    await tracker.dataItemManager.deleteItem(itemId);
-                }
+                    for (const itemId of allItemsToDelete) {
+                        await tracker.dataItemManager.deleteItem(itemId);
+                    }
 
-                await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
+                    await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
 
-                await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
+                    await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
 
-                const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
-                const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
-                if (clickContent.trim()) {
-                    const clickEntries = clickContent.trim().split('\n')
-                        .filter(line => line.trim())
-                        .map(line => JSON.parse(line))
-                        .filter(e => !allItemsToDelete.includes(e.action_item_id));
+                    const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
+                    const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
+                    if (clickContent.trim()) {
+                        const clickEntries = clickContent.trim().split('\n')
+                            .filter(line => line.trim())
+                            .map(line => JSON.parse(line))
+                            .filter(e => !allItemsToDelete.includes(e.action_item_id));
 
-                    const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
-                    await fsp.writeFile(clickPath, newClickContent, 'utf8');
+                        const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
+                        await fsp.writeFile(clickPath, newClickContent, 'utf8');
+                    }
+                } else {
+                    console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
             }
 
