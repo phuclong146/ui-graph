@@ -182,5 +182,34 @@ export class StepManager {
             return 0;
         }
     }
+
+    /**
+     * Count how many times a panel appears in all steps (as panel_before or panel_after)
+     * If a panel appears as both panel_before and panel_after in the same step, it counts as 2
+     * @param {string} panelId - The panel item_id to count
+     * @returns {Promise<number>} - Number of times the panel appears in steps
+     */
+    async countPanelUsageInSteps(panelId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            let count = 0;
+            for (const entry of entries) {
+                if (entry.panel_before?.item_id === panelId) {
+                    count++;
+                }
+                if (entry.panel_after?.item_id === panelId) {
+                    count++;
+                }
+            }
+            
+            return count;
+        } catch (err) {
+            return 0;
+        }
+    }
 }
 

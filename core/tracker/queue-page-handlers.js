@@ -2864,6 +2864,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 // Import detectImportantActions
                                 const { detectImportantActions } = await import('./gemini-handler.js');
                                 
+                                // Log before calling detectImportantActions
+                                console.log('🔍 Calling detectImportantActions with:', {
+                                    panelId: panelItem?.item_id,
+                                    panelName: panelItem?.name,
+                                    actionsCount: actionsForDetection.length,
+                                    modalityStacksCount: aiToolModalityStacks.length,
+                                    aiToolCode: tracker.myAiToolCode,
+                                    panelImageUrlType: panelImageUrl?.startsWith('http') ? 'URL' : 'base64',
+                                    panelImageUrlLength: panelImageUrl?.length || 0
+                                });
+                                
+                                // Log actions data for debugging
+                                actionsForDetection.forEach((action, idx) => {
+                                    console.log(`📋 Action [${idx}]:`, {
+                                        item_id: action.item_id,
+                                        name: action.name,
+                                        nameLength: action.name?.length || 0,
+                                        hasSpecialChars: action.name ? /[^\x20-\x7E\u00A0-\uFFFF]/.test(action.name) : false
+                                    });
+                                });
+                                
                                 // Call detectImportantActions
                                 const detectionResult = await detectImportantActions(
                                     tracker,
@@ -3473,6 +3494,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Import detectImportantActions
             const { detectImportantActions } = await import('./gemini-handler.js');
+            
+            // Log before calling detectImportantActions
+            console.log('🔍 Calling detectImportantActions (handler) with:', {
+                panelId: panelItem?.item_id,
+                panelName: panelItem?.name,
+                actionsCount: actionsForDetection.length,
+                modalityStacksCount: aiToolModalityStacks.length,
+                aiToolCode: tracker.myAiToolCode,
+                panelImageUrlType: panelImageUrl?.startsWith('http') ? 'URL' : 'base64',
+                panelImageUrlLength: panelImageUrl?.length || 0
+            });
+            
+            // Log actions data for debugging
+            actionsForDetection.forEach((action, idx) => {
+                console.log(`📋 Action [${idx}]:`, {
+                    item_id: action.item_id,
+                    name: action.name,
+                    nameLength: action.name?.length || 0,
+                    hasSpecialChars: action.name ? /[^\x20-\x7E\u00A0-\uFFFF]/.test(action.name) : false
+                });
+            });
             
             // Call detectImportantActions
             const detectionResult = await detectImportantActions(
@@ -4657,29 +4699,37 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (step && step.panel_before.item_id !== step.panel_after.item_id) {
                 const panelAfterId = step.panel_after.item_id;
 
-                const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
-                const allItemsToDelete = [panelAfterId, ...descendants];
+                // Check if panel_after is used in other steps
+                const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
+                
+                // Only delete panel_after if it appears exactly once (only in this step)
+                if (panelUsageCount === 1) {
+                    const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
+                    const allItemsToDelete = [panelAfterId, ...descendants];
 
-                console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants`);
+                    console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants (used only once)`);
 
-                for (const itemId of allItemsToDelete) {
-                    await tracker.dataItemManager.deleteItem(itemId);
-                }
+                    for (const itemId of allItemsToDelete) {
+                        await tracker.dataItemManager.deleteItem(itemId);
+                    }
 
-                await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
+                    await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
 
-                await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
+                    await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
 
-                const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
-                const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
-                if (clickContent.trim()) {
-                    const clickEntries = clickContent.trim().split('\n')
-                        .filter(line => line.trim())
-                        .map(line => JSON.parse(line))
-                        .filter(e => !allItemsToDelete.includes(e.action_item_id));
+                    const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
+                    const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
+                    if (clickContent.trim()) {
+                        const clickEntries = clickContent.trim().split('\n')
+                            .filter(line => line.trim())
+                            .map(line => JSON.parse(line))
+                            .filter(e => !allItemsToDelete.includes(e.action_item_id));
 
-                    const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
-                    await fsp.writeFile(clickPath, newClickContent, 'utf8');
+                        const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
+                        await fsp.writeFile(clickPath, newClickContent, 'utf8');
+                    }
+                } else {
+                    console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
             }
 
@@ -4786,12 +4836,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panel_after_fullscreen: panelAfterItem.fullscreen_url || ''
             };
 
-            // Collect image URLs
+            // Collect image URLs in fixed order so Gemini knows: [panel_before, action, panel_after]
             const imageUrls = [
-                panelBeforeItem.fullscreen_url,
-                actionItem.image_url,
-                panelAfterItem.fullscreen_url
-            ].filter(url => url && typeof url === 'string' && url.startsWith('http'));
+                panelBeforeItem.fullscreen_url || null,
+                actionItem.image_url || null,
+                panelAfterItem.fullscreen_url || null
+            ];
 
             console.log('🎯 Calling detectActionPurpose with:', {
                 doingStepInfo,
