@@ -16,11 +16,12 @@ export class StepManager {
     }
 
     async createStep(panelBeforeId, actionId, panelAfterId) {
-        if (!panelBeforeId || !actionId || !panelAfterId) {
-            console.error('❌ Cannot create step with null values:', { panelBeforeId, actionId, panelAfterId });
+        if (!panelBeforeId || !actionId) {
+            console.error('❌ Cannot create step without panel_before and action:', { panelBeforeId, actionId, panelAfterId });
             return;
         }
-        
+        // panelAfterId có thể null (ví dụ: Mark as Done trên action trong panel log)
+
         // Đọc tất cả steps hiện có để tìm step_id lớn nhất
         let maxStepId = 0;
         try {
@@ -49,14 +50,12 @@ export class StepManager {
             action: {
                 item_id: actionId
             },
-            panel_after: {
-                item_id: panelAfterId
-            }
+            panel_after: panelAfterId != null ? { item_id: panelAfterId } : null
         };
 
         const line = JSON.stringify(step) + '\n';
         await fsp.appendFile(this.stepPath, line, 'utf8');
-        console.log(`✅ Created step (step_id=${stepId}): ${panelBeforeId} → ${actionId} → ${panelAfterId}`);
+        console.log(`✅ Created step (step_id=${stepId}): ${panelBeforeId} → ${actionId} → ${panelAfterId ?? 'null'}`);
     }
 
     async getStepForAction(actionId) {
@@ -142,9 +141,9 @@ export class StepManager {
                 .map(line => JSON.parse(line));
 
             const remaining = entries.filter(entry => 
-                !itemIds.includes(entry.panel_before.item_id) &&
-                !itemIds.includes(entry.action.item_id) &&
-                !itemIds.includes(entry.panel_after.item_id)
+                !itemIds.includes(entry.panel_before?.item_id) &&
+                !itemIds.includes(entry.action?.item_id) &&
+                !itemIds.includes(entry.panel_after?.item_id)
             );
             
             const newContent = remaining.map(entry => JSON.stringify(entry)).join('\n') + (remaining.length > 0 ? '\n' : '');
@@ -165,8 +164,7 @@ export class StepManager {
 
             const validEntries = entries.filter(entry => 
                 entry.panel_before?.item_id && 
-                entry.action?.item_id && 
-                entry.panel_after?.item_id
+                entry.action?.item_id
             );
             
             const invalidCount = entries.length - validEntries.length;

@@ -330,12 +330,8 @@ export class DatabaseLoader {
                 continue;
             }
 
-            // Map my_panel_after (code) to item_id
-            const panelAfterItemId = codeToItemIdMap.get(step.my_panel_after);
-            if (!panelAfterItemId) {
-                console.warn(`⚠️ Could not find item_id for step with my_panel_after='${step.my_panel_after}', skipping...`);
-                continue;
-            }
+            // Map my_panel_after (code) to item_id; null khi Mark as Done
+            const panelAfterItemId = step.my_panel_after != null ? codeToItemIdMap.get(step.my_panel_after) : null;
 
             const jsonlStep = {
                 step_id: step.step_id,
@@ -345,9 +341,7 @@ export class DatabaseLoader {
                 action: {
                     item_id: actionItemId
                 },
-                panel_after: {
-                    item_id: panelAfterItemId
-                },
+                panel_after: panelAfterItemId ? { item_id: panelAfterItemId } : null,
                 purpose: step.purpose,
                 reason: step.reason
             };

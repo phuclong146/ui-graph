@@ -1869,6 +1869,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 if (actionParentPanelId) {
                     await checkAndUpdatePanelStatusHandler(actionParentPanelId);
                 }
+
+                // Tạo step với panel_before = panel chứa action, action = action được mark done, panel_after = null
+                if (tracker.stepManager && actionParentPanelId) {
+                    const existingStep = await tracker.stepManager.getStepForAction(targetItemId);
+                    if (!existingStep) {
+                        await tracker.stepManager.createStep(actionParentPanelId, targetItemId, null);
+                    }
+                }
+
+                // Auto-call detectActionPurpose sau khi Mark as Done (non-blocking)
+                try {
+                    await detectActionPurposeHandler(targetItemId);
+                } catch (purposeErr) {
+                    console.error('⚠️ Auto detectActionPurpose after Mark as Done failed (non-blocking):', purposeErr);
+                }
             }
 
             await tracker._broadcast({
@@ -4531,15 +4546,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 const step = await tracker.stepManager.getStepForAction(itemId);
                 if (step) {
-                    const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
-                    const panelAfterItem = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+                    const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before?.item_id);
+                    const panelAfterId = step.panel_after?.item_id;
+                    const panelAfterItem = panelAfterId
+                        ? await tracker.dataItemManager.getItem(panelAfterId)
+                        : null;
 
-                    const mode = step.panel_before.item_id === step.panel_after.item_id ? 'USE_BEFORE' : 'DRAW_NEW';
+                    const mode = !panelAfterId
+                        ? 'MARK_AS_DONE'
+                        : step.panel_before?.item_id === panelAfterId
+                            ? 'USE_BEFORE'
+                            : 'DRAW_NEW';
 
                     actionInfo.step_info = {
                         mode: mode,
                         panel_before_name: panelBeforeItem?.name || 'Unknown',
-                        panel_after_name: panelAfterItem?.name || 'Unknown'
+                        panel_after_name: panelAfterItem?.name || 'None'
                     };
                     
                     // Add purpose and reason from step (step_purpose) and item (action_purpose)
@@ -4712,9 +4734,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const step = await tracker.stepManager.getStepForAction(actionItemId);
 
-            if (step && step.panel_before.item_id !== step.panel_after.item_id) {
-                const panelAfterId = step.panel_after.item_id;
-
+            // Chỉ xóa panel_after khi step có panel_after (không phải case Mark as Done)
+            const panelAfterId = step?.panel_after?.item_id;
+            const panelBeforeId = step?.panel_before?.item_id;
+            if (step && panelAfterId && panelBeforeId !== panelAfterId) {
                 // Check if panel_after is used in other steps
                 const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
                 
@@ -4747,6 +4770,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 } else {
                     console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
+            } else if (step && !panelAfterId) {
+                console.log(`🔄 Reset action (Mark as Done case - no panel_after to delete)`);
             }
 
             await tracker.stepManager.deleteStepsForAction(actionItemId);
@@ -4821,14 +4846,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return null;
             }
 
-            // Get items for panel_before, action, panel_after
+            // Get items for panel_before, action, panel_after (panel_after có thể null khi Mark as Done)
             const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
             const actionItem = await tracker.dataItemManager.getItem(actionItemId);
-            const panelAfterItem = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+            const panelAfterItem = step.panel_after?.item_id
+                ? await tracker.dataItemManager.getItem(step.panel_after.item_id)
+                : null;
 
-            if (!panelBeforeItem || !actionItem || !panelAfterItem) {
-                console.warn('⚠️ Missing items for detectActionPurpose');
+            if (!panelBeforeItem || !actionItem) {
+                console.warn('⚠️ Missing panel_before or action for detectActionPurpose');
                 return null;
+            }
+
+            // Resolve action image: image_url (sau khi upload) hoặc từ image_base64 (file trong session)
+            let actionImageUrl = actionItem.image_url || null;
+            if (!actionImageUrl && actionItem.image_base64) {
+                try {
+                    const actionBase64 = await tracker.dataItemManager.loadBase64FromFile(actionItem.image_base64);
+                    if (actionBase64) {
+                        actionImageUrl = `data:image/png;base64,${actionBase64}`;
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Failed to load action image from image_base64:', err?.message);
+                }
             }
 
             // Show toast notification
@@ -4838,25 +4878,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 target: 'queue'
             });
 
-            // Build doing_step_info
+            // Build doing_step_info (panel_after có thể null)
             const doingStepInfo = {
                 ai_tool_name: tracker.myAiToolCode || 'Unknown',
                 ai_tool_website: tracker.urlTracking || '',
                 panel_before_name: panelBeforeItem.name || 'Unknown Panel',
                 panel_before_fullscreen: panelBeforeItem.fullscreen_url || '',
                 action_name: actionItem.name || 'Unknown Action',
-                action_url: actionItem.image_url || '',
+                action_url: actionImageUrl || '',
                 action_type: actionItem.type || 'button',
                 action_verb: actionItem.verb || 'click',
-                panel_after_name: panelAfterItem.name || 'Unknown Panel',
-                panel_after_fullscreen: panelAfterItem.fullscreen_url || ''
+                panel_after_name: panelAfterItem?.name || 'None',
+                panel_after_fullscreen: panelAfterItem?.fullscreen_url || ''
             };
 
             // Collect image URLs in fixed order so Gemini knows: [panel_before, action, panel_after]
+            // action có thể là URL http hoặc data URL (từ image_base64)
             const imageUrls = [
                 panelBeforeItem.fullscreen_url || null,
-                actionItem.image_url || null,
-                panelAfterItem.fullscreen_url || null
+                actionImageUrl || null,
+                panelAfterItem?.fullscreen_url || null
             ];
 
             console.log('🎯 Calling detectActionPurpose with:', {
