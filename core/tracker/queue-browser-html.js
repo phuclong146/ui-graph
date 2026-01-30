@@ -1119,7 +1119,7 @@ export const QUEUE_BROWSER_HTML = `
   </head>
   <body>
     <div id="main-container">
-      <div id="admin-ai-tools-sidebar" style="display:none; width:260px; min-width:180px; max-width:480px; background:linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%); border-right:1px solid #dee2e6; flex-shrink:0; flex-direction:column; overflow:hidden;">
+      <div id="admin-ai-tools-sidebar" style="display:none; width:180px; min-width:180px; max-width:480px; background:linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%); border-right:1px solid #dee2e6; flex-shrink:0; flex-direction:column; overflow:hidden;">
         <div style="padding:10px 12px; border-bottom:1px solid #dee2e6; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
           <span style="font-size:13px; font-weight:600; color:#495057;">AI Tools</span>
           <button id="admin-ai-tools-close-btn" style="background:transparent; border:none; color:#6c757d; cursor:pointer; padding:2px 6px; font-size:16px; line-height:1;" title="Đóng">×</button>
@@ -1900,8 +1900,8 @@ export const QUEUE_BROWSER_HTML = `
             isGeminiDetecting = evt.gemini_detecting;
             updateDetectCaptureButtonsState();
           }
-          // Branch based on role: VALIDATE role with ACTION uses handlePanelSelectedForValidate
-          if (currentRole === 'VALIDATE' && evt.item_category === 'ACTION') {
+          // Branch based on role: VALIDATE and ADMIN with ACTION use handlePanelSelectedForValidate (same panel log + content)
+          if ((currentRole === 'VALIDATE' || currentRole === 'ADMIN') && evt.item_category === 'ACTION') {
             handlePanelSelectedForValidate(evt);
           } else {
             handlePanelSelected(evt);
@@ -4688,24 +4688,22 @@ Bạn có chắc chắn muốn rollback?\`;
           aiToolsBtn.style.display = (role === 'ADMIN' || role === 'VALIDATE') ? 'inline-block' : 'none';
         }
 
-        if (role === 'VALIDATE') {
-          // Hide all buttons except Quit and AI Tools when role is VALIDATE
+        if (role === 'VALIDATE' || role === 'ADMIN') {
+          // ADMIN and VALIDATE: only show AI Tools and Quit, hide all other buttons
           if (controlsDiv) {
             const allButtons = controlsDiv.querySelectorAll('button');
             allButtons.forEach(btn => {
-              if (btn.id !== 'quitBtn' && btn.id !== 'aiToolsBtn') {
-                btn.style.display = 'none';
-              } else {
+              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
                 btn.style.display = 'inline-block';
+              } else {
+                btn.style.display = 'none';
               }
             });
           }
-          
-          // Ensure RaiseBug buttons are visible for VALIDATE role
-          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'flex';
-          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'flex';
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         } else {
-          // For other roles, use the original logic
+          // DRAW: show all buttons except AI Tools
           const importCookiesBtn = document.getElementById('importCookiesBtn');
           const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
           const saveBtn = document.getElementById('saveBtn');
@@ -4713,32 +4711,16 @@ Bạn có chắc chắn muốn rollback?\`;
           const viewGraphBtn = document.getElementById('viewGraphBtn');
           const validateBtn = document.getElementById('validateBtn');
           const quitBtn = document.getElementById('quitBtn');
-          
-          if (role === 'DRAW') {
-            // Show all buttons for DRAW role (AI Tools hidden)
-            if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
-            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
-            if (saveBtn) saveBtn.style.display = 'inline-block';
-            if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
-            if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
-            if (validateBtn) validateBtn.style.display = 'inline-block';
-            if (quitBtn) quitBtn.style.display = 'inline-block';
-            if (aiToolsBtn) aiToolsBtn.style.display = 'none';
-            
-            // Ensure RaiseBug buttons are HIDDEN for DRAW role
-            if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
-            if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
-          } else {
-            // ADMIN: hide most buttons, keep Quit and AI Tools
-            if (importCookiesBtn) importCookiesBtn.style.display = 'none';
-            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
-            if (saveBtn) saveBtn.style.display = 'none';
-            if (checkpointBtn) checkpointBtn.style.display = 'none';
-            if (viewGraphBtn) viewGraphBtn.style.display = 'none';
-            if (validateBtn) validateBtn.style.display = 'none';
-            if (quitBtn) quitBtn.style.display = 'inline-block';
-            if (aiToolsBtn) aiToolsBtn.style.display = 'inline-block';
-          }
+          if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
+          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
+          if (saveBtn) saveBtn.style.display = 'inline-block';
+          if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+          if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
+          if (validateBtn) validateBtn.style.display = 'inline-block';
+          if (quitBtn) quitBtn.style.display = 'inline-block';
+          if (aiToolsBtn) aiToolsBtn.style.display = 'none';
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         }
       };
 
@@ -7276,16 +7258,16 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         renderPanelTree();
         
-        // Hide all control buttons except Quit when role is VALIDATE
-        if (currentRole === 'VALIDATE') {
+        // ADMIN and VALIDATE: only show AI Tools and Quit
+        if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
           const controlsDiv = document.getElementById('controls');
           if (controlsDiv) {
             const allButtons = controlsDiv.querySelectorAll('button');
             allButtons.forEach(btn => {
-              if (btn.id !== 'quitBtn') {
-                btn.style.display = 'none';
-              } else {
+              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
                 btn.style.display = 'inline-block';
+              } else {
+                btn.style.display = 'none';
               }
             });
           }

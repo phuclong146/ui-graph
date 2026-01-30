@@ -265,8 +265,8 @@ export class PanelScreenTracker {
                 }
             }
 
-            // Load data from database if role is VALIDATE
-            if (role === 'VALIDATE') {
+            // Load data from database if role is VALIDATE or ADMIN (same source as VALIDATE)
+            if (role === 'VALIDATE' || role === 'ADMIN') {
                 try {
                     await this._broadcast({ 
                         type: 'show_loading', 
@@ -276,7 +276,7 @@ export class PanelScreenTracker {
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
                     await loader.loadFromDatabase();
-                    console.log('✅ Loaded data from database for VALIDATE role');
+                    console.log(`✅ Loaded data from database for ${role} role`);
                     
                     await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {
@@ -475,8 +475,8 @@ export class PanelScreenTracker {
                 console.error('Failed to upsert session to DB in startTracking:', err);
             }
             
-            // Load data from database if role is VALIDATE
-            if (accountRole === 'VALIDATE') {
+            // Load data from database if role is VALIDATE or ADMIN (same source as VALIDATE)
+            if (accountRole === 'VALIDATE' || accountRole === 'ADMIN') {
                 try {
                     await this._broadcast({ 
                         type: 'show_loading', 
@@ -486,7 +486,7 @@ export class PanelScreenTracker {
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, toolCode);
                     await loader.loadFromDatabase();
-                    console.log('✅ Loaded data from database for VALIDATE role');
+                    console.log(`✅ Loaded data from database for ${accountRole} role`);
                     
                     await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {
