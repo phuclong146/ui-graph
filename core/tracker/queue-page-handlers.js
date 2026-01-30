@@ -4695,6 +4695,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (mode === 'tree') {
                 return await tracker.panelLogManager.buildTreeStructureWithChildPanels();
             }
+            if (mode === 'validation') {
+                return await tracker.panelLogManager.buildValidationTreeStructure();
+            }
             return await tracker.panelLogManager.buildTreeStructure();
         } catch (err) {
             console.error('Failed to get panel tree:', err);

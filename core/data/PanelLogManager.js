@@ -311,5 +311,183 @@ export class PanelLogManager {
             return [];
         }
     }
+
+    /**
+     * Format my_day (yyyyMMdd) to display dd/MM/yyyy
+     */
+    _formatDayLabel(myDay) {
+        if (!myDay || myDay.length !== 8) return myDay || '';
+        const y = myDay.slice(0, 4), m = myDay.slice(4, 6), d = myDay.slice(6, 8);
+        return `${d}/${m}/${y}`;
+    }
+
+    /**
+     * Format my_session (yyyyMMddHH) to display "session: HH dd/MM/yyyy"
+     */
+    _formatSessionLabel(mySession) {
+        if (!mySession || mySession.length !== 10) return mySession || '';
+        const y = mySession.slice(0, 4), m = mySession.slice(4, 6), d = mySession.slice(6, 8), h = mySession.slice(8, 10);
+        return `session: ${h} ${d}/${m}/${y}`;
+    }
+
+    /**
+     * Format my_scene (yyyyMMddHHmm) to display "scene: HH:mm dd/MM/yyyy"
+     */
+    _formatSceneLabel(myScene) {
+        if (!myScene || myScene.length !== 12) return myScene || '';
+        const y = myScene.slice(0, 4), m = myScene.slice(4, 6), d = myScene.slice(6, 8), h = myScene.slice(8, 10), min = myScene.slice(10, 12);
+        return `scene: ${h}:${min} ${d}/${m}/${y}`;
+    }
+
+    /**
+     * Build validation tree: day -> session -> scene -> snapshot (parent_panel -> actions).
+     * Data from uigraph_validation.jsonl, doing_item.jsonl, myparent_panel.jsonl.
+     */
+    async buildValidationTreeStructure() {
+        try {
+            const validationPath = path.join(this.sessionFolder, 'uigraph_validation.jsonl');
+            const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
+            const parentPanelPath = path.join(this.sessionFolder, 'myparent_panel.jsonl');
+
+            let validations = [];
+            const itemNameMap = new Map();
+            const itemInfoMap = new Map(); // full item info for bug + modality_stacks (like log/tree mode)
+            let actionToParentPanel = new Map();
+
+            try {
+                const validationContent = await fsp.readFile(validationPath, 'utf8');
+                validations = validationContent.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line))
+                    .filter(e => e.item_id && e.my_day != null && e.my_session != null && e.my_scene != null);
+            } catch (err) {
+                if (err.code !== 'ENOENT') console.warn('Failed to read uigraph_validation.jsonl:', err.message);
+                return [];
+            }
+
+            try {
+                const itemContent = await fsp.readFile(doingItemPath, 'utf8');
+                const items = itemContent.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                items.forEach(item => {
+                    if (item.item_id != null) {
+                        itemNameMap.set(item.item_id, item.name || item.item_id);
+                        itemInfoMap.set(item.item_id, {
+                            name: item.name || item.item_id,
+                            bug_flag: item.bug_flag || false,
+                            bug_info: item.bug_info || null,
+                            bug_note: (item.bug_info && item.bug_info.note) ? item.bug_info.note : null,
+                            modality_stacks: item.modality_stacks || null,
+                            modality_stacks_reason: item.modality_stacks_reason || null,
+                            modality_stacks_info: item.modality_stacks_info || null
+                        });
+                    }
+                });
+            } catch (err) {
+                return [];
+            }
+
+            try {
+                const parentContent = await fsp.readFile(parentPanelPath, 'utf8');
+                const parents = parentContent.trim().split('\n')
+                    .filter(line => line.trim())
+                    .map(line => JSON.parse(line));
+                parents.forEach(p => {
+                    if (p.parent_panel && Array.isArray(p.child_actions)) {
+                        p.child_actions.forEach(actionId => {
+                            actionToParentPanel.set(actionId, p.parent_panel);
+                        });
+                    }
+                });
+            } catch (err) {
+            }
+
+            if (validations.length === 0) return [];
+
+            // Group: my_day -> my_session -> my_scene -> parent_panel -> [item_id, ...]
+            const dayMap = new Map();
+            for (const row of validations) {
+                const parentPanel = actionToParentPanel.get(row.item_id);
+                if (parentPanel == null) continue;
+                if (!dayMap.has(row.my_day)) dayMap.set(row.my_day, new Map());
+                const sessionMap = dayMap.get(row.my_day);
+                if (!sessionMap.has(row.my_session)) sessionMap.set(row.my_session, new Map());
+                const sceneMap = sessionMap.get(row.my_session);
+                if (!sceneMap.has(row.my_scene)) sceneMap.set(row.my_scene, new Map());
+                const panelMap = sceneMap.get(row.my_scene);
+                if (!panelMap.has(parentPanel)) panelMap.set(parentPanel, []);
+                const list = panelMap.get(parentPanel);
+                if (!list.includes(row.item_id)) list.push(row.item_id);
+            }
+
+            const rootDays = [];
+            const sortedDays = [...dayMap.keys()].sort();
+            for (const myDay of sortedDays) {
+                const sessionMap = dayMap.get(myDay);
+                const sessionNodes = [];
+                const sortedSessions = [...sessionMap.keys()].sort();
+                for (const mySession of sortedSessions) {
+                    const sceneMap = sessionMap.get(mySession);
+                    const sceneNodes = [];
+                    const sortedScenes = [...sceneMap.keys()].sort();
+                    for (const myScene of sortedScenes) {
+                        const panelMap = sceneMap.get(myScene);
+                        const snapshotNodes = [];
+                        for (const [parentPanelId, actionIds] of panelMap.entries()) {
+                            const panelName = itemNameMap.get(parentPanelId) || parentPanelId;
+                            const actionNames = actionIds.map(id => itemNameMap.get(id) || id);
+                            const snapshotLabel = `${panelName} -> ${actionNames.join(', ')}`;
+                            const actionNodes = actionIds.map(itemId => {
+                                const info = itemInfoMap.get(itemId) || {};
+                                return {
+                                    type: 'ACTION',
+                                    panel_id: itemId,
+                                    name: info.name || itemNameMap.get(itemId) || itemId,
+                                    item_category: 'ACTION',
+                                    bug_flag: info.bug_flag || false,
+                                    bug_info: info.bug_info || null,
+                                    bug_note: info.bug_note || null,
+                                    modality_stacks: info.modality_stacks || null,
+                                    modality_stacks_reason: info.modality_stacks_reason || null,
+                                    modality_stacks_info: info.modality_stacks_info || null,
+                                    children: []
+                                };
+                            });
+                            snapshotNodes.push({
+                                type: 'snapshot',
+                                panel_id: parentPanelId,
+                                name: snapshotLabel,
+                                children: actionNodes
+                            });
+                        }
+                        snapshotNodes.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                        sceneNodes.push({
+                            type: 'scene',
+                            panel_id: null,
+                            name: this._formatSceneLabel(myScene),
+                            children: snapshotNodes
+                        });
+                    }
+                    sessionNodes.push({
+                        type: 'session',
+                        panel_id: null,
+                        name: this._formatSessionLabel(mySession),
+                        children: sceneNodes
+                    });
+                }
+                rootDays.push({
+                    type: 'day',
+                    panel_id: null,
+                    name: this._formatDayLabel(myDay),
+                    children: sessionNodes
+                });
+            }
+            return rootDays;
+        } catch (err) {
+            console.error('Failed to build validation tree structure:', err);
+            return [];
+        }
+    }
 }
 

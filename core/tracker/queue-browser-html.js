@@ -1842,7 +1842,7 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
-      // Panel log display mode: 'log' or 'tree'
+      // Panel log display mode: 'log', 'tree', or 'validation'
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
@@ -1865,15 +1865,14 @@ export const QUEUE_BROWSER_HTML = `
         const evt = JSON.parse(msg.data);
         
         if (evt.type === 'tree_update') {
-          // If we're in tree mode, reload data with tree mode
+          // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
-          if (panelLogDisplayMode === 'tree' && window.getPanelTree) {
+          if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
             window.getPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
             }).catch(err => {
-              console.error('Failed to reload tree with tree mode:', err);
-              // Fallback to received data
+              console.error('Failed to reload tree with current mode:', err);
               panelTreeData = evt.data || [];
               renderPanelTree();
             });
@@ -3439,21 +3438,18 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       // Graph Panel Log Tree functions
-      // Display mode for Graph Panel Log: 'log' or 'tree'
+      // Display mode for Graph Panel Log: 'log', 'tree', or 'validation'
       let graphPanelLogDisplayMode = getLocalStorage('graph-panel-log-display-mode') || 'log';
       
       async function loadGraphPanelTree() {
-        // Update button icon based on saved mode
         updateGraphShowModeButton();
         
-        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
-        if (graphPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+        if ((graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree('tree');
+            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
             renderGraphPanelTree();
           } catch (err) {
-            console.error('Failed to load graph panel tree with tree mode:', err);
-            // Fallback to provided data
+            console.error('Failed to load graph panel tree with current mode:', err);
             if (window.graphPanelTreeData) {
               graphPanelTreeData = window.graphPanelTreeData;
               renderGraphPanelTree();
@@ -3468,7 +3464,7 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.loadGraphPanelTree = loadGraphPanelTree;
       
-      // Update graph panel log showMode button icon
+      // Update graph panel log showMode button icon (log -> tree -> validation -> log)
       function updateGraphShowModeButton() {
         const showModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
         if (!showModeBtn) return;
@@ -3476,24 +3472,28 @@ export const QUEUE_BROWSER_HTML = `
         if (graphPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (graphPanelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle graph panel log display mode
+      // Toggle graph panel log display mode: log -> tree -> validation -> log
       async function toggleGraphPanelLogDisplayMode() {
-        graphPanelLogDisplayMode = graphPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (graphPanelLogDisplayMode === 'log') graphPanelLogDisplayMode = 'tree';
+        else if (graphPanelLogDisplayMode === 'tree') graphPanelLogDisplayMode = 'validation';
+        else graphPanelLogDisplayMode = 'log';
         setLocalStorage('graph-panel-log-display-mode', graphPanelLogDisplayMode);
         updateGraphShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           try {
             graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
             renderGraphPanelTree();
-            const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : (graphPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Graph Panel: Switched to ' + modeText + ' Mode');
           } catch (err) {
             console.error('Failed to reload graph panel tree:', err);
@@ -3519,28 +3519,23 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       function createGraphTreeNode(node, depth) {
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
-        nodeDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
         
-        // Add padding-left for child panels (20px per level)
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'graph-tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -3559,9 +3554,11 @@ export const QUEUE_BROWSER_HTML = `
                               node.draw_flow_state !== undefined && 
                               node.draw_flow_state !== 'completed';
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else {
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
@@ -3604,7 +3601,6 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        // Check both direct property and metadata property for compatibility
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
@@ -3615,19 +3611,48 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
             bugIcon.textContent = '🐞';
-            
-            // Get bug info from direct property or metadata
             const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
             const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
-
-            bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, bugNote, bugInfo);
-            });
-            bugIcon.addEventListener('mouseleave', () => {
-                hideBugTooltip();
-            });
-            
+            bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
+            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
+        }
+        
+        // Important action (modality_stacks) - same as main panel log
+        if (node.item_category === 'ACTION') {
+            const hasModalityStacks = node.modality_stacks && Array.isArray(node.modality_stacks) && node.modality_stacks.length > 0;
+            if (hasModalityStacks) {
+                const importantIcon = document.createElement('span');
+                importantIcon.style.marginLeft = '6px';
+                importantIcon.style.cursor = 'help';
+                importantIcon.style.display = 'inline-block';
+                importantIcon.style.verticalAlign = 'middle';
+                importantIcon.style.width = '16px';
+                importantIcon.style.height = '16px';
+                importantIcon.style.color = '#ffc107';
+                importantIcon.textContent = '⭐';
+                importantIcon.title = 'Important Action';
+                importantIcon.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'graph-modality-stacks-tooltip';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                    if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
+                    if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
+                        node.modality_stacks_info.forEach((ms) => {
+                            tooltipContent += '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);"><div style="font-weight: 600; color: #4fc3f7;">' + (ms.name || 'N/A') + '</div><div style="margin-top: 4px; color: #ccc;">' + (ms.description || 'N/A') + '</div></div>';
+                        });
+                    } else {
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + (node.modality_stacks || []).join(', ') + '</div>';
+                    }
+                    tooltip.innerHTML = tooltipContent;
+                    document.body.appendChild(tooltip);
+                });
+                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('graph-modality-stacks-tooltip'); if (t) t.remove(); });
+                label.appendChild(importantIcon);
+                contentDiv.style.borderLeft = (contentDiv.style.borderLeft || '').indexOf('3px') === -1 ? '3px solid #ffc107' : contentDiv.style.borderLeft;
+                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
+            }
         }
         
         contentDiv.appendChild(label);
@@ -3643,7 +3668,7 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (graphExpandedPanels.has(node.panel_id)) {
+          if (graphExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
           }
@@ -3659,15 +3684,14 @@ export const QUEUE_BROWSER_HTML = `
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              graphExpandedPanels.add(node.panel_id);
+              graphExpandedPanels.add(expandKey);
             } else {
-              graphExpandedPanels.delete(node.panel_id);
+              graphExpandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', async () => {
-          // Remove selected class from all nodes
           const treeContainer = document.getElementById('graphPanelLogTree');
           if (treeContainer) {
             treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
@@ -3676,6 +3700,7 @@ export const QUEUE_BROWSER_HTML = `
           }
           contentDiv.classList.add('selected');
           
+          if (node.panel_id == null) return;
           if (node.item_category === 'PANEL') {
             // Find node in graph and show panel info
             if (window.graphNodesData) {
@@ -3706,7 +3731,7 @@ export const QUEUE_BROWSER_HTML = `
       let videoValidationPanelTreeData = [];
       let videoValidationExpandedPanels = new Set();
       
-      // Display mode for Video Validation Panel Log: 'log' or 'tree'
+      // Display mode for Video Validation Panel Log: 'log', 'tree', or 'validation'
       let videoValidationPanelLogDisplayMode = getLocalStorage('video-validation-panel-log-display-mode') || 'log';
 
       function renderPanelTreeForValidationInternal(panelTreeData, treeContainer) {
@@ -3720,19 +3745,15 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
       
-      // Wrapper function that checks saved mode and reloads if needed
       async function renderPanelTreeForValidation(panelTreeData, treeContainer) {
-        // Update button icon based on saved mode
         updateVideoValidationShowModeButton();
         
-        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
-        if (videoValidationPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+        if ((videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            const treeData = await window.getPanelTree('tree');
+            const treeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
             renderPanelTreeForValidationInternal(treeData, treeContainer);
           } catch (err) {
-            console.error('Failed to load video validation panel tree with tree mode:', err);
-            // Fallback to provided data
+            console.error('Failed to load video validation panel tree with current mode:', err);
             renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
           }
         } else {
@@ -3743,7 +3764,7 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.renderPanelTreeForValidation = renderPanelTreeForValidation;
       
-      // Update video validation panel log showMode button icon
+      // Update video validation panel log showMode button icon (log -> tree -> validation -> log)
       function updateVideoValidationShowModeButton() {
         const showModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
         if (!showModeBtn) return;
@@ -3751,19 +3772,23 @@ export const QUEUE_BROWSER_HTML = `
         if (videoValidationPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (videoValidationPanelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle video validation panel log display mode
+      // Toggle video validation panel log display mode: log -> tree -> validation -> log
       async function toggleVideoValidationPanelLogDisplayMode() {
-        videoValidationPanelLogDisplayMode = videoValidationPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (videoValidationPanelLogDisplayMode === 'log') videoValidationPanelLogDisplayMode = 'tree';
+        else if (videoValidationPanelLogDisplayMode === 'tree') videoValidationPanelLogDisplayMode = 'validation';
+        else videoValidationPanelLogDisplayMode = 'log';
         setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
         updateVideoValidationShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           try {
             const panelTreeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
@@ -3771,7 +3796,7 @@ export const QUEUE_BROWSER_HTML = `
             if (treeContainer) {
               renderPanelTreeForValidation(panelTreeData, treeContainer);
             }
-            const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : (videoValidationPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Video Validation: Switched to ' + modeText + ' Mode');
           } catch (err) {
             console.error('Failed to reload video validation panel tree:', err);
@@ -3885,28 +3910,23 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       function createVideoValidationTreeNode(node, depth) {
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
-        nodeDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
         
-        // Add padding-left for child panels (20px per level)
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'graph-tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -3925,9 +3945,11 @@ export const QUEUE_BROWSER_HTML = `
                               node.draw_flow_state !== undefined && 
                               node.draw_flow_state !== 'completed';
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else {
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
@@ -3970,7 +3992,6 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        // Check both direct property and metadata property for compatibility
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
@@ -3981,19 +4002,48 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
             bugIcon.textContent = '🐞';
-            
-            // Get bug info from direct property or metadata
             const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
             const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
-
-            bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, bugNote, bugInfo);
-            });
-            bugIcon.addEventListener('mouseleave', () => {
-                hideBugTooltip();
-            });
-            
+            bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
+            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
+        }
+        
+        // Important action (modality_stacks) - same as main panel log
+        if (node.item_category === 'ACTION') {
+            const hasModalityStacks = node.modality_stacks && Array.isArray(node.modality_stacks) && node.modality_stacks.length > 0;
+            if (hasModalityStacks) {
+                const importantIcon = document.createElement('span');
+                importantIcon.style.marginLeft = '6px';
+                importantIcon.style.cursor = 'help';
+                importantIcon.style.display = 'inline-block';
+                importantIcon.style.verticalAlign = 'middle';
+                importantIcon.style.width = '16px';
+                importantIcon.style.height = '16px';
+                importantIcon.style.color = '#ffc107';
+                importantIcon.textContent = '⭐';
+                importantIcon.title = 'Important Action';
+                importantIcon.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'video-validation-modality-tooltip';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                    if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
+                    if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
+                        node.modality_stacks_info.forEach((ms) => {
+                            tooltipContent += '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);"><div style="font-weight: 600; color: #4fc3f7;">' + (ms.name || 'N/A') + '</div><div style="margin-top: 4px; color: #ccc;">' + (ms.description || 'N/A') + '</div></div>';
+                        });
+                    } else {
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + (node.modality_stacks || []).join(', ') + '</div>';
+                    }
+                    tooltip.innerHTML = tooltipContent;
+                    document.body.appendChild(tooltip);
+                });
+                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('video-validation-modality-tooltip'); if (t) t.remove(); });
+                label.appendChild(importantIcon);
+                contentDiv.style.borderLeft = (contentDiv.style.borderLeft || '').indexOf('3px') === -1 ? '3px solid #ffc107' : contentDiv.style.borderLeft;
+                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
+            }
         }
         
         contentDiv.appendChild(label);
@@ -4009,7 +4059,7 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (videoValidationExpandedPanels.has(node.panel_id)) {
+          if (videoValidationExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
           }
@@ -4025,15 +4075,14 @@ export const QUEUE_BROWSER_HTML = `
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              videoValidationExpandedPanels.add(node.panel_id);
+              videoValidationExpandedPanels.add(expandKey);
             } else {
-              videoValidationExpandedPanels.delete(node.panel_id);
+              videoValidationExpandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', async () => {
-          // Remove selected class from all nodes
           const treeContainer = document.getElementById('videoValidationPanelLogTree');
           if (treeContainer) {
             treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
@@ -4042,6 +4091,7 @@ export const QUEUE_BROWSER_HTML = `
           }
           contentDiv.classList.add('selected');
           
+          if (node.panel_id == null) return;
           if (node.item_category === 'ACTION') {
             // Load video URLs for this action
             const stepData = window.videoValidationStepData || [];
@@ -4773,6 +4823,21 @@ Bạn có chắc chắn muốn rollback?\`;
         if (accountInfo && accountInfo.role) {
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
+            panelLogDisplayMode = 'validation';
+            setLocalStorage('panel-log-display-mode', 'validation');
+            updateShowModeButton();
+          }
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
+            graphPanelLogDisplayMode = 'validation';
+            setLocalStorage('graph-panel-log-display-mode', 'validation');
+            if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
+          }
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
+            videoValidationPanelLogDisplayMode = 'validation';
+            setLocalStorage('video-validation-panel-log-display-mode', 'validation');
+            if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
+          }
         }
 
         // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> open panel log + content
@@ -5168,6 +5233,22 @@ Bạn có chắc chắn muốn rollback?\`;
         // Update currentRole for panel_selected handler
         currentRole = role;
         
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
+          panelLogDisplayMode = 'validation';
+          setLocalStorage('panel-log-display-mode', 'validation');
+          updateShowModeButton();
+        }
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
+          graphPanelLogDisplayMode = 'validation';
+          setLocalStorage('graph-panel-log-display-mode', 'validation');
+          if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
+        }
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
+          videoValidationPanelLogDisplayMode = 'validation';
+          setLocalStorage('video-validation-panel-log-display-mode', 'validation');
+          if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
+        }
+        
         return true;
       };
 
@@ -5373,11 +5454,14 @@ Bạn có chắc chắn muốn rollback?\`;
       function createTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'tree-node';
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
-        if (selectedPanelId === node.panel_id) {
+        if (node.panel_id != null) {
+          contentDiv.setAttribute('data-panel-id', node.panel_id);
+        }
+        if (node.panel_id && selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
         }
         
@@ -5388,13 +5472,8 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -5415,10 +5494,13 @@ Bạn có chắc chắn muốn rollback?\`;
                               node.draw_flow_state !== 'completed';
           // Panel icons: màu vàng/cam nếu chưa hoàn tất, xanh lục nếu đã hoàn tất
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           // Action icons: đỏ nếu có intersection, xanh nếu không
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else {
+          // Validation tree nodes (day/session/scene/snapshot)
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
@@ -5613,7 +5695,7 @@ Bạn có chắc chắn muốn rollback?\`;
             childrenDiv.classList.add('level-2');
           }
           
-          if (expandedPanels.has(node.panel_id)) {
+          if (expandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
           }
@@ -5629,23 +5711,24 @@ Bạn có chắc chắn muốn rollback?\`;
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              expandedPanels.add(node.panel_id);
+              expandedPanels.add(expandKey);
             } else {
-              expandedPanels.delete(node.panel_id);
+              expandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', () => {
-          
-          if (window.selectPanel) {
+          if (node.panel_id != null && window.selectPanel) {
             window.selectPanel(node.panel_id);
           }
         });
         
         contentDiv.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
+          if (node.panel_id != null) {
+            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
+          }
         });
         
         return nodeDiv;
@@ -7537,33 +7620,35 @@ Bạn có chắc chắn muốn rollback?\`;
         container.appendChild(validateActionDiv);
       }
       
-      // Update showMode button icon based on current mode
+      // Update showMode button icon based on current mode (log -> tree -> validation -> log)
       function updateShowModeButton() {
         const showModeBtn = document.getElementById('panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
         if (panelLogDisplayMode === 'log') {
-          // Show tree icon when in log mode (to switch to tree mode)
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (panelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
-          // Show list icon when in tree mode (to switch to log mode)
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle display mode between 'log' and 'tree'
+      // Toggle display mode: log -> tree -> validation -> log
       async function togglePanelLogDisplayMode() {
-        panelLogDisplayMode = panelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (panelLogDisplayMode === 'log') panelLogDisplayMode = 'tree';
+        else if (panelLogDisplayMode === 'tree') panelLogDisplayMode = 'validation';
+        else panelLogDisplayMode = 'log';
         setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
         updateShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           panelTreeData = await window.getPanelTree(panelLogDisplayMode);
           renderPanelTree();
-          const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+          const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : (panelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
           showToast('✅ Switched to ' + modeText + ' Mode');
         }
       }
