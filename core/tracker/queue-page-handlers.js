@@ -8843,14 +8843,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Broadcast to hide dialog
             await tracker._broadcast({ type: 'hide_role_selection' });
 
-            // Launch tracking browser for DRAW and VALIDATE roles
-            if (role === 'DRAW' || role === 'VALIDATE') {
-                // Import and call initTrackingBrowser
+            // Launch tracking browser only for DRAW role
+            if (role === 'DRAW') {
                 const { initTrackingBrowser } = await import('./browser-init.js');
                 await initTrackingBrowser(tracker);
                 console.log(`🚀 Tracking browser launched for ${role} role`);
             } else {
-                // ADMIN role - broadcast ai_tools list for Queue Tracker to show
+                // ADMIN and VALIDATE: broadcast ai_tools list -> user picks tool -> view tool -> open panel log + content
                 const toolsRes = await getAiToolsListHandler();
                 const tools = (toolsRes.data || []);
                 await tracker._broadcast({ type: 'show_admin_ai_tools', tools });

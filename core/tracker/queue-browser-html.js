@@ -4775,8 +4775,8 @@ Bạn có chắc chắn muốn rollback?\`;
           updateButtonsVisibility(accountInfo.role);
         }
 
-        // ADMIN: load and show ai_tools list so they can open/create session without re-clicking OK
-        if (accountInfo && accountInfo.role === 'ADMIN' && typeof window.getAiToolsList === 'function') {
+        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> open panel log + content
+        if (accountInfo && (accountInfo.role === 'ADMIN' || accountInfo.role === 'VALIDATE') && typeof window.getAiToolsList === 'function') {
           window.getAiToolsList().then((res) => {
             if (res && res.success && res.data && res.data.length) {
               showAdminAiToolsList(res.data);
