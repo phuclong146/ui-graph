@@ -304,6 +304,7 @@ export class CheckpointManager {
             'doing_step.jsonl',
             'click.jsonl',
             'page.jsonl',
+            'uigraph_validation.jsonl',
             'info.json'
         ];
 
@@ -418,6 +419,21 @@ export class CheckpointManager {
             [checkpointId, `${this.myAiTool}_%`, actualRecordId, actualRecordId]
         );
 
+        // Snapshot uigraph_validation to uigraph_validation_his
+        try {
+            await this.connection.execute(
+                `INSERT INTO uigraph_validation_his 
+                 (my_snapshot, my_ai_tool, record_id, my_day, my_session, my_scene, view_count, item_id, published, process_id)
+                 SELECT 
+                  my_snapshot, my_ai_tool, record_id, my_day, my_session, my_scene, view_count, item_id, published, ? as process_id
+                 FROM uigraph_validation
+                 WHERE published = 1 AND my_ai_tool = ? AND (record_id = ? OR ? IS NULL)`,
+                [checkpointId, this.myAiTool, actualRecordId, actualRecordId]
+            );
+        } catch (err) {
+            console.warn(`⚠️ uigraph_validation snapshot skipped (table/schema may differ):`, err.message);
+        }
+
         console.log(`✅ Snapshot database data to checkpoint ${checkpointId}`);
     }
 
@@ -441,6 +457,7 @@ export class CheckpointManager {
             'doing_step.jsonl',
             'click.jsonl',
             'page.jsonl',
+            'uigraph_validation.jsonl',
             'info.json'
         ];
 
@@ -529,6 +546,14 @@ export class CheckpointManager {
             `UPDATE myparent_panel SET published = 0 WHERE my_item_code LIKE ? AND (record_id = ? OR ? IS NULL)`,
             [`${this.myAiTool}_%`, actualRecordId, actualRecordId]
         );
+        try {
+            await this.connection.execute(
+                `UPDATE uigraph_validation SET published = 0 WHERE my_ai_tool = ? AND (record_id = ? OR ? IS NULL)`,
+                [this.myAiTool, actualRecordId, actualRecordId]
+            );
+        } catch (err) {
+            console.warn(`⚠️ uigraph_validation unpublish skipped:`, err.message);
+        }
 
         // Restore from _his tables
         // doing_item
@@ -620,6 +645,30 @@ export class CheckpointManager {
             [checkpointId]
         );
 
+        // uigraph_validation
+        try {
+            await this.connection.execute(
+                `INSERT INTO uigraph_validation 
+                 (my_snapshot, my_ai_tool, record_id, my_day, my_session, my_scene, view_count, item_id, published)
+                 SELECT 
+                  my_snapshot, my_ai_tool, record_id, my_day, my_session, my_scene, view_count, item_id, 1 as published
+                 FROM uigraph_validation_his
+                 WHERE process_id = ?
+                 ON DUPLICATE KEY UPDATE
+                    record_id = VALUES(record_id),
+                    my_day = VALUES(my_day),
+                    my_session = VALUES(my_session),
+                    my_scene = VALUES(my_scene),
+                    view_count = VALUES(view_count),
+                    item_id = VALUES(item_id),
+                    published = 1,
+                    updated_at = CURRENT_TIMESTAMP`,
+                [checkpointId]
+            );
+        } catch (err) {
+            console.warn(`⚠️ uigraph_validation rollback skipped:`, err.message);
+        }
+
         // Mark checkpoint as rolledback
         if (recordId) {
             await this.connection.execute(
@@ -677,6 +726,7 @@ export class CheckpointManager {
             'doing_step.jsonl',
             'click.jsonl',
             'page.jsonl',
+            'uigraph_validation.jsonl',
             'info.json'
         ];
 
@@ -717,6 +767,7 @@ export class CheckpointManager {
             'doing_step.jsonl',
             'click.jsonl',
             'page.jsonl',
+            'uigraph_validation.jsonl',
             'info.json'
         ];
 
