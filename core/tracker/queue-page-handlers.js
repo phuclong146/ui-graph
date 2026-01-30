@@ -198,12 +198,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     const createPanelRelationFromStep = async (panelId) => {
         try {
             const stepContent = await tracker.stepManager.getAllSteps();
-            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
+            const relatedStep = stepContent.find(step => step.panel_after?.item_id === panelId);
             
             if (relatedStep) {
-                const panelBeforeId = relatedStep.panel_before.item_id;
-                const panelAfterId = relatedStep.panel_after.item_id;
-                
+                const panelBeforeId = relatedStep.panel_before?.item_id;
+                const panelAfterId = relatedStep.panel_after?.item_id;
+                if (!panelBeforeId || !panelAfterId) {
+                    console.log(`⚠️ Skipping makeChild: missing panel_before (${panelBeforeId}) or panel_after (${panelAfterId}) in step`);
+                    return;
+                }
                 if (panelBeforeId !== panelAfterId) {
                     console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
                     await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
@@ -1927,6 +1930,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.error('Cannot delete root panel');
                 await tracker._broadcast({ type: 'show_toast', message: '⚠️ Không thể xóa root panel!' });
                 return;
+            }
+
+            if (item.item_category === 'PANEL') {
+                const panelEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
+                const hasChildActions = panelEntry?.child_actions?.length > 0;
+                const hasChildPanels = panelEntry?.child_panels?.length > 0;
+                if (hasChildActions || hasChildPanels) {
+                    console.warn(`[DELETE PANEL] Skip: panel "${item.name}" (${targetItemId}) vì đang còn child_actions hoặc child_panels`, {
+                        child_actions: panelEntry?.child_actions?.length ?? 0,
+                        child_panels: panelEntry?.child_panels?.length ?? 0
+                    });
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: `Không xóa được panel ${item.name} vì đang còn action và panel con`
+                    });
+                    return;
+                }
             }
 
             const { promises: fsp } = await import('fs');
@@ -4742,11 +4762,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
                 
                 // Only delete panel_after if it appears exactly once (only in this step)
+                // Xóa panel_after và child_actions, nhưng không xóa child_panels (reparent chúng lên parent của panel_after)
                 if (panelUsageCount === 1) {
-                    const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
-                    const allItemsToDelete = [panelAfterId, ...descendants];
+                    const panelEntry = await tracker.parentPanelManager.getPanelEntry(panelAfterId);
+                    const childPanelIds = panelEntry?.child_panels || [];
+                    const childActionIds = [...(panelEntry?.child_actions || [])];
+                    for (const page of panelEntry?.child_pages || []) {
+                        if (page.child_actions?.length) childActionIds.push(...page.child_actions);
+                    }
+                    const allItemsToDelete = [panelAfterId, ...childActionIds];
 
-                    console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants (used only once)`);
+                    if (childPanelIds.length > 0) {
+                        const parentEntry = await tracker.parentPanelManager.findMyParent(panelAfterId);
+                        if (parentEntry) {
+                            const grandparentId = parentEntry.parent_panel;
+                            for (const childPanelId of childPanelIds) {
+                                await tracker.parentPanelManager.addChildPanel(grandparentId, childPanelId);
+                            }
+                            console.log(`[RESET ACTION] Reparent ${childPanelIds.length} child_panels từ panel_after ${panelAfterId} lên parent ${grandparentId}`);
+                        }
+                    }
+
+                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIds.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
 
                     for (const itemId of allItemsToDelete) {
                         await tracker.dataItemManager.deleteItem(itemId);
@@ -4755,6 +4792,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
 
                     await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
+
+                    if (tracker.clickManager) {
+                        await tracker.clickManager.deleteClicksForActions(childActionIds);
+                    }
+                    if (tracker.validationManager) {
+                        for (const actionId of childActionIds) {
+                            try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
+                        }
+                    }
 
                     const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
                     const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
