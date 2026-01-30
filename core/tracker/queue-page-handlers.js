@@ -7,6 +7,7 @@ import { calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 import { cropBase64Image } from '../media/screenshot.js';
 import { getDbPool } from '../data/db-connection.js';
+import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -197,12 +198,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     const createPanelRelationFromStep = async (panelId) => {
         try {
             const stepContent = await tracker.stepManager.getAllSteps();
-            const relatedStep = stepContent.find(step => step.panel_after.item_id === panelId);
+            const relatedStep = stepContent.find(step => step.panel_after?.item_id === panelId);
             
             if (relatedStep) {
-                const panelBeforeId = relatedStep.panel_before.item_id;
-                const panelAfterId = relatedStep.panel_after.item_id;
-                
+                const panelBeforeId = relatedStep.panel_before?.item_id;
+                const panelAfterId = relatedStep.panel_after?.item_id;
+                if (!panelBeforeId || !panelAfterId) {
+                    console.log(`⚠️ Skipping makeChild: missing panel_before (${panelBeforeId}) or panel_after (${panelAfterId}) in step`);
+                    return;
+                }
                 if (panelBeforeId !== panelAfterId) {
                     console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
                     await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
@@ -1868,6 +1872,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 if (actionParentPanelId) {
                     await checkAndUpdatePanelStatusHandler(actionParentPanelId);
                 }
+
+                // Tạo step với panel_before = panel chứa action, action = action được mark done, panel_after = null
+                if (tracker.stepManager && actionParentPanelId) {
+                    const existingStep = await tracker.stepManager.getStepForAction(targetItemId);
+                    if (!existingStep) {
+                        await tracker.stepManager.createStep(actionParentPanelId, targetItemId, null);
+                    }
+                }
+
+                // Auto-call detectActionPurpose sau khi Mark as Done (non-blocking)
+                try {
+                    await detectActionPurposeHandler(targetItemId);
+                } catch (purposeErr) {
+                    console.error('⚠️ Auto detectActionPurpose after Mark as Done failed (non-blocking):', purposeErr);
+                }
             }
 
             await tracker._broadcast({
@@ -1911,6 +1930,23 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 console.error('Cannot delete root panel');
                 await tracker._broadcast({ type: 'show_toast', message: '⚠️ Không thể xóa root panel!' });
                 return;
+            }
+
+            if (item.item_category === 'PANEL') {
+                const panelEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
+                const hasChildActions = panelEntry?.child_actions?.length > 0;
+                const hasChildPanels = panelEntry?.child_panels?.length > 0;
+                if (hasChildActions || hasChildPanels) {
+                    console.warn(`[DELETE PANEL] Skip: panel "${item.name}" (${targetItemId}) vì đang còn child_actions hoặc child_panels`, {
+                        child_actions: panelEntry?.child_actions?.length ?? 0,
+                        child_panels: panelEntry?.child_panels?.length ?? 0
+                    });
+                    await tracker._broadcast({
+                        type: 'show_toast',
+                        message: `Không xóa được panel ${item.name} vì đang còn action và panel con`
+                    });
+                    return;
+                }
             }
 
             const { promises: fsp } = await import('fs');
@@ -2475,7 +2511,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log(`✅ Detected ${fullPageDomActions.length} DOM actions from full page`);
 
             const pageHeight = 1080;
-            const numPages = Math.ceil(imageHeight / pageHeight);
+            let numPages = Math.ceil(imageHeight / pageHeight);
+            
+            // Áp dụng giới hạn tối đa số trang
+            if (numPages > MAX_CAPTURE_PAGES) {
+                console.log(`⚠️ Limiting pages from ${numPages} to ${MAX_CAPTURE_PAGES} pages (maxSections limit)`);
+                numPages = MAX_CAPTURE_PAGES;
+                // Giới hạn imageHeight tương ứng
+                imageHeight = MAX_CAPTURE_PAGES * pageHeight;
+            }
+            
             const pagesData = [];
 
             for (let i = 0; i < numPages; i++) {
@@ -4046,6 +4091,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const pageHeight = 1080;
                 const pageWidth = Math.min(1920, imageWidth);
                 numPages = Math.ceil(imageHeight / pageHeight);
+                
+                // Áp dụng giới hạn tối đa số trang
+                if (numPages > MAX_CAPTURE_PAGES) {
+                    console.log(`⚠️ Limiting pages from ${numPages} to ${MAX_CAPTURE_PAGES} pages (maxSections limit)`);
+                    numPages = MAX_CAPTURE_PAGES;
+                }
 
                 const panel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
@@ -4515,15 +4566,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 const step = await tracker.stepManager.getStepForAction(itemId);
                 if (step) {
-                    const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
-                    const panelAfterItem = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+                    const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before?.item_id);
+                    const panelAfterId = step.panel_after?.item_id;
+                    const panelAfterItem = panelAfterId
+                        ? await tracker.dataItemManager.getItem(panelAfterId)
+                        : null;
 
-                    const mode = step.panel_before.item_id === step.panel_after.item_id ? 'USE_BEFORE' : 'DRAW_NEW';
+                    const mode = !panelAfterId
+                        ? 'MARK_AS_DONE'
+                        : step.panel_before?.item_id === panelAfterId
+                            ? 'USE_BEFORE'
+                            : 'DRAW_NEW';
 
                     actionInfo.step_info = {
                         mode: mode,
                         panel_before_name: panelBeforeItem?.name || 'Unknown',
-                        panel_after_name: panelAfterItem?.name || 'Unknown'
+                        panel_after_name: panelAfterItem?.name || 'None'
                     };
                     
                     // Add purpose and reason from step (step_purpose) and item (action_purpose)
@@ -4696,18 +4754,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const step = await tracker.stepManager.getStepForAction(actionItemId);
 
-            if (step && step.panel_before.item_id !== step.panel_after.item_id) {
-                const panelAfterId = step.panel_after.item_id;
-
+            // Chỉ xóa panel_after khi step có panel_after (không phải case Mark as Done)
+            const panelAfterId = step?.panel_after?.item_id;
+            const panelBeforeId = step?.panel_before?.item_id;
+            if (step && panelAfterId && panelBeforeId !== panelAfterId) {
                 // Check if panel_after is used in other steps
                 const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
                 
                 // Only delete panel_after if it appears exactly once (only in this step)
+                // Xóa panel_after và child_actions, nhưng không xóa child_panels (reparent chúng lên parent của panel_after)
                 if (panelUsageCount === 1) {
-                    const descendants = await tracker.parentPanelManager.getAllDescendants(panelAfterId);
-                    const allItemsToDelete = [panelAfterId, ...descendants];
+                    const panelEntry = await tracker.parentPanelManager.getPanelEntry(panelAfterId);
+                    const childPanelIds = panelEntry?.child_panels || [];
+                    const childActionIds = [...(panelEntry?.child_actions || [])];
+                    for (const page of panelEntry?.child_pages || []) {
+                        if (page.child_actions?.length) childActionIds.push(...page.child_actions);
+                    }
+                    const allItemsToDelete = [panelAfterId, ...childActionIds];
 
-                    console.log(`🗑️ Deleting panel ${panelAfterId} and ${descendants.length} descendants (used only once)`);
+                    if (childPanelIds.length > 0) {
+                        const parentEntry = await tracker.parentPanelManager.findMyParent(panelAfterId);
+                        if (parentEntry) {
+                            const grandparentId = parentEntry.parent_panel;
+                            for (const childPanelId of childPanelIds) {
+                                await tracker.parentPanelManager.addChildPanel(grandparentId, childPanelId);
+                            }
+                            console.log(`[RESET ACTION] Reparent ${childPanelIds.length} child_panels từ panel_after ${panelAfterId} lên parent ${grandparentId}`);
+                        }
+                    }
+
+                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIds.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
 
                     for (const itemId of allItemsToDelete) {
                         await tracker.dataItemManager.deleteItem(itemId);
@@ -4716,6 +4792,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await tracker.parentPanelManager.deletePanelEntry(panelAfterId);
 
                     await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
+
+                    if (tracker.clickManager) {
+                        await tracker.clickManager.deleteClicksForActions(childActionIds);
+                    }
+                    if (tracker.validationManager) {
+                        for (const actionId of childActionIds) {
+                            try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
+                        }
+                    }
 
                     const clickPath = path.join(tracker.sessionFolder, 'click.jsonl');
                     const clickContent = await fsp.readFile(clickPath, 'utf8').catch(() => '');
@@ -4731,6 +4816,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 } else {
                     console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
+            } else if (step && !panelAfterId) {
+                console.log(`🔄 Reset action (Mark as Done case - no panel_after to delete)`);
             }
 
             await tracker.stepManager.deleteStepsForAction(actionItemId);
@@ -4805,14 +4892,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 return null;
             }
 
-            // Get items for panel_before, action, panel_after
+            // Get items for panel_before, action, panel_after (panel_after có thể null khi Mark as Done)
             const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before.item_id);
             const actionItem = await tracker.dataItemManager.getItem(actionItemId);
-            const panelAfterItem = await tracker.dataItemManager.getItem(step.panel_after.item_id);
+            const panelAfterItem = step.panel_after?.item_id
+                ? await tracker.dataItemManager.getItem(step.panel_after.item_id)
+                : null;
 
-            if (!panelBeforeItem || !actionItem || !panelAfterItem) {
-                console.warn('⚠️ Missing items for detectActionPurpose');
+            if (!panelBeforeItem || !actionItem) {
+                console.warn('⚠️ Missing panel_before or action for detectActionPurpose');
                 return null;
+            }
+
+            // Resolve action image: image_url (sau khi upload) hoặc từ image_base64 (file trong session)
+            let actionImageUrl = actionItem.image_url || null;
+            if (!actionImageUrl && actionItem.image_base64) {
+                try {
+                    const actionBase64 = await tracker.dataItemManager.loadBase64FromFile(actionItem.image_base64);
+                    if (actionBase64) {
+                        actionImageUrl = `data:image/png;base64,${actionBase64}`;
+                    }
+                } catch (err) {
+                    console.warn('⚠️ Failed to load action image from image_base64:', err?.message);
+                }
             }
 
             // Show toast notification
@@ -4822,25 +4924,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 target: 'queue'
             });
 
-            // Build doing_step_info
+            // Build doing_step_info (panel_after có thể null)
             const doingStepInfo = {
                 ai_tool_name: tracker.myAiToolCode || 'Unknown',
                 ai_tool_website: tracker.urlTracking || '',
                 panel_before_name: panelBeforeItem.name || 'Unknown Panel',
                 panel_before_fullscreen: panelBeforeItem.fullscreen_url || '',
                 action_name: actionItem.name || 'Unknown Action',
-                action_url: actionItem.image_url || '',
+                action_url: actionImageUrl || '',
                 action_type: actionItem.type || 'button',
                 action_verb: actionItem.verb || 'click',
-                panel_after_name: panelAfterItem.name || 'Unknown Panel',
-                panel_after_fullscreen: panelAfterItem.fullscreen_url || ''
+                panel_after_name: panelAfterItem?.name || 'None',
+                panel_after_fullscreen: panelAfterItem?.fullscreen_url || ''
             };
 
             // Collect image URLs in fixed order so Gemini knows: [panel_before, action, panel_after]
+            // action có thể là URL http hoặc data URL (từ image_base64)
             const imageUrls = [
                 panelBeforeItem.fullscreen_url || null,
-                actionItem.image_url || null,
-                panelAfterItem.fullscreen_url || null
+                actionImageUrl || null,
+                panelAfterItem?.fullscreen_url || null
             ];
 
             console.log('🎯 Calling detectActionPurpose with:', {

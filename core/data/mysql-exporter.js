@@ -5,6 +5,7 @@ import { uploadPictureAndGetUrl } from '../media/uploader.js';
 import { saveBase64AsFile, calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 import { getDbPool } from './db-connection.js';
+import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 
 export class MySQLExporter {
     constructor(sessionFolder, trackingUrl, myAiToolCode = null) {
@@ -183,7 +184,13 @@ export class MySQLExporter {
             const imageChanged = storedImageHash !== currentImageHash;
             
             const pageHeight = Math.min( 1080, globalPos.h);
-            const numPages = Math.ceil(globalPos.h / pageHeight);
+            let numPages = Math.ceil(globalPos.h / pageHeight);
+            
+            // Áp dụng giới hạn tối đa số trang (đặc biệt cho After Login Panel)
+            if (numPages > MAX_CAPTURE_PAGES) {
+                console.log(`⚠️ Limiting pages from ${numPages} to ${MAX_CAPTURE_PAGES} pages for panel "${panel.name}" (maxSections limit)`);
+                numPages = MAX_CAPTURE_PAGES;
+            }
             
             console.log(`📄 Cropping panel "${panel.name}" (${globalPos.h}px) into ${numPages} pages...`);
             
@@ -682,14 +689,19 @@ export class MySQLExporter {
                     
                     const myPanelBefore = itemIdToMyItemMap.get(step.panel_before?.item_id);
                     const myAction = itemIdToMyItemMap.get(actionItemId);
-                    const myPanelAfter = itemIdToMyItemMap.get(step.panel_after?.item_id);
+                    const myPanelAfter = step.panel_after?.item_id != null
+                        ? itemIdToMyItemMap.get(step.panel_after.item_id)
+                        : null;
                     
-                    if (!myPanelBefore || !myAction || !myPanelAfter) continue;
+                    // Mark as Done: panel_after = null, vẫn ghi step (chỉ cần panel_before và action)
+                    if (!myPanelBefore || !myAction) continue;
                     
                     // Build conditional update clause for purpose/reason
                     // Only update if jsonl has values, otherwise keep existing DB values
                     const stepPurposeUpdateClause = step.purpose ? ', purpose = VALUES(purpose)' : '';
                     const stepReasonUpdateClause = step.reason ? ', reason = VALUES(reason)' : '';
+                    
+                    const myPanelAfterValue = myPanelAfter ? `${this.myAiTool}_${myPanelAfter}` : null;
                     
                     await this.connection.execute(
                         `INSERT INTO doing_step 
@@ -715,7 +727,7 @@ export class MySQLExporter {
                             stepType,
                             `${this.myAiTool}_${myPanelBefore}`,
                             `${this.myAiTool}_${myAction}`,
-                            `${this.myAiTool}_${myPanelAfter}`,
+                            myPanelAfterValue,
                             null,
                             null,
                             null,

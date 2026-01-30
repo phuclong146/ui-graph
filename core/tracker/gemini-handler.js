@@ -1088,7 +1088,30 @@ export async function detectActionPurpose(doingStepInfo, imageUrls) {
 
     const { ENV } = await import('../config/env.js');
 
-    const prompt = `Bạn nhận được
+    // Mark as Done: không có panel_after, chỉ dùng panel_before và action để nhận diện purpose
+    const isMarkAsDone = (doingStepInfo.panel_after_name === 'None' || !doingStepInfo.panel_after_fullscreen);
+
+    const prompt = isMarkAsDone
+        ? `Bạn nhận được
+DoingStepInfo: ${JSON.stringify(doingStepInfo, null, 2)}
+
+Trường hợp "Mark as Done": không có màn hình sau thao tác (panel_after). Chỉ cần quan tâm:
++ panel_before: màn hình trước khi thao tác (ảnh 1 = panel_before_fullscreen).
++ action: thao tác người dùng (ảnh 2 = action). Mô tả action_name, action_type, action_verb.
+
+Mục tiêu: Chỉ rõ mục đích của action dựa trên panel_before và action.
+
+Nhiệm vụ:
+Bước 1: Xem kỹ mô tả DoingStepInfo và các hình ảnh (chỉ có ảnh 1 = panel_before_fullscreen, ảnh 2 = action).
+Bước 2: Mô tả ngắn gọn mục đích action trong step này để làm gì bằng tiếng Anh - tối đa 15 từ (step_purpose).
+Bước 3: Tổng quát hóa mục đích action bằng tiếng Anh - tối đa 15 từ (action_purpose).
+
+Kết quả trả về đúng định dạng JSON:
+1. step_purpose: mục đích action trong step này để làm gì bằng tiếng Anh - tối đa 15 từ.
+2. action_purpose: mục đích tổng quát của action bằng tiếng Anh - tối đa 15 từ.
+3. panel_after_name: luôn trả về "None" (vì không có panel sau thao tác).
+4. reason: giải thích rõ lý do bằng tiếng Việt.`
+        : `Bạn nhận được
 DoingStepInfo: ${JSON.stringify(doingStepInfo, null, 2)}
 
 Định nghĩa DoingStepInfo: là thông tin mô tả lại một thao tác của người dùng trên website của ai_tool_name. Trong đó:
@@ -1136,20 +1159,33 @@ Kết quả trả về đúng định dạng JSON:
         const sharp = (await import('sharp')).default;
         for (let i = 0; i < imageUrls.length; i++) {
             const url = imageUrls[i];
-            if (!url || typeof url !== 'string' || !url.startsWith('http')) continue;
+            if (!url || typeof url !== 'string') continue;
             const label = IMAGE_LABELS[i] ?? `image_${i + 1}`;
             // Add text part so Gemini knows which image is which
             parts.push({ text: `\n[Hình ảnh: ${label}]\n` });
+            let base64 = null;
+            let mimeTypeFromSource = 'image/jpeg';
             try {
-                const imageResponse = await fetch(url);
-                if (!imageResponse.ok) continue;
-                const imageBuffer = await imageResponse.arrayBuffer();
-                let base64 = Buffer.from(imageBuffer).toString('base64');
-                const buf = Buffer.from(base64, 'base64');
+                if (url.startsWith('data:')) {
+                    const match = url.match(/^data:([^;]+);base64,(.+)$/);
+                    if (match) {
+                        mimeTypeFromSource = match[1] || 'image/png';
+                        base64 = match[2];
+                    }
+                } else if (url.startsWith('http')) {
+                    const imageResponse = await fetch(url);
+                    if (!imageResponse.ok) continue;
+                    const imageBuffer = await imageResponse.arrayBuffer();
+                    base64 = Buffer.from(imageBuffer).toString('base64');
+                } else {
+                    continue;
+                }
+                if (!base64) continue;
+                let buf = Buffer.from(base64, 'base64');
                 const metadata = await sharp(buf).metadata();
                 const imageHeight = metadata.height || 0;
                 const imageWidth = metadata.width || 0;
-                let mimeType = 'image/jpeg';
+                let mimeType = mimeTypeFromSource;
                 if (imageHeight > MAX_HEIGHT && imageWidth > 0) {
                     const croppedBase64 = await cropBase64Image(base64, {
                         x: 0,
