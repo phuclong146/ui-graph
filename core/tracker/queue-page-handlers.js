@@ -8843,13 +8843,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Broadcast to hide dialog
             await tracker._broadcast({ type: 'hide_role_selection' });
 
-            // Launch tracking browser only for DRAW role
+            // DRAW: old flow - open tracking browser first, then CTV chọn tạo/mở session trên website selector (loadSessionData -> loadSessionAttachPage đã đúng trong loadSession)
             if (role === 'DRAW') {
                 const { initTrackingBrowser } = await import('./browser-init.js');
                 await initTrackingBrowser(tracker);
                 console.log(`🚀 Tracking browser launched for ${role} role`);
             } else {
-                // ADMIN and VALIDATE: broadcast ai_tools list -> user picks tool -> view tool -> open panel log + content
+                // ADMIN and VALIDATE: broadcast ai_tools list -> user picks tool -> view tool -> loadSessionData -> initTrackingBrowser -> loadSessionAttachPage
                 const toolsRes = await getAiToolsListHandler();
                 const tools = (toolsRes.data || []);
                 await tracker._broadcast({ type: 'show_admin_ai_tools', tools });
@@ -8945,13 +8945,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // no sessions dir
             }
 
+            // Load session data first (panel log shows before tracking browser opens)
+            if (allSessions.length > 0) {
+                await tracker.loadSessionData(allSessions[0].folder);
+            }
+
             if (!tracker.browser) {
                 const { initTrackingBrowser } = await import('./browser-init.js');
                 await initTrackingBrowser(tracker);
             }
 
             if (allSessions.length > 0) {
-                await tracker.loadSession(allSessions[0].folder);
+                await tracker.loadSessionAttachPage();
                 return { success: true };
             }
 
