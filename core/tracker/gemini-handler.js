@@ -1080,7 +1080,7 @@ export async function askGeminiForActionRename(croppedImageB64, actionMetadata, 
 /**
  * Detect action purpose using Gemini
  * @param {object} doingStepInfo - Step info object containing panel_before, action, panel_after details
- * @param {string[]} imageUrls - Array of image URLs [panel_before_fullscreen, action_url, panel_after_fullscreen]
+ * @param {(string|null)[]} imageUrls - Array of 3 URLs in order: [panel_before_fullscreen, action_url, panel_after_fullscreen]; null/empty entries are skipped
  * @returns {Promise<object|null>} - {step_purpose, action_purpose, panel_after_name, reason} or null on error
  */
 export async function detectActionPurpose(doingStepInfo, imageUrls) {
@@ -1101,7 +1101,7 @@ DoingStepInfo: ${JSON.stringify(doingStepInfo, null, 2)}
 Mục tiêu: Tôi cần chỉ rõ ràng mục đích của action để làm gì và chỉ rõ tên của panel_after.
 
 Nhiệm vụ của bạn:
-Bước 1: Hãy xem kỹ mô tả DoingStepInfo và các hình ảnh panel trước và sau khi action.
+Bước 1: Hãy xem kỹ mô tả DoingStepInfo và các hình ảnh (theo thứ tự: ảnh 1 = panel_before_fullscreen, ảnh 2 = action, ảnh 3 = panel_after_fullscreen).
 Bước 2: Mô tả ngắn gọn bắt buộc nêu rõ mục đích action của người dùng trong step này để làm gì bằng tiếng Anh - tối đa 15 từ. Gọi là step_purpose.
 Bước 3: Mô tả ngắn gọn tên panel_after bằng tiếng Anh - tối đa 15 từ.
 
@@ -1125,10 +1125,51 @@ Kết quả trả về đúng định dạng JSON:
     // Build parts with text prompt and images
     const parts = [{ text: prompt }];
     
-    // Add images from URLs if available
+    // Fullscreen image max height: crop if taller to avoid Gemini limits
+    const MAX_HEIGHT = 3240;
+
+    // Labels so Gemini knows which image is which (order: panel_before, action, panel_after)
+    const IMAGE_LABELS = ['panel_before_fullscreen', 'action', 'panel_after_fullscreen'];
+
+    // Add images from URLs if available; crop fullscreen if height > MAX_HEIGHT
     if (imageUrls && Array.isArray(imageUrls)) {
-        for (const url of imageUrls) {
-            if (url && typeof url === 'string' && url.startsWith('http')) {
+        const sharp = (await import('sharp')).default;
+        for (let i = 0; i < imageUrls.length; i++) {
+            const url = imageUrls[i];
+            if (!url || typeof url !== 'string' || !url.startsWith('http')) continue;
+            const label = IMAGE_LABELS[i] ?? `image_${i + 1}`;
+            // Add text part so Gemini knows which image is which
+            parts.push({ text: `\n[Hình ảnh: ${label}]\n` });
+            try {
+                const imageResponse = await fetch(url);
+                if (!imageResponse.ok) continue;
+                const imageBuffer = await imageResponse.arrayBuffer();
+                let base64 = Buffer.from(imageBuffer).toString('base64');
+                const buf = Buffer.from(base64, 'base64');
+                const metadata = await sharp(buf).metadata();
+                const imageHeight = metadata.height || 0;
+                const imageWidth = metadata.width || 0;
+                let mimeType = 'image/jpeg';
+                if (imageHeight > MAX_HEIGHT && imageWidth > 0) {
+                    const croppedBase64 = await cropBase64Image(base64, {
+                        x: 0,
+                        y: 0,
+                        w: imageWidth,
+                        h: MAX_HEIGHT
+                    });
+                    if (croppedBase64) {
+                        base64 = croppedBase64;
+                        mimeType = 'image/png'; // cropBase64Image returns PNG
+                    }
+                }
+                parts.push({
+                    inline_data: {
+                        mime_type: mimeType,
+                        data: base64
+                    }
+                });
+            } catch (err) {
+                console.warn('detectActionPurpose: process image failed, using file_uri:', err?.message);
                 parts.push({
                     file_data: {
                         mime_type: 'image/jpeg',

@@ -4844,12 +4844,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panel_after_fullscreen: panelAfterItem.fullscreen_url || ''
             };
 
-            // Collect image URLs
+            // Collect image URLs in fixed order so Gemini knows: [panel_before, action, panel_after]
             const imageUrls = [
-                panelBeforeItem.fullscreen_url,
-                actionItem.image_url,
-                panelAfterItem.fullscreen_url
-            ].filter(url => url && typeof url === 'string' && url.startsWith('http'));
+                panelBeforeItem.fullscreen_url || null,
+                actionItem.image_url || null,
+                panelAfterItem.fullscreen_url || null
+            ];
 
             console.log('🎯 Calling detectActionPurpose with:', {
                 doingStepInfo,
