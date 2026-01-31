@@ -2186,6 +2186,12 @@ export const QUEUE_BROWSER_HTML = `
           currentToolInfo = evt.toolCode
             ? { toolCode: evt.toolCode, toolName: evt.toolName || evt.toolCode, website: evt.website || '' }
             : null;
+          selectedPanelId = null;
+          const eventsContainer = document.getElementById('events');
+          if (eventsContainer) {
+            eventsContainer.querySelectorAll('.event[data-event-type="validate_panel_info"], .event[data-event-type="validate_action"], .event[data-event-type="action_details"], .event[data-event-type="capture"], .event[data-event-type="step"], .event[data-event-type="purpose"], .event[data-event-type="click"]').forEach(el => el.remove());
+          }
+          renderPanelTree();
           if (typeof updateControlsCurrentToolDisplay === 'function') updateControlsCurrentToolDisplay();
           if (adminAiToolsListEl && adminAiToolsFullList.length) {
             renderAdminAiToolsFiltered(adminAiToolsFilterInput ? adminAiToolsFilterInput.value : '');
@@ -7668,6 +7674,11 @@ Bạn có chắc chắn muốn rollback?\`;
         const existingValidateAction = container.querySelector('.event[data-event-type="validate_action"]');
         if (existingValidateAction) {
           existingValidateAction.remove();
+        }
+        
+        const existingValidatePanelInfo = container.querySelector('.event[data-event-type="validate_panel_info"]');
+        if (existingValidatePanelInfo) {
+          existingValidatePanelInfo.remove();
         }
         
         if (!evt.panel_id) {
