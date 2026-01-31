@@ -108,12 +108,14 @@ export class ValidationManager {
                 try {
                     const entry = JSON.parse(line);
                     if (entry.item_id) {
+                        const v = entry.view_count;
                         validations[entry.item_id] = {
                             created_at: entry.created_at,
                             my_ai_tool: entry.my_ai_tool,
                             my_day: entry.my_day,
                             my_session: entry.my_session,
-                            my_scene: entry.my_scene
+                            my_scene: entry.my_scene,
+                            view_count: typeof v === 'number' ? v : (parseInt(v, 10) || 0)
                         };
                     }
                 } catch (parseErr) {
@@ -144,7 +146,8 @@ export class ValidationManager {
                     my_ai_tool: validationData.my_ai_tool,
                     my_day: validationData.my_day,
                     my_session: validationData.my_session,
-                    my_scene: validationData.my_scene
+                    my_scene: validationData.my_scene,
+                    view_count: validationData.view_count ?? 0
                 };
                 lines.push(JSON.stringify(jsonlEntry));
             }
@@ -178,7 +181,8 @@ export class ValidationManager {
             validations[itemId] = {
                 created_at: createdAt,
                 my_ai_tool: this.myAiToolCode,
-                ...timeFields
+                ...timeFields,
+                view_count: 0
             };
             
             console.log(`[VALIDATION] Writing validation file to: ${this.validationPath}`);
@@ -207,6 +211,29 @@ export class ValidationManager {
         } catch (err) {
             console.error(`Failed to remove validation for item ${itemId}:`, err);
             // Don't throw - allow operation to continue
+        }
+    }
+
+    /**
+     * Increment view_count for a validation entry (used when VALIDATE role clicks action in panel log).
+     * Updates uigraph_validation.jsonl only; caller is responsible for DB updates.
+     * @param {string} itemId - Item ID (action item_id)
+     * @returns {Promise<number>} - New view_count after increment, or 0 if entry not found
+     */
+    async incrementViewCount(itemId) {
+        try {
+            const validations = await this.readValidationFile();
+            const entry = validations[itemId];
+            if (!entry) {
+                return 0;
+            }
+            const prev = entry.view_count ?? 0;
+            entry.view_count = prev + 1;
+            await this.writeValidationFile(validations);
+            return entry.view_count;
+        } catch (err) {
+            console.error(`Failed to increment view_count for item ${itemId}:`, err);
+            throw err;
         }
     }
 

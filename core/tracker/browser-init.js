@@ -342,6 +342,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("detectPages", handlers.detectPages);
     await tracker.queuePage.exposeFunction("selectPanel", handlers.selectPanel);
     await tracker.queuePage.exposeFunction("getPanelTree", handlers.getPanelTree);
+    await tracker.queuePage.exposeFunction("incrementValidationViewCount", handlers.incrementValidationViewCount);
     await tracker.queuePage.exposeFunction("getPanelEditorClass", handlers.getPanelEditorClass);
     await tracker.queuePage.exposeFunction("getParentPanelOfAction", handlers.getParentPanelOfAction);
     await tracker.queuePage.exposeFunction("useSelectPanel", handlers.useSelectPanel);

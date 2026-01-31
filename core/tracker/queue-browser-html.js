@@ -7692,6 +7692,15 @@ Bạn có chắc chắn muốn rollback?\`;
           return;
         }
         
+        // Increment view_count when VALIDATE clicks action on panel log (jsonl + DB + viewitem)
+        if (evt.panel_id && typeof window.incrementValidationViewCount === 'function') {
+          try {
+            await window.incrementValidationViewCount(evt.panel_id);
+          } catch (e) {
+            console.warn('incrementValidationViewCount failed:', e);
+          }
+        }
+        
         console.log('🎯 VALIDATE ACTION detected, evt:', evt);
         
         const validateActionDiv = document.createElement('div');
