@@ -24,7 +24,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #panel-tree-container {
-        width: 20%;
+        width: 320px;
         min-width: 200px;
         max-width: 60%;
         border-right: 1px solid #e0e0e0;
@@ -126,9 +126,11 @@ export const QUEUE_BROWSER_HTML = `
         justify-content: space-between;
         align-items: center;
         position: relative;
-        height: 40px;
+        min-height: 40px;
         box-sizing: border-box;
         line-height: 20px;
+        flex-wrap: wrap;
+        gap: 8px;
       }
       
       #panel-log-refresh-btn {
@@ -955,7 +957,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #graphPanelLogTreeContainer {
-        width: 300px;
+        width: 320px;
         min-width: 200px;
         max-width: 40vw;
         background: #2a2a2a;
@@ -1151,7 +1153,11 @@ export const QUEUE_BROWSER_HTML = `
       <div id="panel-tree-container">
         <h3>
           <span>Panel Log</span>
-          <div style="display: flex; gap: 4px; align-items: center;">
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            <label id="panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; padding:2px 6px; background:#f0f0f0; border-radius:4px;">
+              <input type="checkbox" id="panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+              <span style="white-space:nowrap;">My Assignment</span>
+            </label>
             <button id="panel-log-show-mode-btn" title="Switch to Tree Mode">
               <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />
             </button>
@@ -1536,13 +1542,19 @@ export const QUEUE_BROWSER_HTML = `
         </div>
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
-        <div id="graphPanelLogTreeContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
+        <div id="graphPanelLogTreeContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
           <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
-            <button id="graph-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
-              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
-            </button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label id="graph-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
+                <input type="checkbox" id="graph-panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+                <span style="white-space:nowrap;">My Assignment</span>
+              </label>
+              <button id="graph-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+                <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+              </button>
+            </div>
           </div>
           <div id="graphPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1581,12 +1593,18 @@ export const QUEUE_BROWSER_HTML = `
         </div>
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
-        <div id="videoValidationPanelLogContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+        <div id="videoValidationPanelLogContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
-            <button id="video-validation-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
-              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
-            </button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label id="video-validation-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
+                <input type="checkbox" id="video-validation-panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+                <span style="white-space:nowrap;">My Assignment</span>
+              </label>
+              <button id="video-validation-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+                <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+              </button>
+            </div>
           </div>
           <div id="videoValidationPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1750,11 +1768,11 @@ export const QUEUE_BROWSER_HTML = `
               panelTreeContainer.style.width = maxWidth + 'px';
             }
           } else {
-            // No saved width, use 400px or 20% (prefer 400px, but cap at 20%)
-            const preferredWidth = 400;
-            const percentWidth = window.innerWidth * 0.2;
-            // Use 400px if it's within 20%, otherwise use 20%
-            const initialWidth = preferredWidth <= percentWidth ? preferredWidth : percentWidth;
+            // No saved width, use default 320px (match panel log width)
+            const preferredWidth = 320;
+            const minWidth = 200;
+            const maxWidth = window.innerWidth * 0.6;
+            const initialWidth = Math.min(maxWidth, Math.max(minWidth, preferredWidth));
             panelTreeContainer.style.width = initialWidth + 'px';
           }
           
@@ -1849,6 +1867,7 @@ export const QUEUE_BROWSER_HTML = `
       })();
 
       // Main code (keep existing structure for compatibility)
+      console.log('🚀 [DEBUG] Main script starting...');
       const ws = new WebSocket('ws://localhost:8081');
       const container = document.getElementById('events');
       let panelTreeData = [];
@@ -1877,6 +1896,8 @@ export const QUEUE_BROWSER_HTML = `
       // Default set by role when known: DRAW=log, other=validation (see showRoleSelectionDialog / validateAndSaveRole)
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       window.panelLogDisplayMode = panelLogDisplayMode;
+      // My Assignment filter: only sessions assigned to current VALIDATE user (showMode=validation + role=VALIDATE)
+      let myAssignmentFilterEnabled = getLocalStorage('panel-log-my-assignment') === 'true';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
       let isDetectingImportantActions = false;
@@ -1894,14 +1915,59 @@ export const QUEUE_BROWSER_HTML = `
         console.log('⚠️ WebSocket closed');
       };
 
+      // Filter validation tree to only sessions assigned to collaboratorCode (My Assignment)
+      function filterValidationTreeByMyAssignment(treeData, collaboratorCode) {
+        if (!treeData || !Array.isArray(treeData) || !collaboratorCode) return treeData || [];
+        return treeData.map(dayNode => {
+          if (dayNode.type !== 'day' || !dayNode.children) return dayNode;
+          const filteredSessions = dayNode.children.filter(s => s.type === 'session' && s.assignee === collaboratorCode);
+          if (filteredSessions.length === 0) return null;
+          return { ...dayNode, children: filteredSessions };
+        }).filter(Boolean);
+      }
+      
+      async function getFilteredPanelTree(mode) {
+        if (!window.getPanelTree) return [];
+        const data = await window.getPanelTree(mode);
+        try {
+          const role = currentRole || 'DRAW';
+          const accountInfo = currentAccountInfo || null;
+          if (mode !== 'validation' || !myAssignmentFilterEnabled || role !== 'VALIDATE' || !accountInfo?.collaborator_code) {
+            return data || [];
+          }
+          return filterValidationTreeByMyAssignment(data, accountInfo.collaborator_code);
+        } catch (e) {
+          // currentRole/currentAccountInfo not yet defined, return unfiltered data
+          return data || [];
+        }
+      }
+      
+      function updateMyAssignmentCheckboxVisibility() {
+        try {
+          const role = currentRole || 'DRAW';
+          const mainShow = (panelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const graphShow = (typeof graphPanelLogDisplayMode !== 'undefined' && graphPanelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const videoShow = (typeof videoValidationPanelLogDisplayMode !== 'undefined' && videoValidationPanelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const mainWrap = document.getElementById('panel-log-my-assignment-wrapper');
+          const graphWrap = document.getElementById('graph-panel-log-my-assignment-wrapper');
+          const videoWrap = document.getElementById('video-validation-panel-log-my-assignment-wrapper');
+          if (mainWrap) mainWrap.style.display = mainShow ? 'flex' : 'none';
+          if (graphWrap) graphWrap.style.display = graphShow ? 'flex' : 'none';
+          if (videoWrap) videoWrap.style.display = videoShow ? 'flex' : 'none';
+        } catch (e) {
+          // currentRole not yet defined during initialization, ignore
+        }
+      }
+      
       ws.onmessage = async (msg) => {
         const evt = JSON.parse(msg.data);
+        console.log('📨 [WS] Message received:', evt.type);
         
         if (evt.type === 'tree_update') {
           // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
           if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
-            window.getPanelTree(panelLogDisplayMode).then(data => {
+            getFilteredPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
             }).catch(err => {
@@ -2190,7 +2256,12 @@ export const QUEUE_BROWSER_HTML = `
         }
 
         if (evt.type === 'show_role_selection') {
-          showRoleSelectionDialog(evt.accountInfo || null);
+          console.log('📋 [DEBUG] Received show_role_selection message:', evt);
+          try {
+            showRoleSelectionDialog(evt.accountInfo || null);
+          } catch (err) {
+            console.error('❌ [DEBUG] Error in showRoleSelectionDialog:', err);
+          }
           return;
         }
 
@@ -3502,7 +3573,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if ((graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
+            graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
             renderGraphPanelTree();
           } catch (err) {
             console.error('Failed to load graph panel tree with current mode:', err);
@@ -3525,6 +3596,7 @@ export const QUEUE_BROWSER_HTML = `
         const showModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
+        updateMyAssignmentCheckboxVisibility();
         if (graphPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
@@ -3547,7 +3619,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if (window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
+            graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
             renderGraphPanelTree();
             const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : (graphPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Graph Panel: Switched to ' + modeText + ' Mode');
@@ -3577,9 +3649,21 @@ export const QUEUE_BROWSER_HTML = `
         if (!treeContainer) return;
         
         treeContainer.innerHTML = '';
-        graphPanelTreeData.forEach(node => {
-          treeContainer.appendChild(createGraphTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = graphPanelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!graphPanelTreeData || graphPanelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          graphPanelTreeData.forEach(node => {
+            treeContainer.appendChild(createGraphTreeNode(node, 0));
+          });
+        }
       }
 
       function createGraphTreeNode(node, depth) {
@@ -3843,9 +3927,21 @@ export const QUEUE_BROWSER_HTML = `
         videoValidationPanelTreeData = panelTreeData || [];
         treeContainer.innerHTML = '';
         
-        videoValidationPanelTreeData.forEach(node => {
-          treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = videoValidationPanelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!videoValidationPanelTreeData || videoValidationPanelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          videoValidationPanelTreeData.forEach(node => {
+            treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
+          });
+        }
       }
       
       async function renderPanelTreeForValidation(panelTreeData, treeContainer) {
@@ -3853,7 +3949,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if ((videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            const treeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
+            const treeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
             renderPanelTreeForValidationInternal(treeData, treeContainer);
           } catch (err) {
             console.error('Failed to load video validation panel tree with current mode:', err);
@@ -3872,6 +3968,7 @@ export const QUEUE_BROWSER_HTML = `
         const showModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
+        updateMyAssignmentCheckboxVisibility();
         if (videoValidationPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
@@ -3894,10 +3991,10 @@ export const QUEUE_BROWSER_HTML = `
         
         if (window.getPanelTree) {
           try {
-            const panelTreeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
+            const panelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
             const treeContainer = document.getElementById('videoValidationPanelLogTree');
             if (treeContainer) {
-              renderPanelTreeForValidation(panelTreeData, treeContainer);
+              renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
             }
             const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : (videoValidationPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Video Validation: Switched to ' + modeText + ' Mode');
@@ -4855,6 +4952,7 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Role Selection Modal handlers
       const roleSelectionModal = document.getElementById('roleSelectionModal');
+      console.log('📋 [DEBUG] roleSelectionModal element:', roleSelectionModal);
       const roleDrawBtn = document.getElementById('roleDrawBtn');
       const roleValidateBtn = document.getElementById('roleValidateBtn');
       const recorderNameInput = document.getElementById('recorderNameInput');
@@ -4953,11 +5051,12 @@ Bạn có chắc chắn muốn rollback?\`;
       };
 
       const showRoleSelectionDialog = async (accountInfo) => {
+        console.log('📋 [DEBUG] showRoleSelectionDialog called, roleSelectionModal:', roleSelectionModal);
         if (!roleSelectionModal) {
-          console.error('roleSelectionModal not found');
+          console.error('❌ roleSelectionModal not found');
           return;
         }
-        console.log('Showing role selection dialog with account info:', accountInfo);
+        console.log('📋 Showing role selection dialog with account info:', accountInfo);
         
         currentAccountInfo = accountInfo;
         
@@ -5001,6 +5100,7 @@ Bạn có chắc chắn muốn rollback?\`;
         if (accountInfo && accountInfo.role) {
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
+          updateMyAssignmentCheckboxVisibility();
           // Default showMode by role when no saved preference: DRAW=log, other=validation
           if (!getLocalStorage('panel-log-display-mode')) {
             panelLogDisplayMode = (currentRole === 'DRAW') ? 'log' : 'validation';
@@ -5406,6 +5506,7 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Update currentRole for panel_selected handler
         currentRole = role;
+        updateMyAssignmentCheckboxVisibility();
         // Default showMode by role when no saved preference: DRAW=log, other=validation
         if (!getLocalStorage('panel-log-display-mode')) {
           panelLogDisplayMode = (role === 'DRAW') ? 'log' : 'validation';
@@ -5611,9 +5712,21 @@ Bạn có chắc chắn muốn rollback?\`;
       function renderPanelTree() {
         const treeContainer = document.getElementById('panel-tree');
         treeContainer.innerHTML = '';
-        panelTreeData.forEach(node => {
-          treeContainer.appendChild(createTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = panelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!panelTreeData || panelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          panelTreeData.forEach(node => {
+            treeContainer.appendChild(createTreeNode(node, 0));
+          });
+        }
       }
       
       function createTreeNode(node, depth) {
@@ -5986,8 +6099,8 @@ Bạn có chắc chắn muốn rollback?\`;
             if (window.confirm('Bỏ gán CTV cho session này?')) {
               if (typeof window.unassignValidator === 'function') await window.unassignValidator(node.my_session);
               if (window.getPanelTree) {
-                const data = await window.getPanelTree(panelLogDisplayMode);
-                if (data && data.length) { panelTreeData = data; renderPanelTree(); }
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
               }
             }
           });
@@ -6045,8 +6158,8 @@ Bạn có chắc chắn muốn rollback?\`;
           modal.style.display = 'none';
           assignValidatorModalSession = null;
           if (window.getPanelTree) {
-            const data = await window.getPanelTree(panelLogDisplayMode);
-            if (data && data.length) { panelTreeData = data; renderPanelTree(); }
+            const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+            panelTreeData = data || []; renderPanelTree();
           }
         };
         cancelBtn.onclick = () => { modal.style.display = 'none'; assignValidatorModalSession = null; };
@@ -8191,6 +8304,7 @@ Bạn có chắc chắn muốn rollback?\`;
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
+        updateMyAssignmentCheckboxVisibility();
       }
       
       // Toggle display mode: log -> tree -> validation -> log
@@ -8203,7 +8317,7 @@ Bạn có chắc chắn muốn rollback?\`;
         updateShowModeButton();
         
         if (window.getPanelTree) {
-          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+          panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
           renderPanelTree();
           const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : (panelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
           showToast('✅ Switched to ' + modeText + ' Mode');
@@ -8212,7 +8326,7 @@ Bạn có chắc chắn muốn rollback?\`;
       
       async function loadInitialTree() {
         if (window.getPanelTree) {
-          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+          panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
           renderPanelTree();
         }
       }
@@ -8230,7 +8344,7 @@ Bạn có chắc chắn muốn rollback?\`;
         
         try {
           if (window.getPanelTree) {
-            panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+            panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
             renderPanelTree();
             // Optional: Only show toast if triggered by user click? 
             // For now keeping it simple as it confirms the update.
@@ -8262,6 +8376,50 @@ Bạn có chắc chắn muốn rollback?\`;
         panelLogShowModeBtn.addEventListener('click', togglePanelLogDisplayMode);
         // Initialize button icon
         updateShowModeButton();
+      }
+      
+      // My Assignment checkbox: sync state and reload on change
+      function syncMyAssignmentCheckboxState() {
+        const cb = document.getElementById('panel-log-my-assignment-cb');
+        const graphCb = document.getElementById('graph-panel-log-my-assignment-cb');
+        const videoCb = document.getElementById('video-validation-panel-log-my-assignment-cb');
+        if (cb) cb.checked = myAssignmentFilterEnabled;
+        if (graphCb) graphCb.checked = myAssignmentFilterEnabled;
+        if (videoCb) videoCb.checked = myAssignmentFilterEnabled;
+      }
+      function onMyAssignmentCheckboxChange() {
+        myAssignmentFilterEnabled = document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
+        setLocalStorage('panel-log-my-assignment', myAssignmentFilterEnabled ? 'true' : 'false');
+        syncMyAssignmentCheckboxState();
+        if (panelLogDisplayMode === 'validation' && window.getPanelTree) {
+          getFilteredPanelTree(panelLogDisplayMode).then(data => { panelTreeData = data || []; renderPanelTree(); });
+        }
+        if (typeof graphPanelLogDisplayMode !== 'undefined' && graphPanelLogDisplayMode === 'validation' && window.loadGraphPanelTree) {
+          loadGraphPanelTree();
+        }
+        if (typeof videoValidationPanelLogDisplayMode !== 'undefined' && videoValidationPanelLogDisplayMode === 'validation' && window.getPanelTree) {
+          getFilteredPanelTree(videoValidationPanelLogDisplayMode).then(data => {
+            const treeContainer = document.getElementById('videoValidationPanelLogTree');
+            if (treeContainer && typeof renderPanelTreeForValidationInternal === 'function') {
+              renderPanelTreeForValidationInternal(data || [], treeContainer);
+            }
+          });
+        }
+      }
+      const mainMyAssignmentCb = document.getElementById('panel-log-my-assignment-cb');
+      const graphMyAssignmentCb = document.getElementById('graph-panel-log-my-assignment-cb');
+      const videoMyAssignmentCb = document.getElementById('video-validation-panel-log-my-assignment-cb');
+      if (mainMyAssignmentCb) {
+        mainMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        mainMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
+      }
+      if (graphMyAssignmentCb) {
+        graphMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        graphMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
+      }
+      if (videoMyAssignmentCb) {
+        videoMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        videoMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
       }
       
       setTimeout(loadInitialTree, 1000);
@@ -8813,8 +8971,6 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Expose function to window
       window.openSelectPanelModal = openSelectPanelModal;
-      
-      setTimeout(loadInitialTree, 1000);
     </script>
   </body>
 </html>
