@@ -231,6 +231,14 @@ export const QUEUE_BROWSER_HTML = `
         height: 20px;
         display: block;
       }
+
+      /* ADMIN/VALIDATE: highlight tool đang chọn trong panel log (AI tools list) */
+      .admin-ai-tool-item-selected {
+        background: #e8d4f8 !important;
+        border-color: #9c27b0 !important;
+        border-width: 2px !important;
+        font-weight: 600;
+      }
       
       .tree-node {
       }
@@ -1170,6 +1178,7 @@ export const QUEUE_BROWSER_HTML = `
       </button>
       <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
       <button id="aiToolsBtn" style="display:none; background:#9c27b0; color:white;">AI Tools</button>
+      <span id="controls-current-tool" style="display:none; align-items:center; margin-left:8px; padding:4px 10px; background:#e8e0f0; border-radius:6px; font-size:13px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Tool đang chọn"></span>
       <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -2164,6 +2173,17 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'show_admin_ai_tools') {
           const tools = evt.tools || [];
           showAdminAiToolsList(tools);
+          return;
+        }
+
+        if (evt.type === 'current_tool') {
+          currentToolInfo = evt.toolCode
+            ? { toolCode: evt.toolCode, toolName: evt.toolName || evt.toolCode, website: evt.website || '' }
+            : null;
+          if (typeof updateControlsCurrentToolDisplay === 'function') updateControlsCurrentToolDisplay();
+          if (adminAiToolsListEl && adminAiToolsFullList.length) {
+            renderAdminAiToolsFiltered(adminAiToolsFilterInput ? adminAiToolsFilterInput.value : '');
+          }
           return;
         }
 
@@ -4796,6 +4816,7 @@ Bạn có chắc chắn muốn rollback?\`;
       let isEditingName = false;
       let currentDeviceId = '';
       let currentRole = 'DRAW'; // Track current role for panel_selected handler
+      let currentToolInfo = null; // { toolCode, toolName, website } when ADMIN/VALIDATE has a tool open
 
       // Function to update button visibility based on role
       const updateButtonsVisibility = (role) => {
@@ -4844,6 +4865,34 @@ Bạn có chắc chắn muốn rollback?\`;
           if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
           if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         }
+        if (typeof updateControlsCurrentToolDisplay === 'function') updateControlsCurrentToolDisplay();
+      };
+
+      const updateControlsCurrentToolDisplay = () => {
+        const el = document.getElementById('controls-current-tool');
+        if (!el) return;
+        const show = (currentRole === 'ADMIN' || currentRole === 'VALIDATE') && currentToolInfo;
+        if (!show) {
+          el.style.display = 'none';
+          return;
+        }
+        const name = currentToolInfo.toolName || currentToolInfo.toolCode;
+        const website = currentToolInfo.website || '';
+        if (website) {
+          el.innerHTML = '<a href="' + website.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener" style="color:#6a1b9a; text-decoration:none; font-weight:600;">' + escapeHtml(name) + '</a>';
+          el.title = name + ' – ' + website;
+        } else {
+          el.textContent = name;
+          el.title = name;
+        }
+        el.style.display = 'inline-flex';
+      };
+
+      const escapeHtml = (s) => {
+        if (!s) return '';
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
       };
 
       const showRoleSelectionDialog = async (accountInfo) => {
@@ -4912,7 +4961,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         }
 
-        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> open panel log + content
+        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> panel log + content (không mở tracking browser)
         if (accountInfo && (accountInfo.role === 'ADMIN' || accountInfo.role === 'VALIDATE') && typeof window.getAiToolsList === 'function') {
           window.getAiToolsList().then((res) => {
             if (res && res.success && res.data && res.data.length) {
@@ -4929,6 +4978,8 @@ Bạn có chắc chắn muốn rollback?\`;
           console.log('Hiding role selection dialog');
           roleSelectionModal.style.display = 'none';
           isEditingName = false;
+          currentToolInfo = null;
+          if (typeof updateControlsCurrentToolDisplay === 'function') updateControlsCurrentToolDisplay();
           
           // Reset edit mode UI
           if (currentNameViewMode) currentNameViewMode.style.display = 'block';
@@ -4966,7 +5017,9 @@ Bạn có chắc chắn muốn rollback?\`;
         const viewIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:8px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
         filtered.forEach((t) => {
           const item = document.createElement('div');
+          const isSelected = currentToolInfo && t.code === currentToolInfo.toolCode;
           item.style.cssText = 'padding:10px 12px; margin-bottom:4px; background:#fff; border:1px solid #e9ecef; border-radius:8px; cursor:pointer; font-size:12px; color:#495057; transition:background 0.2s ease; position:relative;';
+          if (isSelected) item.classList.add('admin-ai-tool-item-selected');
           item.textContent = t.toolName || t.code || t.website;
           item.title = (t.toolName || t.code) + (t.website ? ' - ' + t.website : '');
           item.dataset.toolCode = t.code;
@@ -5019,8 +5072,8 @@ Bạn có chắc chắn muốn rollback?\`;
           };
           item.addEventListener('click', showToolContextMenu);
           item.addEventListener('contextmenu', showToolContextMenu);
-          item.addEventListener('mouseenter', () => { item.style.background = '#e9ecef'; });
-          item.addEventListener('mouseleave', () => { item.style.background = '#fff'; });
+          item.addEventListener('mouseenter', () => { if (!item.classList.contains('admin-ai-tool-item-selected')) item.style.background = '#e9ecef'; });
+          item.addEventListener('mouseleave', () => { if (!item.classList.contains('admin-ai-tool-item-selected')) item.style.background = '#fff'; });
           adminAiToolsListEl.appendChild(item);
         });
       };
