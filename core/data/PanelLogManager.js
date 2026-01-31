@@ -421,11 +421,13 @@ export class PanelLogManager {
             // Use __no_parent__ when action is not in myparent_panel so it still appears in tree with view_count
             const NO_PARENT_KEY = '__no_parent__';
             const dayMap = new Map();
+            const sessionAssigneeMap = new Map(); // my_session -> assignee (collaborator_code or null)
             for (const row of validations) {
                 const parentPanel = actionToParentPanel.get(row.item_id) ?? NO_PARENT_KEY;
                 if (!dayMap.has(row.my_day)) dayMap.set(row.my_day, new Map());
                 const sessionMap = dayMap.get(row.my_day);
                 if (!sessionMap.has(row.my_session)) sessionMap.set(row.my_session, new Map());
+                if (!sessionAssigneeMap.has(row.my_session)) sessionAssigneeMap.set(row.my_session, row.assignee ?? null);
                 const sceneMap = sessionMap.get(row.my_session);
                 if (!sceneMap.has(row.my_scene)) sceneMap.set(row.my_scene, new Map());
                 const panelMap = sceneMap.get(row.my_scene);
@@ -488,6 +490,8 @@ export class PanelLogManager {
                         type: 'session',
                         panel_id: null,
                         name: this._formatSessionLabel(mySession),
+                        my_session: mySession,
+                        assignee: sessionAssigneeMap.get(mySession) ?? null,
                         children: sceneNodes
                     });
                 }

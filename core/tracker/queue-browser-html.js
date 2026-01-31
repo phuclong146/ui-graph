@@ -24,7 +24,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #panel-tree-container {
-        width: 20%;
+        width: 320px;
         min-width: 200px;
         max-width: 60%;
         border-right: 1px solid #e0e0e0;
@@ -126,9 +126,11 @@ export const QUEUE_BROWSER_HTML = `
         justify-content: space-between;
         align-items: center;
         position: relative;
-        height: 40px;
+        min-height: 40px;
         box-sizing: border-box;
         line-height: 20px;
+        flex-wrap: wrap;
+        gap: 8px;
       }
       
       #panel-log-refresh-btn {
@@ -259,6 +261,16 @@ export const QUEUE_BROWSER_HTML = `
       
       .tree-node-content.selected {
         background: #e3f2fd;
+      }
+      
+      .tree-node-content.session-has-assignee {
+        background: rgba(255, 193, 7, 0.15);
+        border-left: 3px solid #ffc107;
+      }
+      
+      .tree-node-content.session-assigned-to-me {
+        background: rgba(76, 175, 80, 0.2);
+        border-left: 3px solid #4caf50;
       }
       
       .tree-expand {
@@ -945,7 +957,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #graphPanelLogTreeContainer {
-        width: 300px;
+        width: 320px;
         min-width: 200px;
         max-width: 40vw;
         background: #2a2a2a;
@@ -1141,7 +1153,11 @@ export const QUEUE_BROWSER_HTML = `
       <div id="panel-tree-container">
         <h3>
           <span>Panel Log</span>
-          <div style="display: flex; gap: 4px; align-items: center;">
+          <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+            <label id="panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; padding:2px 6px; background:#f0f0f0; border-radius:4px;">
+              <input type="checkbox" id="panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+              <span style="white-space:nowrap;">My Assignment</span>
+            </label>
             <button id="panel-log-show-mode-btn" title="Switch to Tree Mode">
               <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />
             </button>
@@ -1271,6 +1287,18 @@ export const QUEUE_BROWSER_HTML = `
           <button id="conflictOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
             Đã hiểu
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="assignValidatorModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Chọn CTV (Assign Validator)</h3>
+        <input type="text" id="assignValidatorFilter" placeholder="Lọc theo tên hoặc code..." style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-bottom:12px; font-size:14px; box-sizing:border-box;" />
+        <div id="assignValidatorList" style="max-height:280px; overflow-y:auto; border:1px solid #eee; border-radius:6px; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="assignValidatorCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="assignValidatorAssignBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Assign</button>
         </div>
       </div>
     </div>
@@ -1514,13 +1542,19 @@ export const QUEUE_BROWSER_HTML = `
         </div>
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
-        <div id="graphPanelLogTreeContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
+        <div id="graphPanelLogTreeContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
           <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
-            <button id="graph-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
-              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
-            </button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label id="graph-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
+                <input type="checkbox" id="graph-panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+                <span style="white-space:nowrap;">My Assignment</span>
+              </label>
+              <button id="graph-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+                <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+              </button>
+            </div>
           </div>
           <div id="graphPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1559,12 +1593,18 @@ export const QUEUE_BROWSER_HTML = `
         </div>
       </div>
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
-        <div id="videoValidationPanelLogContainer" style="width:300px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+        <div id="videoValidationPanelLogContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
-            <button id="video-validation-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
-              <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
-            </button>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <label id="video-validation-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
+                <input type="checkbox" id="video-validation-panel-log-my-assignment-cb" style="cursor:pointer; width:14px; height:14px;" />
+                <span style="white-space:nowrap;">My Assignment</span>
+              </label>
+              <button id="video-validation-panel-log-show-mode-btn" class="panel-log-mode-btn" title="Switch to Tree Mode">
+                <img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />
+              </button>
+            </div>
           </div>
           <div id="videoValidationPanelLogTree" style="flex:1; overflow-y:auto; padding:10px 0;">
           </div>
@@ -1728,11 +1768,11 @@ export const QUEUE_BROWSER_HTML = `
               panelTreeContainer.style.width = maxWidth + 'px';
             }
           } else {
-            // No saved width, use 400px or 20% (prefer 400px, but cap at 20%)
-            const preferredWidth = 400;
-            const percentWidth = window.innerWidth * 0.2;
-            // Use 400px if it's within 20%, otherwise use 20%
-            const initialWidth = preferredWidth <= percentWidth ? preferredWidth : percentWidth;
+            // No saved width, use default 320px (match panel log width)
+            const preferredWidth = 320;
+            const minWidth = 200;
+            const maxWidth = window.innerWidth * 0.6;
+            const initialWidth = Math.min(maxWidth, Math.max(minWidth, preferredWidth));
             panelTreeContainer.style.width = initialWidth + 'px';
           }
           
@@ -1827,6 +1867,7 @@ export const QUEUE_BROWSER_HTML = `
       })();
 
       // Main code (keep existing structure for compatibility)
+      console.log('🚀 [DEBUG] Main script starting...');
       const ws = new WebSocket('ws://localhost:8081');
       const container = document.getElementById('events');
       let panelTreeData = [];
@@ -1852,7 +1893,11 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       // Panel log display mode: 'log', 'tree', or 'validation'
+      // Default set by role when known: DRAW=log, other=validation (see showRoleSelectionDialog / validateAndSaveRole)
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
+      window.panelLogDisplayMode = panelLogDisplayMode;
+      // My Assignment filter: only sessions assigned to current VALIDATE user (showMode=validation + role=VALIDATE)
+      let myAssignmentFilterEnabled = getLocalStorage('panel-log-my-assignment') === 'true';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
       let isDetectingImportantActions = false;
@@ -1870,14 +1915,59 @@ export const QUEUE_BROWSER_HTML = `
         console.log('⚠️ WebSocket closed');
       };
 
+      // Filter validation tree to only sessions assigned to collaboratorCode (My Assignment)
+      function filterValidationTreeByMyAssignment(treeData, collaboratorCode) {
+        if (!treeData || !Array.isArray(treeData) || !collaboratorCode) return treeData || [];
+        return treeData.map(dayNode => {
+          if (dayNode.type !== 'day' || !dayNode.children) return dayNode;
+          const filteredSessions = dayNode.children.filter(s => s.type === 'session' && s.assignee === collaboratorCode);
+          if (filteredSessions.length === 0) return null;
+          return { ...dayNode, children: filteredSessions };
+        }).filter(Boolean);
+      }
+      
+      async function getFilteredPanelTree(mode) {
+        if (!window.getPanelTree) return [];
+        const data = await window.getPanelTree(mode);
+        try {
+          const role = currentRole || 'DRAW';
+          const accountInfo = currentAccountInfo || null;
+          if (mode !== 'validation' || !myAssignmentFilterEnabled || role !== 'VALIDATE' || !accountInfo?.collaborator_code) {
+            return data || [];
+          }
+          return filterValidationTreeByMyAssignment(data, accountInfo.collaborator_code);
+        } catch (e) {
+          // currentRole/currentAccountInfo not yet defined, return unfiltered data
+          return data || [];
+        }
+      }
+      
+      function updateMyAssignmentCheckboxVisibility() {
+        try {
+          const role = currentRole || 'DRAW';
+          const mainShow = (panelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const graphShow = (typeof graphPanelLogDisplayMode !== 'undefined' && graphPanelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const videoShow = (typeof videoValidationPanelLogDisplayMode !== 'undefined' && videoValidationPanelLogDisplayMode === 'validation' && role === 'VALIDATE');
+          const mainWrap = document.getElementById('panel-log-my-assignment-wrapper');
+          const graphWrap = document.getElementById('graph-panel-log-my-assignment-wrapper');
+          const videoWrap = document.getElementById('video-validation-panel-log-my-assignment-wrapper');
+          if (mainWrap) mainWrap.style.display = mainShow ? 'flex' : 'none';
+          if (graphWrap) graphWrap.style.display = graphShow ? 'flex' : 'none';
+          if (videoWrap) videoWrap.style.display = videoShow ? 'flex' : 'none';
+        } catch (e) {
+          // currentRole not yet defined during initialization, ignore
+        }
+      }
+      
       ws.onmessage = async (msg) => {
         const evt = JSON.parse(msg.data);
+        console.log('📨 [WS] Message received:', evt.type);
         
         if (evt.type === 'tree_update') {
           // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
           if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
-            window.getPanelTree(panelLogDisplayMode).then(data => {
+            getFilteredPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
             }).catch(err => {
@@ -2166,7 +2256,12 @@ export const QUEUE_BROWSER_HTML = `
         }
 
         if (evt.type === 'show_role_selection') {
-          showRoleSelectionDialog(evt.accountInfo || null);
+          console.log('📋 [DEBUG] Received show_role_selection message:', evt);
+          try {
+            showRoleSelectionDialog(evt.accountInfo || null);
+          } catch (err) {
+            console.error('❌ [DEBUG] Error in showRoleSelectionDialog:', err);
+          }
           return;
         }
 
@@ -3478,7 +3573,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if ((graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
+            graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
             renderGraphPanelTree();
           } catch (err) {
             console.error('Failed to load graph panel tree with current mode:', err);
@@ -3501,6 +3596,7 @@ export const QUEUE_BROWSER_HTML = `
         const showModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
+        updateMyAssignmentCheckboxVisibility();
         if (graphPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
@@ -3523,7 +3619,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if (window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
+            graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
             renderGraphPanelTree();
             const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : (graphPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Graph Panel: Switched to ' + modeText + ' Mode');
@@ -3533,6 +3629,14 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
+      // Sync graph panel log showMode from main panel (when opening View Graph)
+      window.syncGraphPanelLogDisplayModeFromMain = function(mode) {
+        graphPanelLogDisplayMode = mode || 'log';
+        setLocalStorage('graph-panel-log-display-mode', graphPanelLogDisplayMode);
+        updateGraphShowModeButton();
+        if (window.loadGraphPanelTree) loadGraphPanelTree();
+      };
+
       // Initialize graph panel log showMode button
       const graphPanelLogShowModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
       if (graphPanelLogShowModeBtn) {
@@ -3545,9 +3649,21 @@ export const QUEUE_BROWSER_HTML = `
         if (!treeContainer) return;
         
         treeContainer.innerHTML = '';
-        graphPanelTreeData.forEach(node => {
-          treeContainer.appendChild(createGraphTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = graphPanelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!graphPanelTreeData || graphPanelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          graphPanelTreeData.forEach(node => {
+            treeContainer.appendChild(createGraphTreeNode(node, 0));
+          });
+        }
       }
 
       function createGraphTreeNode(node, depth) {
@@ -3811,9 +3927,21 @@ export const QUEUE_BROWSER_HTML = `
         videoValidationPanelTreeData = panelTreeData || [];
         treeContainer.innerHTML = '';
         
-        videoValidationPanelTreeData.forEach(node => {
-          treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = videoValidationPanelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!videoValidationPanelTreeData || videoValidationPanelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          videoValidationPanelTreeData.forEach(node => {
+            treeContainer.appendChild(createVideoValidationTreeNode(node, 0));
+          });
+        }
       }
       
       async function renderPanelTreeForValidation(panelTreeData, treeContainer) {
@@ -3821,7 +3949,7 @@ export const QUEUE_BROWSER_HTML = `
         
         if ((videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            const treeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
+            const treeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
             renderPanelTreeForValidationInternal(treeData, treeContainer);
           } catch (err) {
             console.error('Failed to load video validation panel tree with current mode:', err);
@@ -3840,6 +3968,7 @@ export const QUEUE_BROWSER_HTML = `
         const showModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
+        updateMyAssignmentCheckboxVisibility();
         if (videoValidationPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
@@ -3862,10 +3991,10 @@ export const QUEUE_BROWSER_HTML = `
         
         if (window.getPanelTree) {
           try {
-            const panelTreeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
+            const panelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
             const treeContainer = document.getElementById('videoValidationPanelLogTree');
             if (treeContainer) {
-              renderPanelTreeForValidation(panelTreeData, treeContainer);
+              renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
             }
             const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : (videoValidationPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Video Validation: Switched to ' + modeText + ' Mode');
@@ -3875,6 +4004,13 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
+      // Sync video validation panel log showMode from main panel (when opening Video Validate)
+      window.syncVideoValidationPanelLogDisplayModeFromMain = function(mode) {
+        videoValidationPanelLogDisplayMode = mode || 'log';
+        setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
+        updateVideoValidationShowModeButton();
+      };
+
       // Initialize video validation panel log showMode button
       const videoValidationPanelLogShowModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
       if (videoValidationPanelLogShowModeBtn) {
@@ -4816,6 +4952,7 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Role Selection Modal handlers
       const roleSelectionModal = document.getElementById('roleSelectionModal');
+      console.log('📋 [DEBUG] roleSelectionModal element:', roleSelectionModal);
       const roleDrawBtn = document.getElementById('roleDrawBtn');
       const roleValidateBtn = document.getElementById('roleValidateBtn');
       const recorderNameInput = document.getElementById('recorderNameInput');
@@ -4914,11 +5051,12 @@ Bạn có chắc chắn muốn rollback?\`;
       };
 
       const showRoleSelectionDialog = async (accountInfo) => {
+        console.log('📋 [DEBUG] showRoleSelectionDialog called, roleSelectionModal:', roleSelectionModal);
         if (!roleSelectionModal) {
-          console.error('roleSelectionModal not found');
+          console.error('❌ roleSelectionModal not found');
           return;
         }
-        console.log('Showing role selection dialog with account info:', accountInfo);
+        console.log('📋 Showing role selection dialog with account info:', accountInfo);
         
         currentAccountInfo = accountInfo;
         
@@ -4962,20 +5100,13 @@ Bạn có chắc chắn muốn rollback?\`;
         if (accountInfo && accountInfo.role) {
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
-            panelLogDisplayMode = 'validation';
-            setLocalStorage('panel-log-display-mode', 'validation');
+          updateMyAssignmentCheckboxVisibility();
+          // Default showMode by role when no saved preference: DRAW=log, other=validation
+          if (!getLocalStorage('panel-log-display-mode')) {
+            panelLogDisplayMode = (currentRole === 'DRAW') ? 'log' : 'validation';
+            setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+            window.panelLogDisplayMode = panelLogDisplayMode;
             updateShowModeButton();
-          }
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
-            graphPanelLogDisplayMode = 'validation';
-            setLocalStorage('graph-panel-log-display-mode', 'validation');
-            if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
-          }
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
-            videoValidationPanelLogDisplayMode = 'validation';
-            setLocalStorage('video-validation-panel-log-display-mode', 'validation');
-            if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
           }
         }
 
@@ -5375,21 +5506,13 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Update currentRole for panel_selected handler
         currentRole = role;
-        
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
-          panelLogDisplayMode = 'validation';
-          setLocalStorage('panel-log-display-mode', 'validation');
+        updateMyAssignmentCheckboxVisibility();
+        // Default showMode by role when no saved preference: DRAW=log, other=validation
+        if (!getLocalStorage('panel-log-display-mode')) {
+          panelLogDisplayMode = (role === 'DRAW') ? 'log' : 'validation';
+          setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+          window.panelLogDisplayMode = panelLogDisplayMode;
           updateShowModeButton();
-        }
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
-          graphPanelLogDisplayMode = 'validation';
-          setLocalStorage('graph-panel-log-display-mode', 'validation');
-          if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
-        }
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
-          videoValidationPanelLogDisplayMode = 'validation';
-          setLocalStorage('video-validation-panel-log-display-mode', 'validation');
-          if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
         }
         
         return true;
@@ -5589,9 +5712,21 @@ Bạn có chắc chắn muốn rollback?\`;
       function renderPanelTree() {
         const treeContainer = document.getElementById('panel-tree');
         treeContainer.innerHTML = '';
-        panelTreeData.forEach(node => {
-          treeContainer.appendChild(createTreeNode(node, 0));
-        });
+        let showEmptyMyAssignment = false;
+        try {
+          const role = currentRole || 'DRAW';
+          showEmptyMyAssignment = panelLogDisplayMode === 'validation' && myAssignmentFilterEnabled && role === 'VALIDATE' && (!panelTreeData || panelTreeData.length === 0);
+        } catch (e) { /* currentRole not defined yet */ }
+        if (showEmptyMyAssignment) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.style.cssText = 'padding:24px 16px; text-align:center; color:#9e9e9e; font-size:14px;';
+          emptyDiv.textContent = 'Bạn chưa được gán session nào!';
+          treeContainer.appendChild(emptyDiv);
+        } else {
+          panelTreeData.forEach(node => {
+            treeContainer.appendChild(createTreeNode(node, 0));
+          });
+        }
       }
       
       function createTreeNode(node, depth) {
@@ -5606,6 +5741,14 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         if (node.panel_id && selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
+        }
+        if (node.type === 'session') {
+          if (currentRole === 'ADMIN' && node.assignee) {
+            contentDiv.classList.add('session-has-assignee');
+          }
+          if (currentRole === 'VALIDATE' && node.assignee && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code) {
+            contentDiv.classList.add('session-assigned-to-me');
+          }
         }
         
         // Add padding-left for child panels (20px per level)
@@ -5898,6 +6041,14 @@ Bạn có chắc chắn muốn rollback?\`;
           });
         }
         
+        const showAssigneeTooltip = node.type === 'session' && node.assignee && (
+          currentRole === 'ADMIN' || (currentRole === 'VALIDATE' && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code)
+        );
+        if (showAssigneeTooltip) {
+          contentDiv.addEventListener('mouseenter', (ev) => { showSessionAssigneeTooltip(ev, node.my_session); });
+          contentDiv.addEventListener('mouseleave', hideSessionAssigneeTooltip);
+        }
+        
         contentDiv.addEventListener('click', () => {
           if (node.panel_id != null && window.selectPanel) {
             window.selectPanel(node.panel_id);
@@ -5906,12 +6057,113 @@ Bạn có chắc chắn muốn rollback?\`;
         
         contentDiv.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          if (node.panel_id != null) {
+          if (currentRole === 'ADMIN' && node.type === 'session' && node.my_session != null) {
+            showSessionContextMenu(e.clientX, e.clientY, node);
+          } else if (node.panel_id != null) {
             showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
           }
         });
         
         return nodeDiv;
+      }
+      
+      function showSessionContextMenu(x, y, node) {
+        const existingMenu = document.getElementById('session-context-menu');
+        if (existingMenu) existingMenu.remove();
+        const menu = document.createElement('div');
+        menu.id = 'session-context-menu';
+        menu.style.cssText = \`
+          position: fixed;
+          left: \${x}px;
+          top: \${y}px;
+          background: #fff;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+          z-index: 10000;
+          min-width: 180px;
+        \`;
+        const addItem = (text, handler) => {
+          const div = document.createElement('div');
+          div.textContent = text;
+          div.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px;';
+          div.addEventListener('mouseenter', () => { div.style.background = '#f0f0f0'; });
+          div.addEventListener('mouseleave', () => { div.style.background = 'transparent'; });
+          div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
+          menu.appendChild(div);
+        };
+        if (!node.assignee) {
+          addItem('Assign Validator', () => { openAssignValidatorModal(node); });
+        } else {
+          addItem('Unassign Validator', async () => {
+            if (window.confirm('Bỏ gán CTV cho session này?')) {
+              if (typeof window.unassignValidator === 'function') await window.unassignValidator(node.my_session);
+              if (window.getPanelTree) {
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
+              }
+            }
+          });
+          addItem('Change Validator', () => { openAssignValidatorModal(node); });
+        }
+        document.body.appendChild(menu);
+        const menuRect = menu.getBoundingClientRect();
+        if (y + menuRect.height > window.innerHeight) menu.style.top = (Math.max(10, y - menuRect.height)) + 'px';
+        const closeMenu = (e) => {
+          if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 100);
+      }
+      
+      let assignValidatorModalSession = null;
+      async function openAssignValidatorModal(node) {
+        assignValidatorModalSession = node;
+        const modal = document.getElementById('assignValidatorModal');
+        const listEl = document.getElementById('assignValidatorList');
+        const filterInput = document.getElementById('assignValidatorFilter');
+        const assignBtn = document.getElementById('assignValidatorAssignBtn');
+        const cancelBtn = document.getElementById('assignValidatorCancelBtn');
+        if (!modal || !listEl) return;
+        filterInput.value = '';
+        let selectedCode = null;
+        const renderList = async (filter) => {
+          const getList = typeof window.getCollaboratorsList === 'function' ? window.getCollaboratorsList : null;
+          if (!getList) { listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có API</div>'; return; }
+          const collaborators = await getList(filter && filter.trim() ? filter.trim() : undefined);
+          listEl.innerHTML = '';
+          if (!collaborators || collaborators.length === 0) {
+            listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có CTV</div>';
+            return;
+          }
+          collaborators.forEach(c => {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:10px 12px; border-bottom:1px solid #eee; cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
+            row.innerHTML = '<span>' + (c.name || c.code || '') + '</span><span style="font-size:12px; color:#999;">' + (c.code || '') + '</span>';
+            row.addEventListener('click', () => {
+              selectedCode = c.code;
+              listEl.querySelectorAll('[data-selected]').forEach(el => { el.removeAttribute('data-selected'); el.style.background = 'transparent'; });
+              row.setAttribute('data-selected', '1');
+              row.style.background = '#e3f2fd';
+            });
+            row.addEventListener('mouseenter', () => { if (row.getAttribute('data-selected') !== '1') row.style.background = '#f5f5f5'; });
+            row.addEventListener('mouseleave', () => { if (row.getAttribute('data-selected') !== '1') row.style.background = 'transparent'; });
+            listEl.appendChild(row);
+          });
+        };
+        await renderList('');
+        filterInput.oninput = () => { renderList(filterInput.value); };
+        assignBtn.onclick = async () => {
+          if (!selectedCode || !assignValidatorModalSession) { showToast('Chọn 1 CTV'); return; }
+          if (typeof window.assignValidator === 'function') await window.assignValidator(assignValidatorModalSession.my_session, selectedCode);
+          modal.style.display = 'none';
+          assignValidatorModalSession = null;
+          if (window.getPanelTree) {
+            const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+            panelTreeData = data || []; renderPanelTree();
+          }
+        };
+        cancelBtn.onclick = () => { modal.style.display = 'none'; assignValidatorModalSession = null; };
+        modal.style.display = 'flex';
       }
       
       function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber) {
@@ -6580,6 +6832,53 @@ Bạn có chắc chắn muốn rollback?\`;
           if (viewersTooltip) {
               viewersTooltip.remove();
               viewersTooltip = null;
+          }
+      }
+      
+      let sessionAssigneeTooltip = null;
+      async function showSessionAssigneeTooltip(e, mySession) {
+          if (sessionAssigneeTooltip) sessionAssigneeTooltip.remove();
+          if (!mySession) return;
+          const getInfo = typeof window.getSessionAssigneeInfo === 'function' ? window.getSessionAssigneeInfo : null;
+          if (!getInfo) return;
+          sessionAssigneeTooltip = document.createElement('div');
+          sessionAssigneeTooltip.id = 'session-assignee-tooltip';
+          sessionAssigneeTooltip.style.cssText = \`
+              position: fixed;
+              left: \${e.clientX + 10}px;
+              top: \${e.clientY + 10}px;
+              background: rgba(0, 0, 0, 0.92);
+              color: white;
+              padding: 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              z-index: 10000001;
+              max-width: 280px;
+              pointer-events: none;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          \`;
+          sessionAssigneeTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
+          document.body.appendChild(sessionAssigneeTooltip);
+          try {
+              const info = await getInfo(mySession);
+              if (!info) {
+                  sessionAssigneeTooltip.innerHTML = '<div style="color:#9e9e9e;">Chưa có assignee</div>';
+              } else {
+                  const fmtTime = (s) => { if (!s) return ''; try { const d = new Date(s); return d.toLocaleString('vi-VN'); } catch (_) { return s; } };
+                  let html = '<div style="font-weight:600; margin-bottom:8px; color:#4fc3f7;">Assigned</div>';
+                  html += '<div style="padding:4px 0;">Name: ' + (info.name || info.assignee || '—') + '</div>';
+                  html += '<div style="padding:4px 0;">Device ID: ' + (info.device_id || '—') + '</div>';
+                  html += '<div style="padding:4px 0; color:#9e9e9e;">Updated: ' + fmtTime(info.updated_at) + '</div>';
+                  sessionAssigneeTooltip.innerHTML = html;
+              }
+          } catch (err) {
+              sessionAssigneeTooltip.innerHTML = '<div style="color:#f44336;">Không tải được</div>';
+          }
+      }
+      function hideSessionAssigneeTooltip() {
+          if (sessionAssigneeTooltip) {
+              sessionAssigneeTooltip.remove();
+              sessionAssigneeTooltip = null;
           }
       }
       
@@ -8005,6 +8304,7 @@ Bạn có chắc chắn muốn rollback?\`;
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
+        updateMyAssignmentCheckboxVisibility();
       }
       
       // Toggle display mode: log -> tree -> validation -> log
@@ -8013,10 +8313,11 @@ Bạn có chắc chắn muốn rollback?\`;
         else if (panelLogDisplayMode === 'tree') panelLogDisplayMode = 'validation';
         else panelLogDisplayMode = 'log';
         setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+        window.panelLogDisplayMode = panelLogDisplayMode;
         updateShowModeButton();
         
         if (window.getPanelTree) {
-          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+          panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
           renderPanelTree();
           const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : (panelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
           showToast('✅ Switched to ' + modeText + ' Mode');
@@ -8025,7 +8326,7 @@ Bạn có chắc chắn muốn rollback?\`;
       
       async function loadInitialTree() {
         if (window.getPanelTree) {
-          panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+          panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
           renderPanelTree();
         }
       }
@@ -8043,7 +8344,7 @@ Bạn có chắc chắn muốn rollback?\`;
         
         try {
           if (window.getPanelTree) {
-            panelTreeData = await window.getPanelTree(panelLogDisplayMode);
+            panelTreeData = await getFilteredPanelTree(panelLogDisplayMode);
             renderPanelTree();
             // Optional: Only show toast if triggered by user click? 
             // For now keeping it simple as it confirms the update.
@@ -8075,6 +8376,50 @@ Bạn có chắc chắn muốn rollback?\`;
         panelLogShowModeBtn.addEventListener('click', togglePanelLogDisplayMode);
         // Initialize button icon
         updateShowModeButton();
+      }
+      
+      // My Assignment checkbox: sync state and reload on change
+      function syncMyAssignmentCheckboxState() {
+        const cb = document.getElementById('panel-log-my-assignment-cb');
+        const graphCb = document.getElementById('graph-panel-log-my-assignment-cb');
+        const videoCb = document.getElementById('video-validation-panel-log-my-assignment-cb');
+        if (cb) cb.checked = myAssignmentFilterEnabled;
+        if (graphCb) graphCb.checked = myAssignmentFilterEnabled;
+        if (videoCb) videoCb.checked = myAssignmentFilterEnabled;
+      }
+      function onMyAssignmentCheckboxChange() {
+        myAssignmentFilterEnabled = document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
+        setLocalStorage('panel-log-my-assignment', myAssignmentFilterEnabled ? 'true' : 'false');
+        syncMyAssignmentCheckboxState();
+        if (panelLogDisplayMode === 'validation' && window.getPanelTree) {
+          getFilteredPanelTree(panelLogDisplayMode).then(data => { panelTreeData = data || []; renderPanelTree(); });
+        }
+        if (typeof graphPanelLogDisplayMode !== 'undefined' && graphPanelLogDisplayMode === 'validation' && window.loadGraphPanelTree) {
+          loadGraphPanelTree();
+        }
+        if (typeof videoValidationPanelLogDisplayMode !== 'undefined' && videoValidationPanelLogDisplayMode === 'validation' && window.getPanelTree) {
+          getFilteredPanelTree(videoValidationPanelLogDisplayMode).then(data => {
+            const treeContainer = document.getElementById('videoValidationPanelLogTree');
+            if (treeContainer && typeof renderPanelTreeForValidationInternal === 'function') {
+              renderPanelTreeForValidationInternal(data || [], treeContainer);
+            }
+          });
+        }
+      }
+      const mainMyAssignmentCb = document.getElementById('panel-log-my-assignment-cb');
+      const graphMyAssignmentCb = document.getElementById('graph-panel-log-my-assignment-cb');
+      const videoMyAssignmentCb = document.getElementById('video-validation-panel-log-my-assignment-cb');
+      if (mainMyAssignmentCb) {
+        mainMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        mainMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
+      }
+      if (graphMyAssignmentCb) {
+        graphMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        graphMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
+      }
+      if (videoMyAssignmentCb) {
+        videoMyAssignmentCb.checked = myAssignmentFilterEnabled;
+        videoMyAssignmentCb.addEventListener('change', onMyAssignmentCheckboxChange);
       }
       
       setTimeout(loadInitialTree, 1000);
@@ -8626,8 +8971,6 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Expose function to window
       window.openSelectPanelModal = openSelectPanelModal;
-      
-      setTimeout(loadInitialTree, 1000);
     </script>
   </body>
 </html>

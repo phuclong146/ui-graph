@@ -433,10 +433,13 @@ export class DatabaseLoader {
         const filePath = path.join(this.sessionFolder, 'uigraph_validation.jsonl');
         
         try {
-            // Query uigraph_validation table
+            // Query uigraph_validation with assignee from uigraph_validation_assignee (published=1)
             console.log(`📊 Querying uigraph_validation table for my_ai_tool='${this.myAiTool}'...`);
             const [validations] = await this.connection.execute(
-                `SELECT * FROM uigraph_validation WHERE published=1 AND my_ai_tool=?`,
+                `SELECT v.*, a.my_collaborator as assignee
+FROM uigraph_validation v
+LEFT JOIN uigraph_validation_assignee a ON v.my_ai_tool = a.my_ai_tool AND v.my_session = a.my_session AND a.published = 1
+WHERE v.published = 1 AND v.my_ai_tool = ?`,
                 [this.myAiTool]
             );
             console.log(`✅ Found ${validations.length} validation records`);
@@ -462,7 +465,8 @@ export class DatabaseLoader {
                     my_day: validation.my_day,
                     my_session: validation.my_session,
                     my_scene: validation.my_scene,
-                    view_count: validation.view_count
+                    view_count: validation.view_count,
+                    assignee: validation.assignee ?? null
                 };
 
                 dbEntriesMap.set(itemId, jsonlEntry);
