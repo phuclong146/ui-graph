@@ -1111,16 +1111,13 @@ export class PanelScreenTracker {
             // Additional delay after close to let cleanup finish
             await new Promise(resolve => setTimeout(resolve, 200));
         } catch (err) {
-            // Check if it's a permission error (EPERM) on Windows
-            const isPermissionError = err.code === 'EPERM' || 
-                                    err.errno === 1 || 
-                                    (err.message && err.message.includes('Permission denied')) ||
-                                    (err.message && err.message.includes('EPERM'));
-            
-            if (isPermissionError) {
-                // EPERM errors on Windows are common when cleaning up temp files
-                // They're harmless - Windows will clean up temp files eventually
-                console.warn(`⚠️ Permission warning when closing ${browserName} (harmless on Windows):`, err.message);
+            // EPERM/EBUSY on Windows are common when cleaning up Puppeteer temp profile
+            const isHarmlessOnWindows = err.code === 'EPERM' ||
+                                    err.code === 'EBUSY' ||
+                                    err.errno === 1 ||
+                                    (err.message && (err.message.includes('Permission denied') || err.message.includes('EPERM') || err.message.includes('EBUSY') || err.message.includes('resource busy or locked')));
+            if (isHarmlessOnWindows) {
+                console.warn(`⚠️ Warning when closing ${browserName} (harmless on Windows):`, err.message);
             } else {
                 console.error(`❌ Failed to close ${browserName}:`, err.message || err);
             }
@@ -1147,11 +1144,20 @@ export class PanelScreenTracker {
         // Small delay to let pollers finish their current iteration
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Safely close tracking browser (puppeteer-real-browser)
-        await this._safeCloseBrowser(this.browser, 'tracking browser');
+        // ADMIN/VALIDATE: không mở tracking browser → không đóng browser để tránh EBUSY (queue browser temp profile lock trên Windows)
+        let accountRole = 'DRAW';
+        try {
+            const accountInfo = await this._getAccountInfo();
+            accountRole = accountInfo?.role || 'DRAW';
+        } catch (_) {}
+        const isAdminOrValidate = accountRole === 'ADMIN' || accountRole === 'VALIDATE';
         
-        // Safely close queue browser (regular puppeteer)
-        await this._safeCloseBrowser(this.queueBrowser, 'queue browser');
+        if (!isAdminOrValidate) {
+            // DRAW: đóng cả tracking browser và queue browser
+            await this._safeCloseBrowser(this.browser, 'tracking browser');
+            await this._safeCloseBrowser(this.queueBrowser, 'queue browser');
+        }
+        // else: ADMIN/VALIDATE chỉ có queue browser, bỏ qua đóng để tránh EBUSY; process.exit(0) sẽ kết thúc tiến trình
         
         try {
             if (this.wss) this.wss.close();

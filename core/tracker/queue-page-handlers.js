@@ -4627,6 +4627,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 drawFlowState = await getPanelDrawFlowState(itemId);
             }
 
+            // For PANEL: fullscreen_url and coordinate (crop) for ADMIN/VALIDATE panel info view
+            const panelFullscreenUrl = item.item_category === 'PANEL' ? (item.fullscreen_url || null) : null;
+            const panelCoordinate = item.item_category === 'PANEL' ? (item.coordinate || item.metadata?.global_pos || null) : null;
+
             const baseEvent = {
                 type: 'panel_selected',
                 panel_id: itemId,
@@ -4648,7 +4652,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     actions: actions,
                     action_list: actionList,
                     action_count: actions.length,
-                    metadata: item.metadata
+                    metadata: item.metadata,
+                    fullscreen_url: panelFullscreenUrl,
+                    coordinate: panelCoordinate
                 };
             } else if (item.item_category === 'ACTION') {
                 updatedEvent = {
@@ -4668,7 +4674,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     ...baseEvent,
                     actions: actions,
                     action_list: actionList,
-                    action_count: actions.length
+                    action_count: actions.length,
+                    fullscreen_url: panelFullscreenUrl,
+                    coordinate: panelCoordinate
                 };
             }
 
