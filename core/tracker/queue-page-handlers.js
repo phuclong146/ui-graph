@@ -8960,10 +8960,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             if (allSessions.length > 0) {
                 await tracker.loadSessionAttachPage();
+                await tracker._broadcast({
+                    type: 'current_tool',
+                    toolCode: tool.code,
+                    toolName: tool.toolName || tool.code,
+                    website: tool.website || ''
+                });
                 return { success: true };
             }
 
             await tracker.startTracking(tool.website, toolCode);
+            await tracker._broadcast({
+                type: 'current_tool',
+                toolCode: tool.code,
+                toolName: tool.toolName || tool.code,
+                website: tool.website || ''
+            });
             return { success: true };
         } catch (err) {
             console.error('adminOpenOrCreateSession failed:', err);
