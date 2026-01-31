@@ -1492,7 +1492,7 @@ export const QUEUE_BROWSER_HTML = `
         </div>
         <input type="password" id="adminPasswordInput" placeholder="Nhập mật khẩu..." style="width:100%; padding:12px 15px; border:2px solid #ddd; border-radius:8px; font-size:14px; margin-bottom:8px; outline:none; box-sizing:border-box;" />
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13px; color:#666; cursor:pointer;">
-          <input type="checkbox" id="adminPasswordShowCheckbox" style="cursor:pointer;" />
+          <input type="checkbox" id="adminPasswordShowCheckbox" checked style="cursor:pointer;" />
           <span>Hiện mật khẩu</span>
         </label>
         <p id="adminPasswordError" style="display:none; color:#dc3545; font-size:12px; margin:0 0 12px 0;">Mật khẩu không đúng</p>
@@ -5683,10 +5683,10 @@ Bạn có chắc chắn muốn rollback?\`;
           adminPasswordModal.style.display = 'flex';
           if (adminPasswordInput) {
             adminPasswordInput.value = '';
-            adminPasswordInput.type = 'password';
+            adminPasswordInput.type = 'text';
             adminPasswordInput.focus();
           }
-          if (adminPasswordShowCheckbox) adminPasswordShowCheckbox.checked = false;
+          if (adminPasswordShowCheckbox) adminPasswordShowCheckbox.checked = true;
           if (adminPasswordError) adminPasswordError.style.display = 'none';
         }
       };
