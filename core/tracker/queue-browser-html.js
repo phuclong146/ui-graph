@@ -3655,8 +3655,11 @@ export const QUEUE_BROWSER_HTML = `
           viewCountSpan.style.gap = '4px';
           viewCountSpan.style.fontSize = '12px';
           viewCountSpan.style.color = '#9e9e9e';
+          viewCountSpan.style.cursor = 'help';
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
+          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
           label.appendChild(viewCountSpan);
         }
         
@@ -4082,8 +4085,11 @@ export const QUEUE_BROWSER_HTML = `
           viewCountSpan.style.gap = '4px';
           viewCountSpan.style.fontSize = '12px';
           viewCountSpan.style.color = '#9e9e9e';
+          viewCountSpan.style.cursor = 'help';
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
+          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
           label.appendChild(viewCountSpan);
         }
         
@@ -5706,8 +5712,11 @@ Bạn có chắc chắn muốn rollback?\`;
           viewCountSpan.style.gap = '4px';
           viewCountSpan.style.fontSize = '12px';
           viewCountSpan.style.color = '#9e9e9e';
+          viewCountSpan.style.cursor = 'help';
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
+          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
           label.appendChild(viewCountSpan);
         }
         
@@ -6518,6 +6527,59 @@ Bạn có chắc chắn muốn rollback?\`;
           if (bugTooltip) {
               bugTooltip.remove();
               bugTooltip = null;
+          }
+      }
+
+      let viewersTooltip = null;
+      async function showViewersTooltip(e, actionItemId) {
+          if (viewersTooltip) viewersTooltip.remove();
+          if (!actionItemId) return;
+          const getViewers = typeof window.getValidationViewers === 'function' ? window.getValidationViewers : null;
+          if (!getViewers) return;
+          viewersTooltip = document.createElement('div');
+          viewersTooltip.id = 'graph-viewers-tooltip';
+          viewersTooltip.style.cssText = \`
+              position: fixed;
+              left: \${e.clientX + 10}px;
+              top: \${e.clientY + 10}px;
+              background: rgba(0, 0, 0, 0.92);
+              color: white;
+              padding: 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              z-index: 10000001;
+              max-width: 280px;
+              pointer-events: none;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          \`;
+          viewersTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
+          document.body.appendChild(viewersTooltip);
+          try {
+              const viewers = await getViewers(actionItemId);
+              if (!viewers || viewers.length === 0) {
+                  viewersTooltip.innerHTML = '<div style="color:#9e9e9e;">Chưa có lượt xem</div>';
+              } else {
+                  const fmtTime = (s) => {
+                      if (!s) return '';
+                      try { const d = new Date(s); return d.toLocaleString('vi-VN'); } catch (_) { return s; }
+                  };
+                  let html = '<div style="font-weight:600; margin-bottom:8px; color:#4fc3f7;">Người xem</div>';
+                  viewers.forEach(v => {
+                      html += '<div style="display:flex; justify-content:space-between; gap:12px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.1);">';
+                      html += '<span>' + (v.collaborator_name || v.collaborator_code || '—') + '</span>';
+                      html += '<span style="color:#9e9e9e;">' + (v.view_count || 0) + ' lần' + (v.updated_at ? ' · ' + fmtTime(v.updated_at) : '') + '</span>';
+                      html += '</div>';
+                  });
+                  viewersTooltip.innerHTML = html;
+              }
+          } catch (err) {
+              viewersTooltip.innerHTML = '<div style="color:#f44336;">Không tải được danh sách</div>';
+          }
+      }
+      function hideViewersTooltip() {
+          if (viewersTooltip) {
+              viewersTooltip.remove();
+              viewersTooltip = null;
           }
       }
       

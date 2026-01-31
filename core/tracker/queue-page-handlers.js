@@ -4790,14 +4790,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 [itemCode, myAiToolCode]
             );
 
-            // 4. Upsert uigraph_validation_viewitem
+            // 4. Upsert uigraph_validation_viewitem (with updated_at for sorting by most recent)
             if (collaboratorCode) {
                 await conn.execute(
-                    `INSERT INTO uigraph_validation_viewitem (my_snapshot, my_collaborator, view_count)
-                     VALUES (?, ?, 1)
-                     ON DUPLICATE KEY UPDATE view_count = view_count + 1`,
+                    `INSERT INTO uigraph_validation_viewitem (my_snapshot, my_collaborator, view_count, updated_at)
+                     VALUES (?, ?, 1, NOW())
+                     ON DUPLICATE KEY UPDATE view_count = view_count + 1, updated_at = NOW()`,
                     [itemCode, collaboratorCode]
-                );
+                ).catch(() => {
+                    // Fallback if updated_at column doesn't exist
+                    return conn.execute(
+                        `INSERT INTO uigraph_validation_viewitem (my_snapshot, my_collaborator, view_count)
+                         VALUES (?, ?, 1)
+                         ON DUPLICATE KEY UPDATE view_count = view_count + 1`,
+                        [itemCode, collaboratorCode]
+                    );
+                });
             }
 
             await exporter.close();
@@ -4815,6 +4823,66 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             } catch (e) {
                 console.warn('[VIEW_COUNT] broadcast tree_update failed:', e);
             }
+        }
+    };
+
+    /**
+     * Get list of viewers for an action (from uigraph_validation_viewitem).
+     * Returns [{ collaborator_code, collaborator_name, view_count, updated_at }] sorted by updated_at DESC.
+     */
+    const getValidationViewersHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.sessionFolder) return [];
+
+            const item = await tracker.dataItemManager?.getItem(actionItemId);
+            if (!item || item.item_category !== 'ACTION') return [];
+
+            let panelName = null;
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (parentPanelId) {
+                const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
+                if (parentPanelItem) panelName = parentPanelItem.name || null;
+            }
+
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) return [];
+
+            const { MySQLExporter } = await import('../data/mysql-exporter.js');
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, myAiToolCode);
+            await exporter.init();
+            const itemCode = exporter.generateCode(item.item_category, item.name, panelName);
+            const conn = exporter.connection;
+
+            // Query viewitem, join collaborator for name. Sort by updated_at DESC (most recent first).
+            // Note: uigraph_validation_viewitem should have updated_at column for time-based sorting.
+            let rows = [];
+            try {
+                const [result] = await conn.execute(
+                    `SELECT v.my_collaborator as collaborator_code, v.view_count, v.updated_at, ifnull(c.name, 'Other') as collaborator_name
+                    FROM uigraph_validation_viewitem v
+                    LEFT JOIN uigraph_collaborator c ON c.code = v.my_collaborator AND c.published = 1
+                    WHERE v.my_snapshot = ?
+                    ORDER BY v.updated_at DESC`,
+                    [itemCode]
+                );
+                rows = result || [];
+            } catch (queryErr) {
+                console.error('[getValidationViewers] query failed:', queryErr);
+                rows = [];
+            }
+
+            await exporter.close();
+
+            const viewers = Array.isArray(rows) ? rows : [];
+            return viewers.map(r => ({
+                collaborator_code: r.collaborator_code,
+                collaborator_name: r.collaborator_name || r.collaborator_code || '—',
+                view_count: r.view_count ?? 0,
+                updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : null
+            }));
+        } catch (err) {
+            console.error('[getValidationViewers] failed:', err);
+            return [];
         }
     };
 
@@ -9144,6 +9212,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         selectPanel: selectPanelHandler,
         getPanelTree: getPanelTreeHandler,
         incrementValidationViewCount: incrementValidationViewCountHandler,
+        getValidationViewers: getValidationViewersHandler,
         deleteClickEvent: deleteClickEventHandler,
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,
