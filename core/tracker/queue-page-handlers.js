@@ -4833,6 +4833,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     const getValidationViewersHandler = async (actionItemId) => {
         try {
             if (!actionItemId || !tracker.sessionFolder) return [];
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return [];
 
             const item = await tracker.dataItemManager?.getItem(actionItemId);
             if (!item || item.item_category !== 'ACTION') return [];

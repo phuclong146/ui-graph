@@ -3646,8 +3646,8 @@ export const QUEUE_BROWSER_HTML = `
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
         
-        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
-        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+        // Validation mode: show view count (only ADMIN role) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0 && currentRole === 'ADMIN') {
           const viewCountSpan = document.createElement('span');
           viewCountSpan.style.marginLeft = '6px';
           viewCountSpan.style.display = 'inline-flex';
@@ -4076,8 +4076,8 @@ export const QUEUE_BROWSER_HTML = `
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
         
-        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
-        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+        // Validation mode: show view count (only ADMIN role) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0 && currentRole === 'ADMIN') {
           const viewCountSpan = document.createElement('span');
           viewCountSpan.style.marginLeft = '6px';
           viewCountSpan.style.display = 'inline-flex';
@@ -5703,8 +5703,8 @@ Bạn có chắc chắn muốn rollback?\`;
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
         
-        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
-        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+        // Validation mode: show view count (only ADMIN role) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0 && currentRole === 'ADMIN') {
           const viewCountSpan = document.createElement('span');
           viewCountSpan.style.marginLeft = '6px';
           viewCountSpan.style.display = 'inline-flex';
