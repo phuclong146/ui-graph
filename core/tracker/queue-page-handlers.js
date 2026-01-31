@@ -4713,6 +4713,182 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Increment view_count when role=VALIDATE clicks an action on panel log main.
+     * 1. Update uigraph_validation.jsonl field view_count = view_count + 1
+     * 2. From item_id -> generateCode -> item_code
+     * 3. Update uigraph_validation.view_count = view_count + 1 by item_code
+     * 4. Upsert uigraph_validation_viewitem (my_snapshot=item_code, my_collaborator=collaborator_code), view_count += 1
+     */
+    const incrementValidationViewCountHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.sessionFolder) return;
+
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            const role = accountData?.role || 'DRAW';
+            if (role !== 'VALIDATE') {
+                return;
+            }
+            const collaboratorCode = accountData?.collaborator_code || null;
+            if (!collaboratorCode) {
+                console.warn('[VIEW_COUNT] No collaborator_code in account, skip viewitem upsert');
+            }
+
+            // 1. Update uigraph_validation.jsonl view_count
+            if (tracker.validationManager) {
+                await tracker.validationManager.incrementViewCount(actionItemId);
+            } else {
+                const validationPath = path.join(tracker.sessionFolder, 'uigraph_validation.jsonl');
+                try {
+                    const content = await fsp.readFile(validationPath, 'utf8');
+                    const lines = content.trim().split('\n').filter(line => line.trim());
+                    let updated = false;
+                    for (let i = 0; i < lines.length; i++) {
+                        const entry = JSON.parse(lines[i]);
+                        if (entry.item_id === actionItemId) {
+                            entry.view_count = (entry.view_count ?? 0) + 1;
+                            lines[i] = JSON.stringify(entry);
+                            updated = true;
+                            break;
+                        }
+                    }
+                    if (updated) {
+                        await fsp.writeFile(validationPath, lines.join('\n') + (lines.length > 0 ? '\n' : ''), 'utf8');
+                    }
+                } catch (err) {
+                    if (err.code !== 'ENOENT') console.error('[VIEW_COUNT] Failed to update jsonl:', err);
+                }
+            }
+
+            // 2. item_id -> item_code via generateCode (need action item + panel name)
+            const item = await tracker.dataItemManager?.getItem(actionItemId);
+            if (!item || item.item_category !== 'ACTION') return;
+
+            let panelName = null;
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (parentPanelId) {
+                const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
+                if (parentPanelItem) panelName = parentPanelItem.name || null;
+            }
+
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) {
+                console.warn('[VIEW_COUNT] No myAiToolCode, skip DB update');
+                await broadcastValidationTreeUpdate();
+                return;
+            }
+
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, myAiToolCode);
+            await exporter.init();
+            const itemCode = exporter.generateCode(item.item_category, item.name, panelName);
+            const conn = exporter.connection;
+
+            // 3. Update uigraph_validation.view_count by item_code
+            await conn.execute(
+                `UPDATE uigraph_validation SET view_count = view_count + 1 WHERE my_snapshot = ? AND my_ai_tool = ?`,
+                [itemCode, myAiToolCode]
+            );
+
+            // 4. Upsert uigraph_validation_viewitem (with updated_at for sorting by most recent)
+            if (collaboratorCode) {
+                await conn.execute(
+                    `INSERT INTO uigraph_validation_viewitem (my_snapshot, my_collaborator, view_count, updated_at)
+                     VALUES (?, ?, 1, NOW())
+                     ON DUPLICATE KEY UPDATE view_count = view_count + 1, updated_at = NOW()`,
+                    [itemCode, collaboratorCode]
+                ).catch(() => {
+                    // Fallback if updated_at column doesn't exist
+                    return conn.execute(
+                        `INSERT INTO uigraph_validation_viewitem (my_snapshot, my_collaborator, view_count)
+                         VALUES (?, ?, 1)
+                         ON DUPLICATE KEY UPDATE view_count = view_count + 1`,
+                        [itemCode, collaboratorCode]
+                    );
+                });
+            }
+
+            await exporter.close();
+            await broadcastValidationTreeUpdate();
+        } catch (err) {
+            console.error('[VIEW_COUNT] incrementValidationViewCount failed:', err);
+        }
+
+        async function broadcastValidationTreeUpdate() {
+            try {
+                if (tracker.panelLogManager) {
+                    const data = await tracker.panelLogManager.buildValidationTreeStructure();
+                    await tracker._broadcast({ type: 'tree_update', data });
+                }
+            } catch (e) {
+                console.warn('[VIEW_COUNT] broadcast tree_update failed:', e);
+            }
+        }
+    };
+
+    /**
+     * Get list of viewers for an action (from uigraph_validation_viewitem).
+     * Returns [{ collaborator_code, collaborator_name, view_count, updated_at }] sorted by updated_at DESC.
+     */
+    const getValidationViewersHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.sessionFolder) return [];
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return [];
+
+            const item = await tracker.dataItemManager?.getItem(actionItemId);
+            if (!item || item.item_category !== 'ACTION') return [];
+
+            let panelName = null;
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (parentPanelId) {
+                const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
+                if (parentPanelItem) panelName = parentPanelItem.name || null;
+            }
+
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) return [];
+
+            const { MySQLExporter } = await import('../data/mysql-exporter.js');
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, myAiToolCode);
+            await exporter.init();
+            const itemCode = exporter.generateCode(item.item_category, item.name, panelName);
+            const conn = exporter.connection;
+
+            // Query viewitem, join collaborator for name. Sort by updated_at DESC (most recent first).
+            // Note: uigraph_validation_viewitem should have updated_at column for time-based sorting.
+            let rows = [];
+            try {
+                const [result] = await conn.execute(
+                    `SELECT v.my_collaborator as collaborator_code, v.view_count, v.updated_at, ifnull(c.name, 'Other') as collaborator_name
+                    FROM uigraph_validation_viewitem v
+                    LEFT JOIN uigraph_collaborator c ON c.code = v.my_collaborator AND c.published = 1
+                    WHERE v.my_snapshot = ?
+                    ORDER BY v.updated_at DESC`,
+                    [itemCode]
+                );
+                rows = result || [];
+            } catch (queryErr) {
+                console.error('[getValidationViewers] query failed:', queryErr);
+                rows = [];
+            }
+
+            await exporter.close();
+
+            const viewers = Array.isArray(rows) ? rows : [];
+            return viewers.map(r => ({
+                collaborator_code: r.collaborator_code,
+                collaborator_name: r.collaborator_name || r.collaborator_code || '—',
+                view_count: r.view_count ?? 0,
+                updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : null
+            }));
+        } catch (err) {
+            console.error('[getValidationViewers] failed:', err);
+            return [];
+        }
+    };
+
     const deleteClickEventHandler = async (timestamp, actionItemId) => {
         try {
             if (!tracker.clickManager || !actionItemId) return;
@@ -9038,6 +9214,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         detectPages: detectPagesHandler,
         selectPanel: selectPanelHandler,
         getPanelTree: getPanelTreeHandler,
+        incrementValidationViewCount: incrementValidationViewCountHandler,
+        getValidationViewers: getValidationViewersHandler,
         deleteClickEvent: deleteClickEventHandler,
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,
