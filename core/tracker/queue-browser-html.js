@@ -1908,12 +1908,18 @@ export const QUEUE_BROWSER_HTML = `
             isGeminiDetecting = evt.gemini_detecting;
             updateDetectCaptureButtonsState();
           }
-          // Branch based on role: VALIDATE and ADMIN with ACTION use handlePanelSelectedForValidate (same panel log + content)
-          if ((currentRole === 'VALIDATE' || currentRole === 'ADMIN') && evt.item_category === 'ACTION') {
-            handlePanelSelectedForValidate(evt);
-          } else {
-            handlePanelSelected(evt);
+          // Branch based on role: VALIDATE and ADMIN
+          if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
+            if (evt.item_category === 'ACTION') {
+              handlePanelSelectedForValidate(evt);
+              return;
+            }
+            if (evt.item_category === 'PANEL') {
+              handlePanelSelectedForValidatePanel(evt);
+              return;
+            }
           }
+          handlePanelSelected(evt);
           return;
         }
 
@@ -7491,6 +7497,129 @@ Bạn có chắc chắn muốn rollback?\`;
         }
       }
       
+      // Handle panel selected for ADMIN/VALIDATE when clicking a PANEL node (panel info view)
+      async function handlePanelSelectedForValidatePanel(evt) {
+        selectedPanelId = evt.panel_id;
+        renderPanelTree();
+
+        if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
+          const controlsDiv = document.getElementById('controls');
+          if (controlsDiv) {
+            const allButtons = controlsDiv.querySelectorAll('button');
+            allButtons.forEach(btn => {
+              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
+                btn.style.display = 'inline-block';
+              } else {
+                btn.style.display = 'none';
+              }
+            });
+          }
+        }
+
+        const existingCaptureEvent = container.querySelector('.event[data-event-type="capture"]');
+        if (existingCaptureEvent) existingCaptureEvent.remove();
+        const existingStepEvent = container.querySelector('.event[data-event-type="step"]');
+        if (existingStepEvent) existingStepEvent.remove();
+        const existingPurposeEvent = container.querySelector('.event[data-event-type="purpose"]');
+        if (existingPurposeEvent) existingPurposeEvent.remove();
+        const existingActionDetails = container.querySelector('.event[data-event-type="action_details"]');
+        if (existingActionDetails) existingActionDetails.remove();
+        const existingValidateAction = container.querySelector('.event[data-event-type="validate_action"]');
+        if (existingValidateAction) existingValidateAction.remove();
+        const existingValidatePanelInfo = container.querySelector('.event[data-event-type="validate_panel_info"]');
+        if (existingValidatePanelInfo) existingValidatePanelInfo.remove();
+        const existingClickEvents = Array.from(container.querySelectorAll('.event[data-event-type="click"]'));
+        existingClickEvents.forEach(el => el.remove());
+
+        if (!evt.panel_id) return;
+
+        const coord = evt.coordinate || evt.metadata?.global_pos || null;
+        const panelInfoDiv = document.createElement('div');
+        panelInfoDiv.className = 'event';
+        panelInfoDiv.setAttribute('data-event-type', 'validate_panel_info');
+        panelInfoDiv.setAttribute('data-timestamp', evt.timestamp || Date.now());
+        panelInfoDiv.style.cssText = 'position: relative;';
+
+        const imageWrapper = document.createElement('div');
+        imageWrapper.style.cssText = 'position: relative; display: inline-block; max-width: 100%; margin-bottom: 16px;';
+
+        let imageSrc = evt.fullscreen_url || null;
+        if (!imageSrc && evt.screenshot) {
+          imageSrc = (typeof evt.screenshot === 'string' && evt.screenshot.startsWith('data:')) ? evt.screenshot : 'data:image/png;base64,' + evt.screenshot;
+        }
+        if (imageSrc) {
+          const img = document.createElement('img');
+          img.src = imageSrc;
+          img.style.cssText = 'max-width: 100%; display: block; border: 1px solid #ddd; border-radius: 6px;';
+          img.alt = 'Panel fullscreen';
+          img.onerror = function() { this.style.display = 'none'; };
+          img.onload = function() {
+            if (coord && coord.x != null && coord.y != null && coord.w != null && coord.h != null && cropOverlay && img.parentNode) {
+              const scale = img.offsetWidth / img.naturalWidth;
+              cropOverlay.style.left = (coord.x * scale) + 'px';
+              cropOverlay.style.top = (coord.y * scale) + 'px';
+              cropOverlay.style.width = (coord.w * scale) + 'px';
+              cropOverlay.style.height = (coord.h * scale) + 'px';
+              cropOverlay.style.display = 'block';
+            }
+          };
+          imageWrapper.appendChild(img);
+
+          const cropOverlay = document.createElement('div');
+          cropOverlay.setAttribute('data-crop-overlay', '1');
+          cropOverlay.style.cssText = 'position: absolute; border: 2px solid #00aaff; box-sizing: border-box; pointer-events: none; display: none;';
+          imageWrapper.appendChild(cropOverlay);
+        }
+
+        panelInfoDiv.appendChild(imageWrapper);
+
+        const itemDetailsTitle = document.createElement('div');
+        itemDetailsTitle.textContent = 'Item details';
+        itemDetailsTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        panelInfoDiv.appendChild(itemDetailsTitle);
+        const infoBox = document.createElement('div');
+        infoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-bottom: 16px;';
+        const itemFields = [
+          { label: 'Name', value: evt.item_name || 'N/A' },
+          { label: 'Type', value: evt.item_type || 'N/A' },
+          { label: 'Verb', value: evt.item_verb || 'N/A' }
+        ];
+        itemFields.forEach(f => {
+          const row = document.createElement('div');
+          row.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px; background: white; border-radius: 4px;';
+          const label = document.createElement('strong');
+          label.textContent = f.label + ':';
+          label.style.cssText = 'flex: 0 0 60px; font-size: 13px;';
+          const value = document.createElement('span');
+          value.textContent = f.value;
+          value.style.cssText = 'font-size: 13px; color: #333;';
+          row.appendChild(label);
+          row.appendChild(value);
+          infoBox.appendChild(row);
+        });
+        panelInfoDiv.appendChild(infoBox);
+
+        const actionInfoTitle = document.createElement('div');
+        actionInfoTitle.textContent = 'Action info';
+        actionInfoTitle.style.cssText = 'font-weight: 600; font-size: 14px; margin-bottom: 10px; color: #333;';
+        panelInfoDiv.appendChild(actionInfoTitle);
+        const actionInfoBox = document.createElement('div');
+        actionInfoBox.style.cssText = 'background: #f9f9f9; border: 1px solid #ddd; border-radius: 6px; padding: 12px;';
+        const totalCount = evt.action_count != null ? evt.action_count : (evt.actions && evt.actions.length) || 0;
+        const actionListStr = evt.action_list != null ? evt.action_list : (evt.actions && evt.actions.length) ? evt.actions.map(a => a.action_name).filter(Boolean).join(', ') : '';
+        const totalRow = document.createElement('div');
+        totalRow.style.cssText = 'margin-bottom: 8px; padding: 6px; background: white; border-radius: 4px;';
+        totalRow.innerHTML = '<strong style="font-size: 13px;">Tổng số action:</strong> <span style="font-size: 13px; color: #333;">' + totalCount + '</span>';
+        actionInfoBox.appendChild(totalRow);
+        const listRow = document.createElement('div');
+        listRow.style.cssText = 'padding: 6px; background: white; border-radius: 4px; font-size: 13px; color: #333;';
+        listRow.innerHTML = '<strong>Danh sách:</strong> ' + (actionListStr || 'N/A');
+        actionInfoBox.appendChild(listRow);
+        panelInfoDiv.appendChild(actionInfoBox);
+
+        container.appendChild(panelInfoDiv);
+      }
+
       // Handle panel selected for VALIDATE role - separate from DRAW role
       async function handlePanelSelectedForValidate(evt) {
         selectedPanelId = evt.panel_id;
