@@ -5058,6 +5058,77 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get list of sessions without assignee for current ai_tool. ADMIN only.
+     * @returns {Promise<{success: boolean, data?: Array<{my_session: string}>}>}
+     */
+    const getUnassignedSessionsHandler = async () => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return { success: false };
+
+            if (!tracker.panelLogManager || !tracker.sessionFolder) return { success: false, data: [] };
+
+            const treeData = await tracker.panelLogManager.buildValidationTreeStructure();
+            const unassigned = [];
+            const collect = (nodes) => {
+                if (!nodes || !Array.isArray(nodes)) return;
+                for (const node of nodes) {
+                    if (node.type === 'session' && node.my_session && !node.assignee) {
+                        unassigned.push({ my_session: node.my_session });
+                    }
+                    if (node.children) collect(node.children);
+                }
+            };
+            collect(treeData);
+            return { success: true, data: unassigned };
+        } catch (err) {
+            console.error('[getUnassignedSessions] failed:', err);
+            return { success: false, data: [] };
+        }
+    };
+
+    /**
+     * Randomly assign unassigned sessions to selected CTVs. ADMIN only.
+     * Chia các session liên tiếp cho mỗi CTV: CTV1 nhận N session đầu, CTV2 nhận N session tiếp, ...
+     * VD: 8 sessions, 3 CTV -> CTV1: 3, CTV2: 3, CTV3: 2.
+     * @param {string[]} collaboratorCodes - CTV codes in order (first gets first block of sessions)
+     */
+    const randomlyAssignSessionsHandler = async (collaboratorCodes) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return;
+
+            if (!collaboratorCodes || !Array.isArray(collaboratorCodes) || collaboratorCodes.length === 0) return;
+
+            const unassignedRes = await getUnassignedSessionsHandler();
+            if (!unassignedRes.success || !unassignedRes.data || unassignedRes.data.length === 0) return;
+
+            const sessions = unassignedRes.data;
+            const k = collaboratorCodes.length;
+            const n = sessions.length;
+            const base = Math.floor(n / k);
+            const remainder = n % k;
+            let sessionIdx = 0;
+            for (let ctvIdx = 0; ctvIdx < k && sessionIdx < n; ctvIdx++) {
+                const count = base + (ctvIdx < remainder ? 1 : 0);
+                for (let j = 0; j < count && sessionIdx < n; j++) {
+                    await assignValidatorHandler(sessions[sessionIdx].my_session, collaboratorCodes[ctvIdx]);
+                    sessionIdx++;
+                }
+            }
+
+            if (tracker._broadcast && tracker.panelLogManager) {
+                const data = await tracker.panelLogManager.buildValidationTreeStructure();
+                tracker._broadcast({ type: 'tree_update', data });
+            }
+        } catch (err) {
+            console.error('[randomlyAssignSessions] failed:', err);
+        }
+    };
+
     const deleteClickEventHandler = async (timestamp, actionItemId) => {
         try {
             if (!tracker.clickManager || !actionItemId) return;
@@ -9401,6 +9472,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         getSessionAssigneeInfo: getSessionAssigneeInfoHandler,
         assignValidator: assignValidatorHandler,
         unassignValidator: unassignValidatorHandler,
+        getUnassignedSessions: getUnassignedSessionsHandler,
+        randomlyAssignSessions: randomlyAssignSessionsHandler,
         deleteClickEvent: deleteClickEventHandler,
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,

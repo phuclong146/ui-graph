@@ -24,7 +24,7 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       #panel-tree-container {
-        width: 320px;
+        width: 350px;
         min-width: 200px;
         max-width: 60%;
         border-right: 1px solid #e0e0e0;
@@ -376,6 +376,18 @@ export const QUEUE_BROWSER_HTML = `
         align-items: center;
         height: 40px;
         box-sizing: border-box;
+      }
+
+      .controls-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      #controls .controls-quit {
+        margin-left: 8px;
+        padding-left: 12px;
+        border-left: 1px solid #dee2e6;
       }
 
       #controls button {
@@ -1170,33 +1182,38 @@ export const QUEUE_BROWSER_HTML = `
       
       <div id="content-container">
     <div id="controls">
-      <button id="captureActionsDOMBtn" style="display:none; background:#007bff;">📸 Detect Action</button>
-      <button id="drawPanelAndDetectActionsBtn" style="display:none; background:#007bff;">🎨 Draw Panel & Detect Actions</button>
-      <button id="detectPagesBtn" style="display:none; background:#007bff;">📄 Detect Pages (Old)</button>
-      <button id="drawPanelBtn" style="display:none !important;">🖼️ Draw Panel</button>
-      <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
-      <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
-      <button id="saveBtn" style="background:#007bff;">💾 Save</button>
-      <button id="checkpointBtn" style="background:#28a745;">↩️ Rollback</button>
-      <button id="viewGraphBtn" style="background:#007bff; display:flex; align-items:center; gap:6px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;">
-          <circle cx="6" cy="6" r="3"></circle>
-          <circle cx="18" cy="6" r="3"></circle>
-          <circle cx="6" cy="18" r="3"></circle>
-          <circle cx="18" cy="18" r="3"></circle>
-          <circle cx="12" cy="12" r="3"></circle>
-          <line x1="6" y1="6" x2="12" y2="12"></line>
-          <line x1="18" y1="6" x2="12" y2="12"></line>
-          <line x1="6" y1="18" x2="12" y2="12"></line>
-          <line x1="18" y1="18" x2="12" y2="12"></line>
-        </svg>
-        View Graph
-      </button>
-      <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
-      <button id="aiToolsBtn" style="display:none; background:#9c27b0; color:white;">AI Tools</button>
-      <span id="controls-current-tool" style="display:none; align-items:center; margin-left:8px; padding:4px 10px; background:#e8e0f0; border-radius:6px; font-size:13px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Tool đang chọn"></span>
-      <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
-      <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
+      <div id="controls-draw-group" class="controls-group">
+        <button id="captureActionsDOMBtn" style="display:none; background:#007bff;">📸 Detect Action</button>
+        <button id="drawPanelAndDetectActionsBtn" style="display:none; background:#007bff;">🎨 Draw Panel & Detect Actions</button>
+        <button id="detectPagesBtn" style="display:none; background:#007bff;">📄 Detect Pages (Old)</button>
+        <button id="drawPanelBtn" style="display:none !important;">🖼️ Draw Panel</button>
+        <button id="importCookiesBtn" style="display:inline-block;">🍪 Import Cookies</button>
+        <input type="file" id="cookieFileInput" accept=".json" style="display:none;">
+        <button id="saveBtn" style="background:#007bff;">💾 Save</button>
+        <button id="checkpointBtn" style="background:#28a745;">↩️ Rollback</button>
+        <button id="viewGraphBtn" style="background:#007bff; display:flex; align-items:center; gap:6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;">
+            <circle cx="6" cy="6" r="3"></circle>
+            <circle cx="18" cy="6" r="3"></circle>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="12" cy="12" r="3"></circle>
+            <line x1="6" y1="6" x2="12" y2="12"></line>
+            <line x1="18" y1="6" x2="12" y2="12"></line>
+            <line x1="6" y1="18" x2="12" y2="12"></line>
+            <line x1="18" y1="18" x2="12" y2="12"></line>
+          </svg>
+          View Graph
+        </button>
+        <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
+        <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
+      </div>
+      <div id="controls-admin-validate-group" class="controls-group" style="display:none;">
+        <button id="aiToolsBtn" style="background:#9c27b0; color:white;">AI Tools</button>
+        <span id="controls-current-tool" style="display:none; align-items:center; padding:4px 10px; background:#e8e0f0; border-radius:6px; font-size:13px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Tool đang chọn"></span>
+        <button id="randomlyAssignBtn" style="background:#17a2b8; color:white;">Randomly assign</button>
+      </div>
+      <button id="quitBtn" class="controls-quit" style="background:#6c757d;">✕ Quit</button>
     </div>
     
     <div id="drawPanelMenu" style="display:none; position:absolute; background:white; border:1px solid #ddd; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10000; padding:4px;">
@@ -1299,6 +1316,19 @@ export const QUEUE_BROWSER_HTML = `
         <div style="display:flex; gap:10px; justify-content:flex-end;">
           <button id="assignValidatorCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
           <button id="assignValidatorAssignBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Assign</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="randomlyAssignModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Randomly assign – Chọn CTV</h3>
+        <p id="randomlyAssignSessionCount" style="margin:0 0 12px 0; font-size:13px; color:#666;">Đang tải...</p>
+        <input type="text" id="randomlyAssignFilter" placeholder="Lọc theo tên hoặc code..." style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-bottom:12px; font-size:14px; box-sizing:border-box;" />
+        <div id="randomlyAssignList" style="max-height:280px; overflow-y:auto; border:1px solid #eee; border-radius:6px; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="randomlyAssignCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="randomlyAssignAssignBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Assign</button>
         </div>
       </div>
     </div>
@@ -1768,8 +1798,8 @@ export const QUEUE_BROWSER_HTML = `
               panelTreeContainer.style.width = maxWidth + 'px';
             }
           } else {
-            // No saved width, use default 320px (match panel log width)
-            const preferredWidth = 320;
+            // No saved width, use default 350px (match panel log width)
+            const preferredWidth = 350;
             const minWidth = 200;
             const maxWidth = window.innerWidth * 0.6;
             const initialWidth = Math.min(maxWidth, Math.max(minWidth, preferredWidth));
@@ -4975,47 +5005,38 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Function to update button visibility based on role
       const updateButtonsVisibility = (role) => {
-        const controlsDiv = document.getElementById('controls');
-        
-        // Buttons in Graph View and Video Validation View
+        const drawGroup = document.getElementById('controls-draw-group');
+        const adminGroup = document.getElementById('controls-admin-validate-group');
+        const quitBtn = document.getElementById('quitBtn');
         const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
         const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
-        
         const aiToolsBtn = document.getElementById('aiToolsBtn');
-        if (aiToolsBtn) {
-          aiToolsBtn.style.display = (role === 'ADMIN' || role === 'VALIDATE') ? 'inline-block' : 'none';
-        }
+        const randomlyAssignBtn = document.getElementById('randomlyAssignBtn');
 
         if (role === 'VALIDATE' || role === 'ADMIN') {
-          // ADMIN and VALIDATE: only show AI Tools and Quit, hide all other buttons
-          if (controlsDiv) {
-            const allButtons = controlsDiv.querySelectorAll('button');
-            allButtons.forEach(btn => {
-              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
-                btn.style.display = 'inline-block';
-              } else {
-                btn.style.display = 'none';
-              }
-            });
-          }
+          if (drawGroup) drawGroup.style.display = 'none';
+          if (adminGroup) adminGroup.style.display = 'flex';
+          if (quitBtn) quitBtn.style.display = 'inline-block';
+          if (aiToolsBtn) aiToolsBtn.style.display = 'inline-block';
+          if (randomlyAssignBtn) randomlyAssignBtn.style.display = (role === 'ADMIN') ? 'inline-block' : 'none';
           if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
           if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         } else {
-          // DRAW: show all buttons except AI Tools
+          if (drawGroup) drawGroup.style.display = 'flex';
+          if (adminGroup) adminGroup.style.display = 'none';
+          if (quitBtn) quitBtn.style.display = 'inline-block';
           const importCookiesBtn = document.getElementById('importCookiesBtn');
           const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
           const saveBtn = document.getElementById('saveBtn');
           const checkpointBtn = document.getElementById('checkpointBtn');
           const viewGraphBtn = document.getElementById('viewGraphBtn');
           const validateBtn = document.getElementById('validateBtn');
-          const quitBtn = document.getElementById('quitBtn');
           if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
           if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
           if (saveBtn) saveBtn.style.display = 'inline-block';
           if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
           if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
           if (validateBtn) validateBtn.style.display = 'inline-block';
-          if (quitBtn) quitBtn.style.display = 'inline-block';
           if (aiToolsBtn) aiToolsBtn.style.display = 'none';
           if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
           if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
@@ -5274,6 +5295,89 @@ Bạn có chắc chắn muốn rollback?\`;
       const aiToolsBtn = document.getElementById('aiToolsBtn');
       if (aiToolsBtn) {
         aiToolsBtn.addEventListener('click', () => toggleAdminAiToolsSidebar());
+      }
+
+      const randomlyAssignBtn = document.getElementById('randomlyAssignBtn');
+      if (randomlyAssignBtn) {
+        randomlyAssignBtn.addEventListener('click', async () => {
+          if (!currentToolInfo) {
+            showToast('Chọn AI Tool trước');
+            return;
+          }
+          const getUnassigned = typeof window.getUnassignedSessions === 'function' ? window.getUnassignedSessions : null;
+          if (!getUnassigned) {
+            showToast('API không sẵn sàng');
+            return;
+          }
+          const res = await getUnassigned();
+          if (!res || !res.success || !res.data || res.data.length === 0) {
+            showToast('Không có session nào chưa có assignee');
+            return;
+          }
+          openRandomlyAssignModal();
+        });
+      }
+
+      async function openRandomlyAssignModal() {
+        const modal = document.getElementById('randomlyAssignModal');
+        const listEl = document.getElementById('randomlyAssignList');
+        const filterInput = document.getElementById('randomlyAssignFilter');
+        const assignBtn = document.getElementById('randomlyAssignAssignBtn');
+        const cancelBtn = document.getElementById('randomlyAssignCancelBtn');
+        const sessionCountEl = document.getElementById('randomlyAssignSessionCount');
+        if (!modal || !listEl) return;
+        filterInput.value = '';
+        const getUnassigned = typeof window.getUnassignedSessions === 'function' ? window.getUnassignedSessions : null;
+        const unassignedRes = getUnassigned ? await getUnassigned() : null;
+        const unassignedCount = (unassignedRes && unassignedRes.success && unassignedRes.data) ? unassignedRes.data.length : 0;
+        if (sessionCountEl) {
+          sessionCountEl.textContent = unassignedCount + ' session(s) chưa có assignee. Chọn CTV để gán tuần tự.';
+        }
+        const selectedCodes = [];
+        const renderList = async (filter) => {
+          const getList = typeof window.getCollaboratorsList === 'function' ? window.getCollaboratorsList : null;
+          if (!getList) { listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có API</div>'; return; }
+          const collaborators = await getList(filter && filter.trim() ? filter.trim() : undefined);
+          listEl.innerHTML = '';
+          if (!collaborators || collaborators.length === 0) {
+            listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có CTV</div>';
+            return;
+          }
+          collaborators.forEach(c => {
+            const row = document.createElement('label');
+            row.style.cssText = 'padding:10px 12px; border-bottom:1px solid #eee; cursor:pointer; display:flex; align-items:center; gap:10px; margin:0;';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.setAttribute('data-code', c.code);
+            const idx = selectedCodes.indexOf(c.code);
+            if (idx >= 0) cb.checked = true;
+            cb.addEventListener('change', () => {
+              if (cb.checked) { if (selectedCodes.indexOf(c.code) < 0) selectedCodes.push(c.code); }
+              else { const i = selectedCodes.indexOf(c.code); if (i >= 0) selectedCodes.splice(i, 1); }
+            });
+            row.appendChild(cb);
+            row.appendChild(document.createTextNode((c.name || c.code || '') + ' (' + (c.code || '') + ')'));
+            listEl.appendChild(row);
+          });
+        };
+        await renderList('');
+        filterInput.oninput = () => { renderList(filterInput.value); };
+        assignBtn.onclick = async () => {
+          if (selectedCodes.length === 0) { showToast('Chọn ít nhất 1 CTV'); return; }
+          if (typeof window.randomlyAssignSessions === 'function') {
+            await window.randomlyAssignSessions(selectedCodes);
+            modal.style.display = 'none';
+            if (window.getPanelTree) {
+              const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+              panelTreeData = data || []; renderPanelTree();
+            }
+            showToast('Đã gán xong');
+          } else {
+            showToast('API không sẵn sàng');
+          }
+        };
+        cancelBtn.onclick = () => { modal.style.display = 'none'; };
+        modal.style.display = 'flex';
       }
 
       (function setupAdminAiToolsResizer() {
@@ -7870,17 +7974,7 @@ Bạn có chắc chắn muốn rollback?\`;
         renderPanelTree();
 
         if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
-          const controlsDiv = document.getElementById('controls');
-          if (controlsDiv) {
-            const allButtons = controlsDiv.querySelectorAll('button');
-            allButtons.forEach(btn => {
-              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
-                btn.style.display = 'inline-block';
-              } else {
-                btn.style.display = 'none';
-              }
-            });
-          }
+          if (typeof updateButtonsVisibility === 'function') updateButtonsVisibility(currentRole);
         }
 
         const existingCaptureEvent = container.querySelector('.event[data-event-type="capture"]');
@@ -7996,19 +8090,8 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         renderPanelTree();
         
-        // ADMIN and VALIDATE: only show AI Tools and Quit
         if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
-          const controlsDiv = document.getElementById('controls');
-          if (controlsDiv) {
-            const allButtons = controlsDiv.querySelectorAll('button');
-            allButtons.forEach(btn => {
-              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
-                btn.style.display = 'inline-block';
-              } else {
-                btn.style.display = 'none';
-              }
-            });
-          }
+          if (typeof updateButtonsVisibility === 'function') updateButtonsVisibility(currentRole);
         }
         
         // Clean up existing events (same cleanup as handlePanelSelected but separate implementation)
