@@ -3701,12 +3701,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
-          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
-          if (isValidationNode || graphExpandedPanels.has(expandKey)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || graphExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
-            if (isValidationNode) graphExpandedPanels.add(expandKey);
+            if (isValidationNodeExpandAll) graphExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -4128,12 +4128,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
-          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
-          if (isValidationNode || videoValidationExpandedPanels.has(expandKey)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || videoValidationExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
-            if (isValidationNode) videoValidationExpandedPanels.add(expandKey);
+            if (isValidationNodeExpandAll) videoValidationExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -5798,12 +5798,12 @@ Bạn có chắc chắn muốn rollback?\`;
             childrenDiv.classList.add('level-2');
           }
           
-          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
-          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
-          if (isValidationNode || expandedPanels.has(expandKey)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || expandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
-            if (isValidationNode) expandedPanels.add(expandKey);
+            if (isValidationNodeExpandAll) expandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {

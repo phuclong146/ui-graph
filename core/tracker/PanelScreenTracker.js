@@ -258,18 +258,21 @@ export class PanelScreenTracker {
                 console.error('Failed to upsert session to DB in loadSession:', err);
             }
             
-            // Update bug info from database if role is DRAW
+            // Update bug info and load uigraph_validation from database if role is DRAW
             if (role === 'DRAW') {
                 try {
                      const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                      const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
                      await loader.updateBugInfoInDoingItems();
+                     // Load only uigraph_validation in upsert mode
+                     await loader.loadFromDatabase('DRAW');
+                     console.log(`✅ Loaded uigraph_validation from database for DRAW role`);
                 } catch (err) {
-                    console.error('❌ Failed to update bug info:', err);
+                    console.error('❌ Failed to update bug info or load validation:', err);
                 }
             }
 
-            // Load data from database if role is VALIDATE or ADMIN (same source as VALIDATE)
+            // Load full data from database if role is VALIDATE or ADMIN
             if (role === 'VALIDATE' || role === 'ADMIN') {
                 try {
                     await this._broadcast({ 
@@ -279,8 +282,8 @@ export class PanelScreenTracker {
                     
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
-                    await loader.loadFromDatabase();
-                    console.log(`✅ Loaded data from database for ${role} role`);
+                    await loader.loadFromDatabase(role);
+                    console.log(`✅ Loaded full data from database for ${role} role`);
                     
                     await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {

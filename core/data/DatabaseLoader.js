@@ -61,12 +61,15 @@ export class DatabaseLoader {
 
     /**
      * Load data from database and create JSONL files
+     * @param {string} role - Role type ('DRAW' or other), affects loading behavior
+     *   - role=DRAW: Only load uigraph_validation (upsert mode)
+     *   - role!=DRAW: Load full (doing_item, step, page, etc.) and override validation
      */
-    async loadFromDatabase() {
+    async loadFromDatabase(role = null) {
         try {
             await this.init();
 
-            // 1. Query doing_item table
+            // 1. Query doing_item table (needed for codeToItemIdMap in all cases)
             console.log(`📊 Querying doing_item table for my_ai_tool='${this.myAiTool}'...`);
             const [doingItems] = await this.connection.execute(
                 `SELECT * FROM doing_item WHERE published=1 AND my_ai_tool=?`,
@@ -82,39 +85,47 @@ export class DatabaseLoader {
                 }
             }
 
-            // 2. Create doing_item.jsonl
-            await this.createDoingItemJsonl(doingItems);
+            if (role === 'DRAW') {
+                // DRAW role: Only load uigraph_validation (upsert mode)
+                console.log(`🎨 DRAW mode: Only loading uigraph_validation...`);
+                await this.createValidationJsonl(codeToItemIdMap, role);
+            } else {
+                // Non-DRAW role: Load full data
+                
+                // 2. Create doing_item.jsonl
+                await this.createDoingItemJsonl(doingItems);
 
-            // 3. Query pages table
-            console.log(`📊 Querying pages table for my_item LIKE '${this.myAiTool}_%'...`);
-            const [pages] = await this.connection.execute(
-                `SELECT * FROM pages WHERE published=1 AND my_item LIKE ?`,
-                [`${this.myAiTool}_%`]
-            );
-            console.log(`✅ Found ${pages.length} page records`);
+                // 3. Query pages table
+                console.log(`📊 Querying pages table for my_item LIKE '${this.myAiTool}_%'...`);
+                const [pages] = await this.connection.execute(
+                    `SELECT * FROM pages WHERE published=1 AND my_item LIKE ?`,
+                    [`${this.myAiTool}_%`]
+                );
+                console.log(`✅ Found ${pages.length} page records`);
 
-            // 4. Create pages.jsonl
-            await this.createPagesJsonl(pages, codeToItemIdMap);
+                // 4. Create pages.jsonl
+                await this.createPagesJsonl(pages, codeToItemIdMap);
 
-            // 5. Query doing_step table
-            console.log(`📊 Querying doing_step table for my_ai_tool='${this.myAiTool}'...`);
-            const [doingSteps] = await this.connection.execute(
-                `SELECT * FROM doing_step WHERE published=1 AND my_ai_tool=?`,
-                [this.myAiTool]
-            );
-            console.log(`✅ Found ${doingSteps.length} doing_step records`);
+                // 5. Query doing_step table
+                console.log(`📊 Querying doing_step table for my_ai_tool='${this.myAiTool}'...`);
+                const [doingSteps] = await this.connection.execute(
+                    `SELECT * FROM doing_step WHERE published=1 AND my_ai_tool=?`,
+                    [this.myAiTool]
+                );
+                console.log(`✅ Found ${doingSteps.length} doing_step records`);
 
-            // 6. Create doing_step.jsonl
-            await this.createDoingStepJsonl(doingSteps, codeToItemIdMap);
+                // 6. Create doing_step.jsonl
+                await this.createDoingStepJsonl(doingSteps, codeToItemIdMap);
 
-            // 7. Create myparent_panel.jsonl from doing_item (PANEL category)
-            await this.createMyparentPanelJsonl(doingItems);
+                // 7. Create myparent_panel.jsonl from doing_item (PANEL category)
+                await this.createMyparentPanelJsonl(doingItems);
 
-            // 8. Create click.jsonl from doing_item.metadata.clicks
-            await this.createClickJsonl(doingItems);
+                // 8. Create click.jsonl from doing_item.metadata.clicks
+                await this.createClickJsonl(doingItems);
 
-            // 9. Create uigraph_validation.jsonl from uigraph_validation table
-            await this.createValidationJsonl(doingItems, codeToItemIdMap);
+                // 9. Create uigraph_validation.jsonl (override mode)
+                await this.createValidationJsonl(codeToItemIdMap, role);
+            }
 
             console.log('✅ Successfully loaded all data from database');
         } catch (err) {
@@ -415,8 +426,10 @@ export class DatabaseLoader {
 
     /**
      * Create uigraph_validation.jsonl from uigraph_validation table
+     * @param {Map} codeToItemIdMap - Map from code to item_id
+     * @param {string} role - Role type ('DRAW' or other)
      */
-    async createValidationJsonl(doingItems, codeToItemIdMap) {
+    async createValidationJsonl(codeToItemIdMap, role = null) {
         const filePath = path.join(this.sessionFolder, 'uigraph_validation.jsonl');
         
         try {
@@ -428,8 +441,8 @@ export class DatabaseLoader {
             );
             console.log(`✅ Found ${validations.length} validation records`);
 
-            // Map my_snapshot (code) to item_id using codeToItemIdMap
-            const lines = [];
+            // Build DB entries map (item_id -> entry)
+            const dbEntriesMap = new Map();
             for (const validation of validations) {
                 const itemId = codeToItemIdMap.get(validation.my_snapshot);
                 if (!itemId) {
@@ -452,7 +465,73 @@ export class DatabaseLoader {
                     view_count: validation.view_count
                 };
 
-                lines.push(JSON.stringify(jsonlEntry));
+                dbEntriesMap.set(itemId, jsonlEntry);
+            }
+
+            let lines = [];
+
+            if (role === 'DRAW') {
+                // DRAW role: Upsert mechanism
+                // - If item exists in file AND DB -> update with DB data
+                // - If item exists in file but NOT in DB -> keep as-is (preserve)
+                // - If item exists in DB but NOT in file -> add
+                
+                // Read existing file
+                let existingEntries = new Map();
+                try {
+                    const fileContent = await fsp.readFile(filePath, 'utf8');
+                    if (fileContent.trim()) {
+                        const fileLines = fileContent.trim().split('\n').filter(line => line.trim());
+                        for (const line of fileLines) {
+                            try {
+                                const entry = JSON.parse(line);
+                                if (entry.item_id) {
+                                    existingEntries.set(entry.item_id, entry);
+                                }
+                            } catch (parseErr) {
+                                console.warn(`⚠️ Failed to parse line in uigraph_validation.jsonl: ${parseErr.message}`);
+                            }
+                        }
+                    }
+                    console.log(`📖 Read ${existingEntries.size} existing entries from uigraph_validation.jsonl`);
+                } catch (err) {
+                    if (err.code !== 'ENOENT') {
+                        throw err;
+                    }
+                    console.log(`📖 uigraph_validation.jsonl not found, will create new file`);
+                }
+
+                let updatedCount = 0;
+                let addedCount = 0;
+                let keptCount = 0;
+
+                // Process: items in file
+                for (const [itemId, existingEntry] of existingEntries) {
+                    if (dbEntriesMap.has(itemId)) {
+                        // Update with DB data
+                        lines.push(JSON.stringify(dbEntriesMap.get(itemId)));
+                        updatedCount++;
+                    } else {
+                        // Keep as-is - item not in DB, preserve existing entry
+                        lines.push(JSON.stringify(existingEntry));
+                        keptCount++;
+                    }
+                }
+
+                // Add items from DB that are not in file
+                for (const [itemId, dbEntry] of dbEntriesMap) {
+                    if (!existingEntries.has(itemId)) {
+                        lines.push(JSON.stringify(dbEntry));
+                        addedCount++;
+                    }
+                }
+
+                console.log(`🔄 DRAW mode: updated=${updatedCount}, added=${addedCount}, kept=${keptCount}`);
+            } else {
+                // Non-DRAW role: Override entire file (original behavior)
+                for (const [itemId, entry] of dbEntriesMap) {
+                    lines.push(JSON.stringify(entry));
+                }
             }
 
             // Write to file in JSONL format (one line per entry)
