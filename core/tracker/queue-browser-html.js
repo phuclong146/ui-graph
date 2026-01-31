@@ -1051,6 +1051,16 @@ export const QUEUE_BROWSER_HTML = `
         background: rgba(0, 123, 255, 0.3);
       }
       
+      .graph-tree-node-content.session-has-assignee {
+        background: rgba(255, 193, 7, 0.15);
+        border-left: 3px solid #ffc107;
+      }
+      
+      .graph-tree-node-content.session-assigned-to-me {
+        background: rgba(76, 175, 80, 0.2);
+        border-left: 3px solid #4caf50;
+      }
+      
       .graph-tree-expand {
         width: 12px;
         height: 12px;
@@ -3706,6 +3716,16 @@ export const QUEUE_BROWSER_HTML = `
         contentDiv.className = 'graph-tree-node-content';
         if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
         
+        // Add session highlight classes for VALIDATE mode
+        if (node.type === 'session') {
+          if (currentRole === 'ADMIN' && node.assignee) {
+            contentDiv.classList.add('session-has-assignee');
+          }
+          if (currentRole === 'VALIDATE' && node.assignee && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code) {
+            contentDiv.classList.add('session-assigned-to-me');
+          }
+        }
+        
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
@@ -4155,6 +4175,16 @@ export const QUEUE_BROWSER_HTML = `
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
         if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
+        
+        // Add session highlight classes for VALIDATE mode
+        if (node.type === 'session') {
+          if (currentRole === 'ADMIN' && node.assignee) {
+            contentDiv.classList.add('session-has-assignee');
+          }
+          if (currentRole === 'VALIDATE' && node.assignee && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code) {
+            contentDiv.classList.add('session-assigned-to-me');
+          }
+        }
         
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
@@ -7971,7 +8001,18 @@ Bạn có chắc chắn muốn rollback?\`;
       // Handle panel selected for ADMIN/VALIDATE when clicking a PANEL node (panel info view)
       async function handlePanelSelectedForValidatePanel(evt) {
         selectedPanelId = evt.panel_id;
-        renderPanelTree();
+        
+        // Update selection highlight without re-rendering entire tree to preserve session-assigned-to-me highlight
+        const treeContainer = document.getElementById('panel-tree');
+        if (treeContainer) {
+          treeContainer.querySelectorAll('.tree-node-content').forEach(el => {
+            el.classList.remove('selected');
+          });
+          const targetNode = treeContainer.querySelector('.tree-node-content[data-panel-id="' + evt.panel_id + '"]');
+          if (targetNode) {
+            targetNode.classList.add('selected');
+          }
+        }
 
         if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
           if (typeof updateButtonsVisibility === 'function') updateButtonsVisibility(currentRole);
@@ -8088,7 +8129,18 @@ Bạn có chắc chắn muốn rollback?\`;
         if (evt.item_category === 'ACTION' && evt.panel_id) {
           currentValidateActionId = evt.panel_id;
         }
-        renderPanelTree();
+        
+        // Update selection highlight without re-rendering entire tree to preserve session-assigned-to-me highlight
+        const treeContainer = document.getElementById('panel-tree');
+        if (treeContainer) {
+          treeContainer.querySelectorAll('.tree-node-content').forEach(el => {
+            el.classList.remove('selected');
+          });
+          const targetNode = treeContainer.querySelector('.tree-node-content[data-panel-id="' + evt.panel_id + '"]');
+          if (targetNode) {
+            targetNode.classList.add('selected');
+          }
+        }
         
         if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
           if (typeof updateButtonsVisibility === 'function') updateButtonsVisibility(currentRole);
