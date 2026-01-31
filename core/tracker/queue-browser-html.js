@@ -1874,7 +1874,9 @@ export const QUEUE_BROWSER_HTML = `
       }
       
       // Panel log display mode: 'log', 'tree', or 'validation'
+      // Default set by role when known: DRAW=log, other=validation (see showRoleSelectionDialog / validateAndSaveRole)
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
+      window.panelLogDisplayMode = panelLogDisplayMode;
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
       let isDetectingImportantActions = false;
@@ -3555,6 +3557,14 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
+      // Sync graph panel log showMode from main panel (when opening View Graph)
+      window.syncGraphPanelLogDisplayModeFromMain = function(mode) {
+        graphPanelLogDisplayMode = mode || 'log';
+        setLocalStorage('graph-panel-log-display-mode', graphPanelLogDisplayMode);
+        updateGraphShowModeButton();
+        if (window.loadGraphPanelTree) loadGraphPanelTree();
+      };
+
       // Initialize graph panel log showMode button
       const graphPanelLogShowModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
       if (graphPanelLogShowModeBtn) {
@@ -3897,6 +3907,13 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
+      // Sync video validation panel log showMode from main panel (when opening Video Validate)
+      window.syncVideoValidationPanelLogDisplayModeFromMain = function(mode) {
+        videoValidationPanelLogDisplayMode = mode || 'log';
+        setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
+        updateVideoValidationShowModeButton();
+      };
+
       // Initialize video validation panel log showMode button
       const videoValidationPanelLogShowModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
       if (videoValidationPanelLogShowModeBtn) {
@@ -4984,20 +5001,12 @@ Bạn có chắc chắn muốn rollback?\`;
         if (accountInfo && accountInfo.role) {
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
-            panelLogDisplayMode = 'validation';
-            setLocalStorage('panel-log-display-mode', 'validation');
+          // Default showMode by role when no saved preference: DRAW=log, other=validation
+          if (!getLocalStorage('panel-log-display-mode')) {
+            panelLogDisplayMode = (currentRole === 'DRAW') ? 'log' : 'validation';
+            setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+            window.panelLogDisplayMode = panelLogDisplayMode;
             updateShowModeButton();
-          }
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
-            graphPanelLogDisplayMode = 'validation';
-            setLocalStorage('graph-panel-log-display-mode', 'validation');
-            if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
-          }
-          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
-            videoValidationPanelLogDisplayMode = 'validation';
-            setLocalStorage('video-validation-panel-log-display-mode', 'validation');
-            if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
           }
         }
 
@@ -5397,21 +5406,12 @@ Bạn có chắc chắn muốn rollback?\`;
         
         // Update currentRole for panel_selected handler
         currentRole = role;
-        
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
-          panelLogDisplayMode = 'validation';
-          setLocalStorage('panel-log-display-mode', 'validation');
+        // Default showMode by role when no saved preference: DRAW=log, other=validation
+        if (!getLocalStorage('panel-log-display-mode')) {
+          panelLogDisplayMode = (role === 'DRAW') ? 'log' : 'validation';
+          setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+          window.panelLogDisplayMode = panelLogDisplayMode;
           updateShowModeButton();
-        }
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
-          graphPanelLogDisplayMode = 'validation';
-          setLocalStorage('graph-panel-log-display-mode', 'validation');
-          if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
-        }
-        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
-          videoValidationPanelLogDisplayMode = 'validation';
-          setLocalStorage('video-validation-panel-log-display-mode', 'validation');
-          if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
         }
         
         return true;
@@ -8199,6 +8199,7 @@ Bạn có chắc chắn muốn rollback?\`;
         else if (panelLogDisplayMode === 'tree') panelLogDisplayMode = 'validation';
         else panelLogDisplayMode = 'log';
         setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
+        window.panelLogDisplayMode = panelLogDisplayMode;
         updateShowModeButton();
         
         if (window.getPanelTree) {

@@ -6669,11 +6669,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const viewGraphHandler = async () => {
         try {
-            // Load panel tree data - default to log mode
-            // User can toggle mode via showMode button in browser
+            // Use main panel log's current showMode when opening View Graph
+            const mainPanelLogMode = await tracker.queuePage.evaluate(() => (typeof window.panelLogDisplayMode !== 'undefined' ? window.panelLogDisplayMode : null) || 'log');
+            const mode = mainPanelLogMode === 'validation' ? 'validation' : (mainPanelLogMode === 'tree' ? 'tree' : 'log');
             let panelTreeData = [];
             if (tracker.panelLogManager) {
-                panelTreeData = await tracker.panelLogManager.buildTreeStructure();
+                if (mode === 'validation') panelTreeData = await tracker.panelLogManager.buildValidationTreeStructure();
+                else if (mode === 'tree') panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                else panelTreeData = await tracker.panelLogManager.buildTreeStructure();
             }
             
             // Load data in Node.js context
@@ -6789,7 +6792,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             });
 
             // Render graph in browser context
-            await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData) => {
+            await tracker.queuePage.evaluate(async (nodesData, edgesData, panelTreeData, stepsData, mainPanelLogMode) => {
                 let lastMouseX = 0;
                 let lastMouseY = 0;
                 document.addEventListener('mousemove', (e) => {
@@ -7771,11 +7774,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 window.graphEdgesData = edgesData;
                 window.graphStepsData = stepsData;
                 
-                // Load and render panel tree
-                if (window.loadGraphPanelTree) {
+                // Sync graph panel log showMode from main and load tree
+                if (window.syncGraphPanelLogDisplayModeFromMain && mainPanelLogMode) {
+                    window.syncGraphPanelLogDisplayModeFromMain(mainPanelLogMode);
+                } else if (window.loadGraphPanelTree) {
                     await window.loadGraphPanelTree();
                 }
-            }, nodesData, edgesData, panelTreeData, stepsData);
+            }, nodesData, edgesData, panelTreeData, stepsData, mainPanelLogMode);
 
         } catch (err) {
             console.error('Failed to render graph:', err);
@@ -8242,11 +8247,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const validateStepHandler = async () => {
         try {
-            // Load panel tree - default to log mode
-            // User can toggle mode via showMode button in browser
+            // Use main panel log's current showMode when opening Video Validate
+            const mainPanelLogMode = await tracker.queuePage.evaluate(() => (typeof window.panelLogDisplayMode !== 'undefined' ? window.panelLogDisplayMode : null) || 'log');
+            const mode = mainPanelLogMode === 'validation' ? 'validation' : (mainPanelLogMode === 'tree' ? 'tree' : 'log');
             let panelTreeData = [];
             if (tracker.panelLogManager) {
-                panelTreeData = await tracker.panelLogManager.buildTreeStructure();
+                if (mode === 'validation') panelTreeData = await tracker.panelLogManager.buildValidationTreeStructure();
+                else if (mode === 'tree') panelTreeData = await tracker.panelLogManager.buildTreeStructureWithChildPanels();
+                else panelTreeData = await tracker.panelLogManager.buildTreeStructure();
             }
 
             // Get all actions with steps
@@ -8284,8 +8292,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 stepData.push(stepInfo);
             }
 
-            // Show VideoValidationScreen
-            await tracker.queuePage.evaluate((panelTreeData, stepData) => {
+            // Show VideoValidationScreen; sync panel log showMode from main
+            await tracker.queuePage.evaluate((panelTreeData, stepData, mainPanelLogMode) => {
                 const modal = document.getElementById('videoValidationModal');
                 if (!modal) {
                     console.error('videoValidationModal not found');
@@ -8294,7 +8302,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 modal.style.display = 'flex';
 
-                // Render panel tree
+                if (window.syncVideoValidationPanelLogDisplayModeFromMain && mainPanelLogMode) {
+                    window.syncVideoValidationPanelLogDisplayModeFromMain(mainPanelLogMode);
+                }
+
+                // Render panel tree (data already built for mainPanelLogMode)
                 const panelLogTree = document.getElementById('videoValidationPanelLogTree');
                 if (panelLogTree && window.renderPanelTreeForValidation) {
                     window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
@@ -8307,7 +8319,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 if (window.updateSyncedPlayButtonState) {
                     window.updateSyncedPlayButtonState();
                 }
-            }, panelTreeData, stepData);
+            }, panelTreeData, stepData, mainPanelLogMode);
 
         } catch (err) {
             console.error('Failed to validate step:', err);
