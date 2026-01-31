@@ -4889,6 +4889,175 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get list of collaborators (CTV) for Assign Validator. ADMIN only.
+     * @param {string} [filterByName] - Optional filter: name or code LIKE
+     * @returns {Promise<Array<{code, name, device_id}>>}
+     */
+    const getCollaboratorsListHandler = async (filterByName) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return [];
+
+            const pool = getDbPool();
+            let rows = [];
+            if (filterByName && String(filterByName).trim()) {
+                const like = `%${String(filterByName).trim()}%`;
+                const [result] = await pool.execute(
+                    `SELECT code, name, device_id FROM uigraph_collaborator WHERE published = 1 AND (name LIKE ? OR code LIKE ?) ORDER BY name, code`,
+                    [like, like]
+                );
+                rows = result || [];
+            } else {
+                const [result] = await pool.execute(
+                    `SELECT code, name, device_id FROM uigraph_collaborator WHERE published = 1 ORDER BY name, code`
+                );
+                rows = result || [];
+            }
+            return rows.map(r => ({
+                code: r.code,
+                name: r.name ?? r.code ?? '',
+                device_id: r.device_id ?? null
+            }));
+        } catch (err) {
+            console.error('[getCollaboratorsList] failed:', err);
+            return [];
+        }
+    };
+
+    /**
+     * Get assignee info for a session (for tooltip). ADMIN or VALIDATE.
+     * @param {string} my_session
+     * @returns {Promise<{assignee, name, device_id, updated_at}|null>}
+     */
+    const getSessionAssigneeInfoHandler = async (my_session) => {
+        try {
+            if (!my_session || !tracker.sessionFolder) return null;
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) return null;
+
+            const pool = getDbPool();
+            const [rows] = await pool.execute(
+                `SELECT a.my_collaborator as assignee, c.name, c.device_id, a.updated_at
+                 FROM uigraph_validation_assignee a
+                 LEFT JOIN uigraph_collaborator c ON c.code = a.my_collaborator AND c.published = 1
+                 WHERE a.my_ai_tool = ? AND a.my_session = ? AND a.published = 1
+                 LIMIT 1`,
+                [myAiToolCode, my_session]
+            );
+            if (!rows || rows.length === 0) return null;
+            const r = rows[0];
+            return {
+                assignee: r.assignee,
+                name: r.name ?? r.assignee ?? '',
+                device_id: r.device_id ?? null,
+                updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : null
+            };
+        } catch (err) {
+            console.error('[getSessionAssigneeInfo] failed:', err);
+            return null;
+        }
+    };
+
+    /**
+     * Assign a validator (CTV) to a session. ADMIN only.
+     * Updates uigraph_validation.jsonl (assignee on matching lines) and upserts uigraph_validation_assignee.
+     */
+    const assignValidatorHandler = async (my_session, collaborator_code) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return;
+
+            if (!my_session || !collaborator_code || !tracker.sessionFolder) return;
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) return;
+
+            const validationPath = path.join(tracker.sessionFolder, 'uigraph_validation.jsonl');
+            let content = await fsp.readFile(validationPath, 'utf8').catch(() => '');
+            if (!content.trim()) return;
+
+            const lines = content.trim().split('\n').filter(line => line.trim());
+            const out = [];
+            for (const line of lines) {
+                try {
+                    const entry = JSON.parse(line);
+                    if (entry.my_ai_tool === myAiToolCode && entry.my_session === my_session) {
+                        entry.assignee = collaborator_code;
+                    }
+                    out.push(JSON.stringify(entry));
+                } catch (_) {
+                    out.push(line);
+                }
+            }
+            await fsp.writeFile(validationPath, out.join('\n') + '\n', 'utf8');
+
+            const pool = getDbPool();
+            await pool.execute(
+                `INSERT INTO uigraph_validation_assignee (my_ai_tool, my_session, my_collaborator, published, updated_at)
+                 VALUES (?, ?, ?, 1, NOW())
+                 ON DUPLICATE KEY UPDATE my_collaborator = VALUES(my_collaborator), published = 1, updated_at = NOW()`,
+                [myAiToolCode, my_session, collaborator_code]
+            );
+
+            if (tracker._broadcast && tracker.panelLogManager) {
+                const data = await tracker.panelLogManager.buildValidationTreeStructure();
+                tracker._broadcast({ type: 'tree_update', data });
+            }
+        } catch (err) {
+            console.error('[assignValidator] failed:', err);
+        }
+    };
+
+    /**
+     * Unassign validator from a session. ADMIN only.
+     * Sets assignee = null in jsonl and published = 0 in uigraph_validation_assignee.
+     */
+    const unassignValidatorHandler = async (my_session) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') return;
+
+            if (!my_session || !tracker.sessionFolder) return;
+            const myAiToolCode = tracker.myAiToolCode;
+            if (!myAiToolCode) return;
+
+            const validationPath = path.join(tracker.sessionFolder, 'uigraph_validation.jsonl');
+            let content = await fsp.readFile(validationPath, 'utf8').catch(() => '');
+            if (content.trim()) {
+                const lines = content.trim().split('\n').filter(line => line.trim());
+                const out = [];
+                for (const line of lines) {
+                    try {
+                        const entry = JSON.parse(line);
+                        if (entry.my_ai_tool === myAiToolCode && entry.my_session === my_session) {
+                            entry.assignee = null;
+                        }
+                        out.push(JSON.stringify(entry));
+                    } catch (_) {
+                        out.push(line);
+                    }
+                }
+                await fsp.writeFile(validationPath, out.join('\n') + '\n', 'utf8');
+            }
+
+            const pool = getDbPool();
+            await pool.execute(
+                `UPDATE uigraph_validation_assignee SET published = 0, updated_at = NOW() WHERE my_ai_tool = ? AND my_session = ?`,
+                [myAiToolCode, my_session]
+            );
+
+            if (tracker._broadcast && tracker.panelLogManager) {
+                const data = await tracker.panelLogManager.buildValidationTreeStructure();
+                tracker._broadcast({ type: 'tree_update', data });
+            }
+        } catch (err) {
+            console.error('[unassignValidator] failed:', err);
+        }
+    };
+
     const deleteClickEventHandler = async (timestamp, actionItemId) => {
         try {
             if (!tracker.clickManager || !actionItemId) return;
@@ -9216,6 +9385,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         getPanelTree: getPanelTreeHandler,
         incrementValidationViewCount: incrementValidationViewCountHandler,
         getValidationViewers: getValidationViewersHandler,
+        getCollaboratorsList: getCollaboratorsListHandler,
+        getSessionAssigneeInfo: getSessionAssigneeInfoHandler,
+        assignValidator: assignValidatorHandler,
+        unassignValidator: unassignValidatorHandler,
         deleteClickEvent: deleteClickEventHandler,
         clearAllClicksForAction: clearAllClicksForActionHandler,
         resetActionStep: resetActionStepHandler,

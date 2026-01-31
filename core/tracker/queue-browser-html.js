@@ -261,6 +261,16 @@ export const QUEUE_BROWSER_HTML = `
         background: #e3f2fd;
       }
       
+      .tree-node-content.session-has-assignee {
+        background: rgba(255, 193, 7, 0.15);
+        border-left: 3px solid #ffc107;
+      }
+      
+      .tree-node-content.session-assigned-to-me {
+        background: rgba(76, 175, 80, 0.2);
+        border-left: 3px solid #4caf50;
+      }
+      
       .tree-expand {
         width: 12px;
         height: 12px;
@@ -1271,6 +1281,18 @@ export const QUEUE_BROWSER_HTML = `
           <button id="conflictOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
             Đã hiểu
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="assignValidatorModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Chọn CTV (Assign Validator)</h3>
+        <input type="text" id="assignValidatorFilter" placeholder="Lọc theo tên hoặc code..." style="width:100%; padding:10px; border:1px solid #ddd; border-radius:6px; margin-bottom:12px; font-size:14px; box-sizing:border-box;" />
+        <div id="assignValidatorList" style="max-height:280px; overflow-y:auto; border:1px solid #eee; border-radius:6px; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="assignValidatorCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="assignValidatorAssignBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Assign</button>
         </div>
       </div>
     </div>
@@ -5607,6 +5629,14 @@ Bạn có chắc chắn muốn rollback?\`;
         if (node.panel_id && selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
         }
+        if (node.type === 'session') {
+          if (currentRole === 'ADMIN' && node.assignee) {
+            contentDiv.classList.add('session-has-assignee');
+          }
+          if (currentRole === 'VALIDATE' && node.assignee && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code) {
+            contentDiv.classList.add('session-assigned-to-me');
+          }
+        }
         
         // Add padding-left for child panels (20px per level)
         if (depth > 0) {
@@ -5898,6 +5928,14 @@ Bạn có chắc chắn muốn rollback?\`;
           });
         }
         
+        const showAssigneeTooltip = node.type === 'session' && node.assignee && (
+          currentRole === 'ADMIN' || (currentRole === 'VALIDATE' && currentAccountInfo && node.assignee === currentAccountInfo.collaborator_code)
+        );
+        if (showAssigneeTooltip) {
+          contentDiv.addEventListener('mouseenter', (ev) => { showSessionAssigneeTooltip(ev, node.my_session); });
+          contentDiv.addEventListener('mouseleave', hideSessionAssigneeTooltip);
+        }
+        
         contentDiv.addEventListener('click', () => {
           if (node.panel_id != null && window.selectPanel) {
             window.selectPanel(node.panel_id);
@@ -5906,12 +5944,113 @@ Bạn có chắc chắn muốn rollback?\`;
         
         contentDiv.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          if (node.panel_id != null) {
+          if (currentRole === 'ADMIN' && node.type === 'session' && node.my_session != null) {
+            showSessionContextMenu(e.clientX, e.clientY, node);
+          } else if (node.panel_id != null) {
             showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
           }
         });
         
         return nodeDiv;
+      }
+      
+      function showSessionContextMenu(x, y, node) {
+        const existingMenu = document.getElementById('session-context-menu');
+        if (existingMenu) existingMenu.remove();
+        const menu = document.createElement('div');
+        menu.id = 'session-context-menu';
+        menu.style.cssText = \`
+          position: fixed;
+          left: \${x}px;
+          top: \${y}px;
+          background: #fff;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+          z-index: 10000;
+          min-width: 180px;
+        \`;
+        const addItem = (text, handler) => {
+          const div = document.createElement('div');
+          div.textContent = text;
+          div.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px;';
+          div.addEventListener('mouseenter', () => { div.style.background = '#f0f0f0'; });
+          div.addEventListener('mouseleave', () => { div.style.background = 'transparent'; });
+          div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
+          menu.appendChild(div);
+        };
+        if (!node.assignee) {
+          addItem('Assign Validator', () => { openAssignValidatorModal(node); });
+        } else {
+          addItem('Unassign Validator', async () => {
+            if (window.confirm('Bỏ gán CTV cho session này?')) {
+              if (typeof window.unassignValidator === 'function') await window.unassignValidator(node.my_session);
+              if (window.getPanelTree) {
+                const data = await window.getPanelTree(panelLogDisplayMode);
+                if (data && data.length) { panelTreeData = data; renderPanelTree(); }
+              }
+            }
+          });
+          addItem('Change Validator', () => { openAssignValidatorModal(node); });
+        }
+        document.body.appendChild(menu);
+        const menuRect = menu.getBoundingClientRect();
+        if (y + menuRect.height > window.innerHeight) menu.style.top = (Math.max(10, y - menuRect.height)) + 'px';
+        const closeMenu = (e) => {
+          if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
+        };
+        setTimeout(() => document.addEventListener('click', closeMenu), 100);
+      }
+      
+      let assignValidatorModalSession = null;
+      async function openAssignValidatorModal(node) {
+        assignValidatorModalSession = node;
+        const modal = document.getElementById('assignValidatorModal');
+        const listEl = document.getElementById('assignValidatorList');
+        const filterInput = document.getElementById('assignValidatorFilter');
+        const assignBtn = document.getElementById('assignValidatorAssignBtn');
+        const cancelBtn = document.getElementById('assignValidatorCancelBtn');
+        if (!modal || !listEl) return;
+        filterInput.value = '';
+        let selectedCode = null;
+        const renderList = async (filter) => {
+          const getList = typeof window.getCollaboratorsList === 'function' ? window.getCollaboratorsList : null;
+          if (!getList) { listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có API</div>'; return; }
+          const collaborators = await getList(filter && filter.trim() ? filter.trim() : undefined);
+          listEl.innerHTML = '';
+          if (!collaborators || collaborators.length === 0) {
+            listEl.innerHTML = '<div style="padding:12px; color:#666;">Không có CTV</div>';
+            return;
+          }
+          collaborators.forEach(c => {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:10px 12px; border-bottom:1px solid #eee; cursor:pointer; display:flex; justify-content:space-between; align-items:center;';
+            row.innerHTML = '<span>' + (c.name || c.code || '') + '</span><span style="font-size:12px; color:#999;">' + (c.code || '') + '</span>';
+            row.addEventListener('click', () => {
+              selectedCode = c.code;
+              listEl.querySelectorAll('[data-selected]').forEach(el => { el.removeAttribute('data-selected'); el.style.background = 'transparent'; });
+              row.setAttribute('data-selected', '1');
+              row.style.background = '#e3f2fd';
+            });
+            row.addEventListener('mouseenter', () => { if (row.getAttribute('data-selected') !== '1') row.style.background = '#f5f5f5'; });
+            row.addEventListener('mouseleave', () => { if (row.getAttribute('data-selected') !== '1') row.style.background = 'transparent'; });
+            listEl.appendChild(row);
+          });
+        };
+        await renderList('');
+        filterInput.oninput = () => { renderList(filterInput.value); };
+        assignBtn.onclick = async () => {
+          if (!selectedCode || !assignValidatorModalSession) { showToast('Chọn 1 CTV'); return; }
+          if (typeof window.assignValidator === 'function') await window.assignValidator(assignValidatorModalSession.my_session, selectedCode);
+          modal.style.display = 'none';
+          assignValidatorModalSession = null;
+          if (window.getPanelTree) {
+            const data = await window.getPanelTree(panelLogDisplayMode);
+            if (data && data.length) { panelTreeData = data; renderPanelTree(); }
+          }
+        };
+        cancelBtn.onclick = () => { modal.style.display = 'none'; assignValidatorModalSession = null; };
+        modal.style.display = 'flex';
       }
       
       function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber) {
@@ -6580,6 +6719,53 @@ Bạn có chắc chắn muốn rollback?\`;
           if (viewersTooltip) {
               viewersTooltip.remove();
               viewersTooltip = null;
+          }
+      }
+      
+      let sessionAssigneeTooltip = null;
+      async function showSessionAssigneeTooltip(e, mySession) {
+          if (sessionAssigneeTooltip) sessionAssigneeTooltip.remove();
+          if (!mySession) return;
+          const getInfo = typeof window.getSessionAssigneeInfo === 'function' ? window.getSessionAssigneeInfo : null;
+          if (!getInfo) return;
+          sessionAssigneeTooltip = document.createElement('div');
+          sessionAssigneeTooltip.id = 'session-assignee-tooltip';
+          sessionAssigneeTooltip.style.cssText = \`
+              position: fixed;
+              left: \${e.clientX + 10}px;
+              top: \${e.clientY + 10}px;
+              background: rgba(0, 0, 0, 0.92);
+              color: white;
+              padding: 12px;
+              border-radius: 8px;
+              font-size: 12px;
+              z-index: 10000001;
+              max-width: 280px;
+              pointer-events: none;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          \`;
+          sessionAssigneeTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
+          document.body.appendChild(sessionAssigneeTooltip);
+          try {
+              const info = await getInfo(mySession);
+              if (!info) {
+                  sessionAssigneeTooltip.innerHTML = '<div style="color:#9e9e9e;">Chưa có assignee</div>';
+              } else {
+                  const fmtTime = (s) => { if (!s) return ''; try { const d = new Date(s); return d.toLocaleString('vi-VN'); } catch (_) { return s; } };
+                  let html = '<div style="font-weight:600; margin-bottom:8px; color:#4fc3f7;">Assigned</div>';
+                  html += '<div style="padding:4px 0;">Name: ' + (info.name || info.assignee || '—') + '</div>';
+                  html += '<div style="padding:4px 0;">Device ID: ' + (info.device_id || '—') + '</div>';
+                  html += '<div style="padding:4px 0; color:#9e9e9e;">Updated: ' + fmtTime(info.updated_at) + '</div>';
+                  sessionAssigneeTooltip.innerHTML = html;
+              }
+          } catch (err) {
+              sessionAssigneeTooltip.innerHTML = '<div style="color:#f44336;">Không tải được</div>';
+          }
+      }
+      function hideSessionAssigneeTooltip() {
+          if (sessionAssigneeTooltip) {
+              sessionAssigneeTooltip.remove();
+              sessionAssigneeTooltip = null;
           }
       }
       
