@@ -8852,7 +8852,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await initTrackingBrowser(tracker);
                 console.log(`🚀 Tracking browser launched for ${role} role`);
             } else {
-                // ADMIN and VALIDATE: broadcast ai_tools list -> user picks tool -> view tool -> loadSessionData -> initTrackingBrowser -> loadSessionAttachPage
+                // ADMIN and VALIDATE: broadcast ai_tools list -> user picks tool -> view tool -> chỉ loadSessionData (không mở tracking browser)
                 const toolsRes = await getAiToolsListHandler();
                 const tools = (toolsRes.data || []);
                 await tracker._broadcast({ type: 'show_admin_ai_tools', tools });
@@ -8895,7 +8895,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     };
 
     /**
-     * ADMIN: Open existing session for ai_tool or create new one (launch tracking browser if needed).
+     * ADMIN/VALIDATE: Mở tool từ danh sách ai_tool — chỉ load session data và hiển thị panel log, không mở tracking browser.
+     * DRAW (nếu gọi): mở session hoặc startTracking, có thể launch tracking browser.
      * @param {string} toolCode - AI tool code
      * @returns {Promise<{ success: boolean, error?: string }>}
      */
@@ -8948,7 +8949,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // no sessions dir
             }
 
-            // Load session data first (panel log shows before tracking browser opens)
+            // ADMIN/VALIDATE: chỉ load session data và hiển thị panel log, không mở tracking browser
+            const isAdminOrValidate = accountRole === 'ADMIN' || accountRole === 'VALIDATE';
+            if (isAdminOrValidate) {
+                if (allSessions.length > 0) {
+                    await tracker.loadSessionData(allSessions[0].folder);
+                } else {
+                    // Chưa có session: tạo folder + info.json rồi load từ DB (không mở browser)
+                    const ts = Date.now();
+                    await tracker.logger.initLogFile(ts, toolCode, tool.website || '');
+                    await tracker.loadSessionData(tracker.logger.sessionFolder);
+                }
+                await tracker._broadcast({
+                    type: 'current_tool',
+                    toolCode: tool.code,
+                    toolName: tool.toolName || tool.code,
+                    website: tool.website || ''
+                });
+                return { success: true };
+            }
+
+            // DRAW hoặc role khác: giữ flow cũ (load session rồi mở browser nếu cần)
             if (allSessions.length > 0) {
                 await tracker.loadSessionData(allSessions[0].folder);
             }

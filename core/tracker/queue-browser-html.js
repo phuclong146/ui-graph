@@ -4961,7 +4961,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         }
 
-        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> open panel log + content
+        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> panel log + content (không mở tracking browser)
         if (accountInfo && (accountInfo.role === 'ADMIN' || accountInfo.role === 'VALIDATE') && typeof window.getAiToolsList === 'function') {
           window.getAiToolsList().then((res) => {
             if (res && res.success && res.data && res.data.length) {
