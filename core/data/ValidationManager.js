@@ -115,7 +115,8 @@ export class ValidationManager {
                             my_day: entry.my_day,
                             my_session: entry.my_session,
                             my_scene: entry.my_scene,
-                            view_count: typeof v === 'number' ? v : (parseInt(v, 10) || 0)
+                            view_count: typeof v === 'number' ? v : (parseInt(v, 10) || 0),
+                            assignee: entry.assignee ?? null
                         };
                     }
                 } catch (parseErr) {
@@ -147,7 +148,8 @@ export class ValidationManager {
                     my_day: validationData.my_day,
                     my_session: validationData.my_session,
                     my_scene: validationData.my_scene,
-                    view_count: validationData.view_count ?? 0
+                    view_count: validationData.view_count ?? 0,
+                    assignee: validationData.assignee ?? null
                 };
                 lines.push(JSON.stringify(jsonlEntry));
             }
