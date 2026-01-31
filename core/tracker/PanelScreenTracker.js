@@ -177,9 +177,13 @@ export class PanelScreenTracker {
         return await saveResults(this);
     }
 
-    async loadSession(sessionFolder) {
+    /**
+     * Load session data (managers, DB, tree) without using tracking browser. Broadcasts tree_update.
+     * Call loadSessionAttachPage() after initTrackingBrowser to complete.
+     */
+    async loadSessionData(sessionFolder) {
         try {
-            console.log(`Loading session from: ${sessionFolder}`);
+            console.log(`Loading session data from: ${sessionFolder}`);
             
             const { promises: fsp } = await import('fs');
             const path = (await import('path')).default;
@@ -254,19 +258,22 @@ export class PanelScreenTracker {
                 console.error('Failed to upsert session to DB in loadSession:', err);
             }
             
-            // Update bug info from database if role is DRAW
+            // Update bug info and load uigraph_validation from database if role is DRAW
             if (role === 'DRAW') {
                 try {
                      const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                      const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
                      await loader.updateBugInfoInDoingItems();
+                     // Load only uigraph_validation in upsert mode
+                     await loader.loadFromDatabase('DRAW');
+                     console.log(`✅ Loaded uigraph_validation from database for DRAW role`);
                 } catch (err) {
-                    console.error('❌ Failed to update bug info:', err);
+                    console.error('❌ Failed to update bug info or load validation:', err);
                 }
             }
 
-            // Load data from database if role is VALIDATE
-            if (role === 'VALIDATE') {
+            // Load full data from database if role is VALIDATE or ADMIN
+            if (role === 'VALIDATE' || role === 'ADMIN') {
                 try {
                     await this._broadcast({ 
                         type: 'show_loading', 
@@ -275,8 +282,8 @@ export class PanelScreenTracker {
                     
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
-                    await loader.loadFromDatabase();
-                    console.log('✅ Loaded data from database for VALIDATE role');
+                    await loader.loadFromDatabase(role);
+                    console.log(`✅ Loaded full data from database for ${role} role`);
                     
                     await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {
@@ -308,6 +315,36 @@ export class PanelScreenTracker {
             this.validationManager = new ValidationManager(this.sessionFolder, this.myAiToolCode);
             console.log(`[VALIDATION] ValidationManager initialized in loadSession: ${!!this.validationManager}, myAiToolCode: ${this.validationManager?.myAiToolCode}`);
 
+            // Broadcast panel log so queue browser can show it before tracking browser is open
+            await this._broadcast({ type: 'tree_update', data: await this.panelLogManager.buildTreeStructure() });
+
+        } catch (error) {
+            console.error('Load session data error:', error);
+            throw error;
+        }
+    }
+
+    /** Full load: loadSessionData + loadSessionAttachPage. Requires tracker.browser to exist. */
+    async loadSession(sessionFolder) {
+        await this.loadSessionData(sessionFolder);
+        await this.loadSessionAttachPage();
+    }
+
+    /**
+     * Attach tracking page to session: goto URL, setupTracking, set selectedPanelId, broadcast tree_update.
+     * Requires tracker.browser and this.page to exist (call after initTrackingBrowser).
+     */
+    async loadSessionAttachPage() {
+        try {
+            if (!this.sessionFolder) {
+                throw new Error('loadSessionAttachPage: no session loaded (call loadSessionData first)');
+            }
+            const { promises: fsp } = await import('fs');
+            const path = (await import('path')).default;
+            const infoPath = path.join(this.sessionFolder, 'info.json');
+            const infoContent = await fsp.readFile(infoPath, 'utf8');
+            const info = JSON.parse(infoContent);
+
             if (!this._navigationListenerSetup) {
                 await setupNavigationListener(this);
                 this._navigationListenerSetup = true;
@@ -334,7 +371,7 @@ export class PanelScreenTracker {
             
             console.log(`✅ Loaded session: ${info.toolCode} (Click 🔍 Detect Actions to start detection)`);
         } catch (error) {
-            console.error('Load session error:', error);
+            console.error('Load session attach page error:', error);
             throw error;
         }
     }
@@ -475,8 +512,8 @@ export class PanelScreenTracker {
                 console.error('Failed to upsert session to DB in startTracking:', err);
             }
             
-            // Load data from database if role is VALIDATE
-            if (accountRole === 'VALIDATE') {
+            // Load data from database if role is VALIDATE or ADMIN (same source as VALIDATE)
+            if (accountRole === 'VALIDATE' || accountRole === 'ADMIN') {
                 try {
                     await this._broadcast({ 
                         type: 'show_loading', 
@@ -486,7 +523,7 @@ export class PanelScreenTracker {
                     const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                     const loader = new DatabaseLoader(this.sessionFolder, toolCode);
                     await loader.loadFromDatabase();
-                    console.log('✅ Loaded data from database for VALIDATE role');
+                    console.log(`✅ Loaded data from database for ${accountRole} role`);
                     
                     await this._broadcast({ type: 'hide_loading' });
                 } catch (err) {

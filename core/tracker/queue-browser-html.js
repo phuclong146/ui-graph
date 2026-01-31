@@ -79,6 +79,44 @@ export const QUEUE_BROWSER_HTML = `
         width: 4px;
       }
       
+      #admin-ai-tools-sidebar {
+        position: relative;
+      }
+      #admin-ai-tools-resizer {
+        position: absolute;
+        top: 0;
+        right: -6px;
+        width: 12px;
+        height: 100%;
+        cursor: col-resize;
+        background: transparent;
+        z-index: 1001;
+        user-select: none;
+        touch-action: none;
+        pointer-events: auto;
+      }
+      #admin-ai-tools-resizer:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+      #admin-ai-tools-resizer.resizing {
+        background: rgba(0, 0, 0, 0.1);
+      }
+      #admin-ai-tools-resizer::before {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #dee2e6;
+        transform: translateX(-50%);
+      }
+      #admin-ai-tools-resizer:hover::before,
+      #admin-ai-tools-resizer.resizing::before {
+        background: #adb5bd;
+        width: 3px;
+      }
+      
       #panel-tree-container h3 {
         margin: 0 0 10px 0;
         padding: 10px 10px;
@@ -1081,6 +1119,17 @@ export const QUEUE_BROWSER_HTML = `
   </head>
   <body>
     <div id="main-container">
+      <div id="admin-ai-tools-sidebar" style="display:none; width:180px; min-width:180px; max-width:480px; background:linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%); border-right:1px solid #dee2e6; flex-shrink:0; flex-direction:column; overflow:hidden;">
+        <div style="padding:10px 12px; border-bottom:1px solid #dee2e6; display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+          <span style="font-size:13px; font-weight:600; color:#495057;">AI Tools</span>
+          <button id="admin-ai-tools-close-btn" style="background:transparent; border:none; color:#6c757d; cursor:pointer; padding:2px 6px; font-size:16px; line-height:1;" title="Đóng">×</button>
+        </div>
+        <div style="padding:8px; border-bottom:1px solid #dee2e6; flex-shrink:0;">
+          <input type="text" id="admin-ai-tools-filter" placeholder="Lọc theo tên hoặc URL..." style="width:100%; padding:8px 10px; border:1px solid #ced4da; border-radius:6px; background:#fff; color:#212529; font-size:12px; outline:none; box-sizing:border-box;" />
+        </div>
+        <div id="admin-ai-tools-list" style="flex:1; overflow-y:auto; padding:8px; background:#f1f3f5;"></div>
+        <div id="admin-ai-tools-resizer"></div>
+      </div>
       <div id="panel-tree-container">
         <h3>
           <span>Panel Log</span>
@@ -1120,6 +1169,7 @@ export const QUEUE_BROWSER_HTML = `
         View Graph
       </button>
       <button id="validateBtn" style="background:#ff9800; color:white;">✓ Validate</button>
+      <button id="aiToolsBtn" style="display:none; background:#9c27b0; color:white;">AI Tools</button>
       <button id="quitBtn" style="background:#6c757d;">✕ Quit</button>
       <button id="detectActionsGeminiBtn" style="display:none; background:white; color:#007bff; border:1px solid #007bff; padding:3px 6px; font-size:9px;">🤖 Detect Action Backup</button>
     </div>
@@ -1337,8 +1387,7 @@ export const QUEUE_BROWSER_HTML = `
             <button id="roleValidateBtn" style="background:linear-gradient(135deg, #ff9800 0%, #f57c00 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(255,152,0,0.3);">
               VALIDATE
             </button>
-            <!-- Tạm ẩn nút ADMIN -->
-            <button id="roleAdminBtn" style="display:none; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
+            <button id="roleAdminBtn" style="background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; padding:15px 35px; cursor:pointer; font-size:16px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(156,39,176,0.3);">
               ADMIN
             </button>
           </div>
@@ -1353,6 +1402,26 @@ export const QUEUE_BROWSER_HTML = `
               📋 Copy
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminPasswordModal" style="display:none; position:fixed; z-index:20006; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.85); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:400px; min-width:320px; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="text-align:center; margin-bottom:20px;">
+          <div style="font-size:40px; margin-bottom:10px;">🔐</div>
+          <h3 style="margin:0 0 8px 0; font-size:18px; color:#333;">Mật khẩu ADMIN</h3>
+          <p style="margin:0; font-size:13px; color:#666;">Nhập mật khẩu để đăng nhập role ADMIN</p>
+        </div>
+        <input type="password" id="adminPasswordInput" placeholder="Nhập mật khẩu..." style="width:100%; padding:12px 15px; border:2px solid #ddd; border-radius:8px; font-size:14px; margin-bottom:8px; outline:none; box-sizing:border-box;" />
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; font-size:13px; color:#666; cursor:pointer;">
+          <input type="checkbox" id="adminPasswordShowCheckbox" style="cursor:pointer;" />
+          <span>Hiện mật khẩu</span>
+        </label>
+        <p id="adminPasswordError" style="display:none; color:#dc3545; font-size:12px; margin:0 0 12px 0;">Mật khẩu không đúng</p>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="adminPasswordCancelBtn" style="padding:10px 20px; background:#f0f0f0; border:1px solid #ddd; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Hủy</button>
+          <button id="adminPasswordOkBtn" style="padding:10px 20px; background:linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">OK</button>
         </div>
       </div>
     </div>
@@ -1773,7 +1842,7 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
       
-      // Panel log display mode: 'log' or 'tree'
+      // Panel log display mode: 'log', 'tree', or 'validation'
       let panelLogDisplayMode = getLocalStorage('panel-log-display-mode') || 'log';
       let isDrawingPanel = false;
       let isGeminiDetecting = false;
@@ -1796,15 +1865,14 @@ export const QUEUE_BROWSER_HTML = `
         const evt = JSON.parse(msg.data);
         
         if (evt.type === 'tree_update') {
-          // If we're in tree mode, reload data with tree mode
+          // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
-          if (panelLogDisplayMode === 'tree' && window.getPanelTree) {
+          if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
             window.getPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
             }).catch(err => {
-              console.error('Failed to reload tree with tree mode:', err);
-              // Fallback to received data
+              console.error('Failed to reload tree with current mode:', err);
               panelTreeData = evt.data || [];
               renderPanelTree();
             });
@@ -1831,8 +1899,8 @@ export const QUEUE_BROWSER_HTML = `
             isGeminiDetecting = evt.gemini_detecting;
             updateDetectCaptureButtonsState();
           }
-          // Branch based on role: VALIDATE role with ACTION uses handlePanelSelectedForValidate
-          if (currentRole === 'VALIDATE' && evt.item_category === 'ACTION') {
+          // Branch based on role: VALIDATE and ADMIN with ACTION use handlePanelSelectedForValidate (same panel log + content)
+          if ((currentRole === 'VALIDATE' || currentRole === 'ADMIN') && evt.item_category === 'ACTION') {
             handlePanelSelectedForValidate(evt);
           } else {
             handlePanelSelected(evt);
@@ -2089,6 +2157,13 @@ export const QUEUE_BROWSER_HTML = `
 
         if (evt.type === 'hide_role_selection') {
           hideRoleSelectionDialog();
+          hideAdminAiToolsList();
+          return;
+        }
+
+        if (evt.type === 'show_admin_ai_tools') {
+          const tools = evt.tools || [];
+          showAdminAiToolsList(tools);
           return;
         }
 
@@ -3363,21 +3438,18 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       // Graph Panel Log Tree functions
-      // Display mode for Graph Panel Log: 'log' or 'tree'
+      // Display mode for Graph Panel Log: 'log', 'tree', or 'validation'
       let graphPanelLogDisplayMode = getLocalStorage('graph-panel-log-display-mode') || 'log';
       
       async function loadGraphPanelTree() {
-        // Update button icon based on saved mode
         updateGraphShowModeButton();
         
-        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
-        if (graphPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+        if ((graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            graphPanelTreeData = await window.getPanelTree('tree');
+            graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
             renderGraphPanelTree();
           } catch (err) {
-            console.error('Failed to load graph panel tree with tree mode:', err);
-            // Fallback to provided data
+            console.error('Failed to load graph panel tree with current mode:', err);
             if (window.graphPanelTreeData) {
               graphPanelTreeData = window.graphPanelTreeData;
               renderGraphPanelTree();
@@ -3392,7 +3464,7 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.loadGraphPanelTree = loadGraphPanelTree;
       
-      // Update graph panel log showMode button icon
+      // Update graph panel log showMode button icon (log -> tree -> validation -> log)
       function updateGraphShowModeButton() {
         const showModeBtn = document.getElementById('graph-panel-log-show-mode-btn');
         if (!showModeBtn) return;
@@ -3400,24 +3472,28 @@ export const QUEUE_BROWSER_HTML = `
         if (graphPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (graphPanelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<span style="font-size: 20px; line-height: 1;">🗹</span>';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle graph panel log display mode
+      // Toggle graph panel log display mode: log -> tree -> validation -> log
       async function toggleGraphPanelLogDisplayMode() {
-        graphPanelLogDisplayMode = graphPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (graphPanelLogDisplayMode === 'log') graphPanelLogDisplayMode = 'tree';
+        else if (graphPanelLogDisplayMode === 'tree') graphPanelLogDisplayMode = 'validation';
+        else graphPanelLogDisplayMode = 'log';
         setLocalStorage('graph-panel-log-display-mode', graphPanelLogDisplayMode);
         updateGraphShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           try {
             graphPanelTreeData = await window.getPanelTree(graphPanelLogDisplayMode);
             renderGraphPanelTree();
-            const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            const modeText = graphPanelLogDisplayMode === 'tree' ? 'Tree' : (graphPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Graph Panel: Switched to ' + modeText + ' Mode');
           } catch (err) {
             console.error('Failed to reload graph panel tree:', err);
@@ -3443,28 +3519,23 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       function createGraphTreeNode(node, depth) {
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
-        nodeDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
         
-        // Add padding-left for child panels (20px per level)
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'graph-tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -3478,18 +3549,41 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           const isIncomplete = node.draw_flow_state !== null && 
                               node.draw_flow_state !== undefined && 
                               node.draw_flow_state !== 'completed';
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
+        } else {
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -3520,6 +3614,20 @@ export const QUEUE_BROWSER_HTML = `
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
         
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
+        
         if (isIncomplete) {
           const badge = document.createElement('span');
           badge.className = 'graph-tree-incomplete-badge';
@@ -3528,7 +3636,6 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        // Check both direct property and metadata property for compatibility
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
@@ -3539,19 +3646,46 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
             bugIcon.textContent = '🐞';
-            
-            // Get bug info from direct property or metadata
             const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
             const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
-
-            bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, bugNote, bugInfo);
-            });
-            bugIcon.addEventListener('mouseleave', () => {
-                hideBugTooltip();
-            });
-            
+            bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
+            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
+        }
+        
+        // Important action (modality_stacks) - same as main panel log
+        if (node.item_category === 'ACTION') {
+            const hasModalityStacks = node.modality_stacks && Array.isArray(node.modality_stacks) && node.modality_stacks.length > 0;
+            if (hasModalityStacks) {
+                const importantIcon = document.createElement('span');
+                importantIcon.style.marginLeft = '6px';
+                importantIcon.style.cursor = 'help';
+                importantIcon.style.display = 'inline-block';
+                importantIcon.style.verticalAlign = 'middle';
+                importantIcon.style.width = '16px';
+                importantIcon.style.height = '16px';
+                importantIcon.style.color = '#ffc107';
+                importantIcon.textContent = '⭐';
+                importantIcon.title = 'Important Action';
+                importantIcon.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'graph-modality-stacks-tooltip';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                    if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
+                    if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
+                        node.modality_stacks_info.forEach((ms) => {
+                            tooltipContent += '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);"><div style="font-weight: 600; color: #4fc3f7;">' + (ms.name || 'N/A') + '</div><div style="margin-top: 4px; color: #ccc;">' + (ms.description || 'N/A') + '</div></div>';
+                        });
+                    } else {
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + (node.modality_stacks || []).join(', ') + '</div>';
+                    }
+                    tooltip.innerHTML = tooltipContent;
+                    document.body.appendChild(tooltip);
+                });
+                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('graph-modality-stacks-tooltip'); if (t) t.remove(); });
+                label.appendChild(importantIcon);
+            }
         }
         
         contentDiv.appendChild(label);
@@ -3567,9 +3701,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (graphExpandedPanels.has(node.panel_id)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || graphExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNodeExpandAll) graphExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -3583,15 +3720,14 @@ export const QUEUE_BROWSER_HTML = `
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              graphExpandedPanels.add(node.panel_id);
+              graphExpandedPanels.add(expandKey);
             } else {
-              graphExpandedPanels.delete(node.panel_id);
+              graphExpandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', async () => {
-          // Remove selected class from all nodes
           const treeContainer = document.getElementById('graphPanelLogTree');
           if (treeContainer) {
             treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
@@ -3600,6 +3736,7 @@ export const QUEUE_BROWSER_HTML = `
           }
           contentDiv.classList.add('selected');
           
+          if (node.panel_id == null) return;
           if (node.item_category === 'PANEL') {
             // Find node in graph and show panel info
             if (window.graphNodesData) {
@@ -3630,7 +3767,7 @@ export const QUEUE_BROWSER_HTML = `
       let videoValidationPanelTreeData = [];
       let videoValidationExpandedPanels = new Set();
       
-      // Display mode for Video Validation Panel Log: 'log' or 'tree'
+      // Display mode for Video Validation Panel Log: 'log', 'tree', or 'validation'
       let videoValidationPanelLogDisplayMode = getLocalStorage('video-validation-panel-log-display-mode') || 'log';
 
       function renderPanelTreeForValidationInternal(panelTreeData, treeContainer) {
@@ -3644,19 +3781,15 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
       
-      // Wrapper function that checks saved mode and reloads if needed
       async function renderPanelTreeForValidation(panelTreeData, treeContainer) {
-        // Update button icon based on saved mode
         updateVideoValidationShowModeButton();
         
-        // If saved mode is 'tree', reload with tree mode; otherwise use provided data
-        if (videoValidationPanelLogDisplayMode === 'tree' && window.getPanelTree) {
+        if ((videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') && window.getPanelTree) {
           try {
-            const treeData = await window.getPanelTree('tree');
+            const treeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
             renderPanelTreeForValidationInternal(treeData, treeContainer);
           } catch (err) {
-            console.error('Failed to load video validation panel tree with tree mode:', err);
-            // Fallback to provided data
+            console.error('Failed to load video validation panel tree with current mode:', err);
             renderPanelTreeForValidationInternal(panelTreeData, treeContainer);
           }
         } else {
@@ -3667,7 +3800,7 @@ export const QUEUE_BROWSER_HTML = `
       // Expose to window for access from evaluate context
       window.renderPanelTreeForValidation = renderPanelTreeForValidation;
       
-      // Update video validation panel log showMode button icon
+      // Update video validation panel log showMode button icon (log -> tree -> validation -> log)
       function updateVideoValidationShowModeButton() {
         const showModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
         if (!showModeBtn) return;
@@ -3675,19 +3808,23 @@ export const QUEUE_BROWSER_HTML = `
         if (videoValidationPanelLogDisplayMode === 'log') {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (videoValidationPanelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<span style="font-size: 20px; line-height: 1;">🗹</span>';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle video validation panel log display mode
+      // Toggle video validation panel log display mode: log -> tree -> validation -> log
       async function toggleVideoValidationPanelLogDisplayMode() {
-        videoValidationPanelLogDisplayMode = videoValidationPanelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (videoValidationPanelLogDisplayMode === 'log') videoValidationPanelLogDisplayMode = 'tree';
+        else if (videoValidationPanelLogDisplayMode === 'tree') videoValidationPanelLogDisplayMode = 'validation';
+        else videoValidationPanelLogDisplayMode = 'log';
         setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
         updateVideoValidationShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           try {
             const panelTreeData = await window.getPanelTree(videoValidationPanelLogDisplayMode);
@@ -3695,7 +3832,7 @@ export const QUEUE_BROWSER_HTML = `
             if (treeContainer) {
               renderPanelTreeForValidation(panelTreeData, treeContainer);
             }
-            const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+            const modeText = videoValidationPanelLogDisplayMode === 'tree' ? 'Tree' : (videoValidationPanelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
             if (window.showToast) window.showToast('✅ Video Validation: Switched to ' + modeText + ' Mode');
           } catch (err) {
             console.error('Failed to reload video validation panel tree:', err);
@@ -3809,28 +3946,23 @@ export const QUEUE_BROWSER_HTML = `
       }
 
       function createVideoValidationTreeNode(node, depth) {
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'graph-tree-node';
-        nodeDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) nodeDiv.setAttribute('data-panel-id', node.panel_id);
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'graph-tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
+        if (node.panel_id != null) contentDiv.setAttribute('data-panel-id', node.panel_id);
         
-        // Add padding-left for child panels (20px per level)
         if (depth > 0) {
           contentDiv.style.paddingLeft = (20 * depth) + 'px';
         }
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'graph-tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -3844,18 +3976,41 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           const isIncomplete = node.draw_flow_state !== null && 
                               node.draw_flow_state !== undefined && 
                               node.draw_flow_state !== 'completed';
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
+        } else {
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -3886,6 +4041,20 @@ export const QUEUE_BROWSER_HTML = `
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
         
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
+        
         if (isIncomplete) {
           const badge = document.createElement('span');
           badge.className = 'graph-tree-incomplete-badge';
@@ -3894,7 +4063,6 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         // Add bug icon for actions with bug_flag (after name)
-        // Check both direct property and metadata property for compatibility
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
@@ -3905,19 +4073,46 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
             bugIcon.textContent = '🐞';
-            
-            // Get bug info from direct property or metadata
             const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
             const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
-
-            bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, bugNote, bugInfo);
-            });
-            bugIcon.addEventListener('mouseleave', () => {
-                hideBugTooltip();
-            });
-            
+            bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
+            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
+        }
+        
+        // Important action (modality_stacks) - same as main panel log
+        if (node.item_category === 'ACTION') {
+            const hasModalityStacks = node.modality_stacks && Array.isArray(node.modality_stacks) && node.modality_stacks.length > 0;
+            if (hasModalityStacks) {
+                const importantIcon = document.createElement('span');
+                importantIcon.style.marginLeft = '6px';
+                importantIcon.style.cursor = 'help';
+                importantIcon.style.display = 'inline-block';
+                importantIcon.style.verticalAlign = 'middle';
+                importantIcon.style.width = '16px';
+                importantIcon.style.height = '16px';
+                importantIcon.style.color = '#ffc107';
+                importantIcon.textContent = '⭐';
+                importantIcon.title = 'Important Action';
+                importantIcon.addEventListener('mouseenter', (e) => {
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'video-validation-modality-tooltip';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
+                    if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
+                    if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
+                        node.modality_stacks_info.forEach((ms) => {
+                            tooltipContent += '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);"><div style="font-weight: 600; color: #4fc3f7;">' + (ms.name || 'N/A') + '</div><div style="margin-top: 4px; color: #ccc;">' + (ms.description || 'N/A') + '</div></div>';
+                        });
+                    } else {
+                        tooltipContent += '<div style="margin-top: 8px; color: #ccc;">Modality stacks: ' + (node.modality_stacks || []).join(', ') + '</div>';
+                    }
+                    tooltip.innerHTML = tooltipContent;
+                    document.body.appendChild(tooltip);
+                });
+                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('video-validation-modality-tooltip'); if (t) t.remove(); });
+                label.appendChild(importantIcon);
+            }
         }
         
         contentDiv.appendChild(label);
@@ -3933,9 +4128,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (videoValidationExpandedPanels.has(node.panel_id)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || videoValidationExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNodeExpandAll) videoValidationExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -3949,15 +4147,14 @@ export const QUEUE_BROWSER_HTML = `
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              videoValidationExpandedPanels.add(node.panel_id);
+              videoValidationExpandedPanels.add(expandKey);
             } else {
-              videoValidationExpandedPanels.delete(node.panel_id);
+              videoValidationExpandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', async () => {
-          // Remove selected class from all nodes
           const treeContainer = document.getElementById('videoValidationPanelLogTree');
           if (treeContainer) {
             treeContainer.querySelectorAll('.graph-tree-node-content').forEach(el => {
@@ -3966,6 +4163,7 @@ export const QUEUE_BROWSER_HTML = `
           }
           contentDiv.classList.add('selected');
           
+          if (node.panel_id == null) return;
           if (node.item_category === 'ACTION') {
             // Load video URLs for this action
             const stepData = window.videoValidationStepData || [];
@@ -4607,24 +4805,27 @@ Bạn có chắc chắn muốn rollback?\`;
         const graphRaiseBugBtn = document.getElementById('graphRaiseBugBtn');
         const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
         
-        if (role === 'VALIDATE') {
-          // Hide all buttons except Quit when role is VALIDATE
+        const aiToolsBtn = document.getElementById('aiToolsBtn');
+        if (aiToolsBtn) {
+          aiToolsBtn.style.display = (role === 'ADMIN' || role === 'VALIDATE') ? 'inline-block' : 'none';
+        }
+
+        if (role === 'VALIDATE' || role === 'ADMIN') {
+          // ADMIN and VALIDATE: only show AI Tools and Quit, hide all other buttons
           if (controlsDiv) {
             const allButtons = controlsDiv.querySelectorAll('button');
             allButtons.forEach(btn => {
-              if (btn.id !== 'quitBtn') {
-                btn.style.display = 'none';
-              } else {
+              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
                 btn.style.display = 'inline-block';
+              } else {
+                btn.style.display = 'none';
               }
             });
           }
-          
-          // Ensure RaiseBug buttons are visible for VALIDATE role
-          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'flex';
-          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'flex';
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         } else {
-          // For other roles, use the original logic
+          // DRAW: show all buttons except AI Tools
           const importCookiesBtn = document.getElementById('importCookiesBtn');
           const drawPanelAndDetectActionsBtn = document.getElementById('drawPanelAndDetectActionsBtn');
           const saveBtn = document.getElementById('saveBtn');
@@ -4632,30 +4833,16 @@ Bạn có chắc chắn muốn rollback?\`;
           const viewGraphBtn = document.getElementById('viewGraphBtn');
           const validateBtn = document.getElementById('validateBtn');
           const quitBtn = document.getElementById('quitBtn');
-          
-          if (role === 'DRAW') {
-            // Show all buttons for DRAW role
-            if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
-            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none'; // Keep original display state
-            if (saveBtn) saveBtn.style.display = 'inline-block';
-            if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
-            if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
-            if (validateBtn) validateBtn.style.display = 'inline-block';
-            if (quitBtn) quitBtn.style.display = 'inline-block';
-            
-            // Ensure RaiseBug buttons are HIDDEN for DRAW role
-            if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
-            if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
-          } else {
-            // Hide buttons for non-DRAW roles (but keep Quit visible)
-            if (importCookiesBtn) importCookiesBtn.style.display = 'none';
-            if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
-            if (saveBtn) saveBtn.style.display = 'none';
-            if (checkpointBtn) checkpointBtn.style.display = 'none';
-            if (viewGraphBtn) viewGraphBtn.style.display = 'none';
-            if (validateBtn) validateBtn.style.display = 'none';
-            if (quitBtn) quitBtn.style.display = 'inline-block';
-          }
+          if (importCookiesBtn) importCookiesBtn.style.display = 'inline-block';
+          if (drawPanelAndDetectActionsBtn) drawPanelAndDetectActionsBtn.style.display = 'none';
+          if (saveBtn) saveBtn.style.display = 'inline-block';
+          if (checkpointBtn) checkpointBtn.style.display = 'inline-block';
+          if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
+          if (validateBtn) validateBtn.style.display = 'inline-block';
+          if (quitBtn) quitBtn.style.display = 'inline-block';
+          if (aiToolsBtn) aiToolsBtn.style.display = 'none';
+          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
+          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         }
       };
 
@@ -4708,6 +4895,30 @@ Bạn có chắc chắn muốn rollback?\`;
         if (accountInfo && accountInfo.role) {
           currentRole = accountInfo.role;
           updateButtonsVisibility(accountInfo.role);
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
+            panelLogDisplayMode = 'validation';
+            setLocalStorage('panel-log-display-mode', 'validation');
+            updateShowModeButton();
+          }
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
+            graphPanelLogDisplayMode = 'validation';
+            setLocalStorage('graph-panel-log-display-mode', 'validation');
+            if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
+          }
+          if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
+            videoValidationPanelLogDisplayMode = 'validation';
+            setLocalStorage('video-validation-panel-log-display-mode', 'validation');
+            if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
+          }
+        }
+
+        // ADMIN and VALIDATE: load and show ai_tools list so they can pick tool -> view tool -> open panel log + content
+        if (accountInfo && (accountInfo.role === 'ADMIN' || accountInfo.role === 'VALIDATE') && typeof window.getAiToolsList === 'function') {
+          window.getAiToolsList().then((res) => {
+            if (res && res.success && res.data && res.data.length) {
+              showAdminAiToolsList(res.data);
+            }
+          }).catch(() => {});
         }
         
         roleSelectionModal.style.display = 'flex';
@@ -4730,6 +4941,186 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         }
       };
+
+      const adminAiToolsSidebar = document.getElementById('admin-ai-tools-sidebar');
+      const adminAiToolsListEl = document.getElementById('admin-ai-tools-list');
+      const adminAiToolsFilterInput = document.getElementById('admin-ai-tools-filter');
+      let adminAiToolsFullList = [];
+
+      const renderAdminAiToolsFiltered = (filterText) => {
+        if (!adminAiToolsListEl) return;
+        const q = (filterText || '').trim().toLowerCase();
+        const filtered = q
+          ? adminAiToolsFullList.filter((t) => {
+              const name = (t.toolName || t.code || '').toLowerCase();
+              const code = (t.code || '').toLowerCase();
+              const website = (t.website || '').toLowerCase();
+              return name.includes(q) || code.includes(q) || website.includes(q);
+            })
+          : adminAiToolsFullList;
+        adminAiToolsListEl.innerHTML = '';
+        if (filtered.length === 0) {
+          adminAiToolsListEl.innerHTML = '<div style="padding:12px; color:#6c757d; font-size:12px;">' + (q ? 'Không có kết quả phù hợp' : 'Chưa có ai_tool nào') + '</div>';
+          return;
+        }
+        const viewIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:8px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        filtered.forEach((t) => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:10px 12px; margin-bottom:4px; background:#fff; border:1px solid #e9ecef; border-radius:8px; cursor:pointer; font-size:12px; color:#495057; transition:background 0.2s ease; position:relative;';
+          item.textContent = t.toolName || t.code || t.website;
+          item.title = (t.toolName || t.code) + (t.website ? ' - ' + t.website : '');
+          item.dataset.toolCode = t.code;
+          const showToolContextMenu = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const existing = document.getElementById('admin-ai-tool-context-menu');
+            if (existing) existing.remove();
+            const menu = document.createElement('div');
+            menu.id = 'admin-ai-tool-context-menu';
+            menu.style.cssText = 'position:fixed; background:#fff; border:1px solid #dee2e6; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:20010; padding:4px 0; min-width:160px;';
+            const x = e.clientX;
+            const y = e.clientY;
+            const gap = 4;
+            menu.style.left = x + gap + 'px';
+            menu.style.top = y + gap + 'px';
+            const viewToolBtn = document.createElement('button');
+            viewToolBtn.style.cssText = 'display:flex; align-items:center; width:100%; padding:10px 14px; border:none; background:transparent; color:#495057; text-align:left; cursor:pointer; font-size:13px; border-radius:4px; box-sizing:border-box;';
+            viewToolBtn.innerHTML = viewIconSvg + '<span>View tool</span>';
+            viewToolBtn.addEventListener('mouseenter', () => { viewToolBtn.style.background = '#f8f9fa'; });
+            viewToolBtn.addEventListener('mouseleave', () => { viewToolBtn.style.background = 'transparent'; });
+            viewToolBtn.addEventListener('click', async (ev) => {
+              ev.stopPropagation();
+              menu.remove();
+              if (typeof window.adminOpenOrCreateSession !== 'function') return;
+              item.style.opacity = '0.7';
+              item.style.pointerEvents = 'none';
+              try {
+                const res = await window.adminOpenOrCreateSession(t.code);
+                if (res && !res.success && res.error) {
+                  if (window.broadcastToast) window.broadcastToast(res.error, 'error');
+                }
+              } finally {
+                item.style.opacity = '';
+                item.style.pointerEvents = '';
+              }
+            });
+            menu.appendChild(viewToolBtn);
+            document.body.appendChild(menu);
+            const closeMenu = () => {
+              const m = document.getElementById('admin-ai-tool-context-menu');
+              if (m) m.remove();
+              document.removeEventListener('click', closeMenu);
+              document.removeEventListener('contextmenu', closeMenu);
+            };
+            setTimeout(() => {
+              document.addEventListener('click', closeMenu);
+              document.addEventListener('contextmenu', closeMenu);
+            }, 0);
+          };
+          item.addEventListener('click', showToolContextMenu);
+          item.addEventListener('contextmenu', showToolContextMenu);
+          item.addEventListener('mouseenter', () => { item.style.background = '#e9ecef'; });
+          item.addEventListener('mouseleave', () => { item.style.background = '#fff'; });
+          adminAiToolsListEl.appendChild(item);
+        });
+      };
+
+      const showAdminAiToolsList = (tools) => {
+        if (!adminAiToolsSidebar || !adminAiToolsListEl) return;
+        adminAiToolsFullList = Array.isArray(tools) ? tools : [];
+        if (adminAiToolsFilterInput) adminAiToolsFilterInput.value = '';
+        renderAdminAiToolsFiltered('');
+        adminAiToolsSidebar.style.display = 'flex';
+        adminAiToolsSidebar.style.flexDirection = 'column';
+      };
+
+      const hideAdminAiToolsList = () => {
+        if (adminAiToolsSidebar) adminAiToolsSidebar.style.display = 'none';
+        const menu = document.getElementById('admin-ai-tool-context-menu');
+        if (menu) menu.remove();
+      };
+
+      const toggleAdminAiToolsSidebar = async () => {
+        if (adminAiToolsSidebar.style.display === 'flex') {
+          hideAdminAiToolsList();
+          return;
+        }
+        if (adminAiToolsFullList.length === 0 && typeof window.getAiToolsList === 'function') {
+          try {
+            const res = await window.getAiToolsList();
+            if (res && res.success && res.data) showAdminAiToolsList(res.data);
+            else showAdminAiToolsList([]);
+          } catch (_) {
+            showAdminAiToolsList([]);
+          }
+        } else {
+          adminAiToolsSidebar.style.display = 'flex';
+          adminAiToolsSidebar.style.flexDirection = 'column';
+          renderAdminAiToolsFiltered(adminAiToolsFilterInput ? adminAiToolsFilterInput.value : '');
+        }
+      };
+
+      if (adminAiToolsFilterInput) {
+        adminAiToolsFilterInput.addEventListener('input', () => {
+          renderAdminAiToolsFiltered(adminAiToolsFilterInput.value);
+        });
+      }
+      const adminAiToolsCloseBtn = document.getElementById('admin-ai-tools-close-btn');
+      if (adminAiToolsCloseBtn) {
+        adminAiToolsCloseBtn.addEventListener('click', () => hideAdminAiToolsList());
+      }
+      const aiToolsBtn = document.getElementById('aiToolsBtn');
+      if (aiToolsBtn) {
+        aiToolsBtn.addEventListener('click', () => toggleAdminAiToolsSidebar());
+      }
+
+      (function setupAdminAiToolsResizer() {
+        const sidebar = document.getElementById('admin-ai-tools-sidebar');
+        const resizer = document.getElementById('admin-ai-tools-resizer');
+        if (!sidebar || !resizer) return;
+        const MIN_WIDTH = 180;
+        const MAX_WIDTH = 520;
+        let aiToolsResizing = false;
+        let aiToolsStartX = 0;
+        let aiToolsStartWidth = 0;
+        try {
+          const saved = localStorage.getItem('admin-ai-tools-sidebar-width');
+          if (saved) {
+            const w = parseInt(saved, 10);
+            if (w >= MIN_WIDTH && w <= MAX_WIDTH) sidebar.style.width = w + 'px';
+          }
+        } catch (_) {}
+        const onMove = (e) => {
+          if (!aiToolsResizing) return;
+          const diff = e.clientX - aiToolsStartX;
+          let newWidth = aiToolsStartWidth + diff;
+          newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth));
+          sidebar.style.width = newWidth + 'px';
+        };
+        const onUp = () => {
+          if (!aiToolsResizing) return;
+          aiToolsResizing = false;
+          resizer.classList.remove('resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          try {
+            localStorage.setItem('admin-ai-tools-sidebar-width', String(sidebar.offsetWidth));
+          } catch (_) {}
+        };
+        resizer.addEventListener('mousedown', (e) => {
+          aiToolsResizing = true;
+          aiToolsStartX = e.clientX;
+          aiToolsStartWidth = sidebar.offsetWidth;
+          resizer.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+          e.preventDefault();
+        });
+      })();
 
       // Change name button handler - toggles between edit mode and view mode
       if (changeNameBtn) {
@@ -4914,6 +5305,22 @@ Bạn có chắc chắn muốn rollback?\`;
         // Update currentRole for panel_selected handler
         currentRole = role;
         
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && panelLogDisplayMode === 'log') {
+          panelLogDisplayMode = 'validation';
+          setLocalStorage('panel-log-display-mode', 'validation');
+          updateShowModeButton();
+        }
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && graphPanelLogDisplayMode === 'log') {
+          graphPanelLogDisplayMode = 'validation';
+          setLocalStorage('graph-panel-log-display-mode', 'validation');
+          if (typeof updateGraphShowModeButton === 'function') updateGraphShowModeButton();
+        }
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && videoValidationPanelLogDisplayMode === 'log') {
+          videoValidationPanelLogDisplayMode = 'validation';
+          setLocalStorage('video-validation-panel-log-display-mode', 'validation');
+          if (typeof updateVideoValidationShowModeButton === 'function') updateVideoValidationShowModeButton();
+        }
+        
         return true;
       };
 
@@ -4930,9 +5337,81 @@ Bạn có chắc chắn muốn rollback?\`;
       }
 
       const roleAdminBtn = document.getElementById('roleAdminBtn');
+      const adminPasswordModal = document.getElementById('adminPasswordModal');
+      const adminPasswordInput = document.getElementById('adminPasswordInput');
+      const adminPasswordError = document.getElementById('adminPasswordError');
+      const adminPasswordOkBtn = document.getElementById('adminPasswordOkBtn');
+      const adminPasswordCancelBtn = document.getElementById('adminPasswordCancelBtn');
+
+      const adminPasswordShowCheckbox = document.getElementById('adminPasswordShowCheckbox');
+      if (adminPasswordShowCheckbox && adminPasswordInput) {
+        adminPasswordShowCheckbox.addEventListener('change', () => {
+          adminPasswordInput.type = adminPasswordShowCheckbox.checked ? 'text' : 'password';
+        });
+      }
+
+      const showAdminPasswordModal = () => {
+        if (adminPasswordModal) {
+          adminPasswordModal.style.display = 'flex';
+          if (adminPasswordInput) {
+            adminPasswordInput.value = '';
+            adminPasswordInput.type = 'password';
+            adminPasswordInput.focus();
+          }
+          if (adminPasswordShowCheckbox) adminPasswordShowCheckbox.checked = false;
+          if (adminPasswordError) adminPasswordError.style.display = 'none';
+        }
+      };
+
+      const hideAdminPasswordModal = () => {
+        if (adminPasswordModal) adminPasswordModal.style.display = 'none';
+      };
+
       if (roleAdminBtn) {
-        roleAdminBtn.addEventListener('click', async () => {
-          await validateAndSaveRole('ADMIN');
+        roleAdminBtn.addEventListener('click', () => {
+          showAdminPasswordModal();
+        });
+      }
+
+      if (adminPasswordOkBtn && adminPasswordInput) {
+        const tryAdminLogin = async () => {
+          const pass = adminPasswordInput.value.trim();
+          if (!pass) {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Vui lòng nhập mật khẩu';
+              adminPasswordError.style.display = 'block';
+            }
+            return;
+          }
+          if (!window.validateAdminPassword) {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Lỗi xác thực';
+              adminPasswordError.style.display = 'block';
+            }
+            return;
+          }
+          const ok = await window.validateAdminPassword(pass);
+          if (ok) {
+            hideAdminPasswordModal();
+            await validateAndSaveRole('ADMIN');
+          } else {
+            if (adminPasswordError) {
+              adminPasswordError.textContent = 'Mật khẩu không đúng';
+              adminPasswordError.style.display = 'block';
+            }
+            adminPasswordInput.value = '';
+            adminPasswordInput.focus();
+          }
+        };
+        adminPasswordOkBtn.addEventListener('click', tryAdminLogin);
+        adminPasswordInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') tryAdminLogin();
+        });
+      }
+
+      if (adminPasswordCancelBtn) {
+        adminPasswordCancelBtn.addEventListener('click', () => {
+          hideAdminPasswordModal();
         });
       }
 
@@ -5047,11 +5526,14 @@ Bạn có chắc chắn muốn rollback?\`;
       function createTreeNode(node, depth) {
         const nodeDiv = document.createElement('div');
         nodeDiv.className = 'tree-node';
+        const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         
         const contentDiv = document.createElement('div');
         contentDiv.className = 'tree-node-content';
-        contentDiv.setAttribute('data-panel-id', node.panel_id);
-        if (selectedPanelId === node.panel_id) {
+        if (node.panel_id != null) {
+          contentDiv.setAttribute('data-panel-id', node.panel_id);
+        }
+        if (node.panel_id && selectedPanelId === node.panel_id) {
           contentDiv.classList.add('selected');
         }
         
@@ -5062,13 +5544,8 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const expandIcon = document.createElement('span');
         expandIcon.className = 'tree-expand';
-        if (node.item_category === 'PANEL') {
-          if (node.children && node.children.length > 0) {
-            expandIcon.textContent = '▶';
-          } else {
-            expandIcon.textContent = '';
-            expandIcon.style.visibility = 'hidden';
-          }
+        if (node.children && node.children.length > 0) {
+          expandIcon.textContent = '▶';
         } else {
           expandIcon.textContent = '';
           expandIcon.style.visibility = 'hidden';
@@ -5082,6 +5559,9 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           // Check if panel is incomplete
           const isIncomplete = node.draw_flow_state !== null && 
@@ -5089,14 +5569,35 @@ Bạn có chắc chắn muốn rollback?\`;
                               node.draw_flow_state !== 'completed';
           // Panel icons: màu vàng/cam nếu chưa hoàn tất, xanh lục nếu đã hoàn tất
           dotColor = isIncomplete ? '#ff9800' : '#4caf50';
-        } else {
+        } else if (node.item_category === 'ACTION') {
           // Action icons: đỏ nếu có intersection, xanh nếu không
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
+        } else {
+          // Other validation tree nodes (snapshot)
+          dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -5130,6 +5631,20 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
+        
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
         
         if (isIncomplete) {
           // Add badge after name
@@ -5240,10 +5755,6 @@ Bạn có chắc chắn muốn rollback?\`;
                 });
                 
                 label.appendChild(importantIcon);
-                
-                // Add border highlight to contentDiv for important actions
-                contentDiv.style.borderLeft = '3px solid #ffc107';
-                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
             } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
                 // Add tooltip for actions with empty modality_stacks array
                 label.addEventListener('mouseenter', (e) => {
@@ -5287,9 +5798,12 @@ Bạn có chắc chắn muốn rollback?\`;
             childrenDiv.classList.add('level-2');
           }
           
-          if (expandedPanels.has(node.panel_id)) {
+          // Auto-expand day + session only; scene/snapshot collapsed by default, unless previously expanded
+          const isValidationNodeExpandAll = node.type === 'day' || node.type === 'session';
+          if (isValidationNodeExpandAll || expandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNodeExpandAll) expandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -5303,23 +5817,24 @@ Bạn có chắc chắn muốn rollback?\`;
             expandIcon.textContent = childrenDiv.classList.contains('expanded') ? '▼' : '▶';
             
             if (childrenDiv.classList.contains('expanded')) {
-              expandedPanels.add(node.panel_id);
+              expandedPanels.add(expandKey);
             } else {
-              expandedPanels.delete(node.panel_id);
+              expandedPanels.delete(expandKey);
             }
           });
         }
         
         contentDiv.addEventListener('click', () => {
-          
-          if (window.selectPanel) {
+          if (node.panel_id != null && window.selectPanel) {
             window.selectPanel(node.panel_id);
           }
         });
         
         contentDiv.addEventListener('contextmenu', (e) => {
           e.preventDefault();
-          showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
+          if (node.panel_id != null) {
+            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
+          }
         });
         
         return nodeDiv;
@@ -6932,16 +7447,16 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         renderPanelTree();
         
-        // Hide all control buttons except Quit when role is VALIDATE
-        if (currentRole === 'VALIDATE') {
+        // ADMIN and VALIDATE: only show AI Tools and Quit
+        if (currentRole === 'VALIDATE' || currentRole === 'ADMIN') {
           const controlsDiv = document.getElementById('controls');
           if (controlsDiv) {
             const allButtons = controlsDiv.querySelectorAll('button');
             allButtons.forEach(btn => {
-              if (btn.id !== 'quitBtn') {
-                btn.style.display = 'none';
-              } else {
+              if (btn.id === 'quitBtn' || btn.id === 'aiToolsBtn') {
                 btn.style.display = 'inline-block';
+              } else {
+                btn.style.display = 'none';
               }
             });
           }
@@ -7211,33 +7726,35 @@ Bạn có chắc chắn muốn rollback?\`;
         container.appendChild(validateActionDiv);
       }
       
-      // Update showMode button icon based on current mode
+      // Update showMode button icon based on current mode (log -> tree -> validation -> log)
       function updateShowModeButton() {
         const showModeBtn = document.getElementById('panel-log-show-mode-btn');
         if (!showModeBtn) return;
         
         if (panelLogDisplayMode === 'log') {
-          // Show tree icon when in log mode (to switch to tree mode)
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
+        } else if (panelLogDisplayMode === 'tree') {
+          showModeBtn.innerHTML = '<span style="font-size: 24px; line-height: 1;">🗹</span>';
+          showModeBtn.title = 'Switch to Validation Mode';
         } else {
-          // Show list icon when in tree mode (to switch to log mode)
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Log Mode';
         }
       }
       
-      // Toggle display mode between 'log' and 'tree'
+      // Toggle display mode: log -> tree -> validation -> log
       async function togglePanelLogDisplayMode() {
-        panelLogDisplayMode = panelLogDisplayMode === 'log' ? 'tree' : 'log';
+        if (panelLogDisplayMode === 'log') panelLogDisplayMode = 'tree';
+        else if (panelLogDisplayMode === 'tree') panelLogDisplayMode = 'validation';
+        else panelLogDisplayMode = 'log';
         setLocalStorage('panel-log-display-mode', panelLogDisplayMode);
         updateShowModeButton();
         
-        // Reload tree data with new mode
         if (window.getPanelTree) {
           panelTreeData = await window.getPanelTree(panelLogDisplayMode);
           renderPanelTree();
-          const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : 'Log';
+          const modeText = panelLogDisplayMode === 'tree' ? 'Tree' : (panelLogDisplayMode === 'validation' ? 'Validation' : 'Log');
           showToast('✅ Switched to ' + modeText + ' Mode');
         }
       }
