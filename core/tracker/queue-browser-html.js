@@ -3473,7 +3473,7 @@ export const QUEUE_BROWSER_HTML = `
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
         } else if (graphPanelLogDisplayMode === 'tree') {
-          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.innerHTML = '<span style="font-size: 20px; line-height: 1;">🗹</span>';
           showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
@@ -3549,6 +3549,9 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           const isIncomplete = node.draw_flow_state !== null && 
                               node.draw_flow_state !== undefined && 
@@ -3557,12 +3560,30 @@ export const QUEUE_BROWSER_HTML = `
         } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
         } else {
           dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -3592,6 +3613,20 @@ export const QUEUE_BROWSER_HTML = `
         
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
+        
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
         
         if (isIncomplete) {
           const badge = document.createElement('span');
@@ -3650,8 +3685,6 @@ export const QUEUE_BROWSER_HTML = `
                 });
                 importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('graph-modality-stacks-tooltip'); if (t) t.remove(); });
                 label.appendChild(importantIcon);
-                contentDiv.style.borderLeft = (contentDiv.style.borderLeft || '').indexOf('3px') === -1 ? '3px solid #ffc107' : contentDiv.style.borderLeft;
-                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
             }
         }
         
@@ -3668,9 +3701,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (graphExpandedPanels.has(expandKey)) {
+          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
+          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
+          if (isValidationNode || graphExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNode) graphExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -3773,7 +3809,7 @@ export const QUEUE_BROWSER_HTML = `
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
         } else if (videoValidationPanelLogDisplayMode === 'tree') {
-          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
+          showModeBtn.innerHTML = '<span style="font-size: 20px; line-height: 1;">🗹</span>';
           showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 20px; height: 20px; filter: brightness(0) saturate(100%) invert(100%);" />';
@@ -3940,6 +3976,9 @@ export const QUEUE_BROWSER_HTML = `
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           const isIncomplete = node.draw_flow_state !== null && 
                               node.draw_flow_state !== undefined && 
@@ -3948,12 +3987,30 @@ export const QUEUE_BROWSER_HTML = `
         } else if (node.item_category === 'ACTION') {
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
         } else {
           dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -3983,6 +4040,20 @@ export const QUEUE_BROWSER_HTML = `
         
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
+        
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
         
         if (isIncomplete) {
           const badge = document.createElement('span');
@@ -4041,8 +4112,6 @@ export const QUEUE_BROWSER_HTML = `
                 });
                 importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('video-validation-modality-tooltip'); if (t) t.remove(); });
                 label.appendChild(importantIcon);
-                contentDiv.style.borderLeft = (contentDiv.style.borderLeft || '').indexOf('3px') === -1 ? '3px solid #ffc107' : contentDiv.style.borderLeft;
-                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
             }
         }
         
@@ -4059,9 +4128,12 @@ export const QUEUE_BROWSER_HTML = `
             childrenDiv.classList.add('level-2');
           }
           
-          if (videoValidationExpandedPanels.has(expandKey)) {
+          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
+          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
+          if (isValidationNode || videoValidationExpandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNode) videoValidationExpandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -5487,6 +5559,9 @@ Bạn có chắc chắn muốn rollback?\`;
         }
         
         let dotColor;
+        let useIconInsteadOfDot = false;
+        let validationIcon = '';
+        
         if (node.item_category === 'PANEL') {
           // Check if panel is incomplete
           const isIncomplete = node.draw_flow_state !== null && 
@@ -5498,13 +5573,31 @@ Bạn có chắc chắn muốn rollback?\`;
           // Action icons: đỏ nếu có intersection, xanh nếu không
           const hasIntersections = node.hasIntersections || false;
           dotColor = hasIntersections ? '#ff4444' : '#00aaff';
+        } else if (node.type === 'day') {
+          // Day nodes: calendar icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '📅';
+          dotColor = '#ff9800';
+        } else if (node.type === 'session') {
+          // Session nodes: clock icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🕘';
+          dotColor = '#ff9800';
+        } else if (node.type === 'scene') {
+          // Scene nodes: movie clapper icon in orange
+          useIconInsteadOfDot = true;
+          validationIcon = '🎬';
+          dotColor = '#ff9800';
         } else {
-          // Validation tree nodes (day/session/scene/snapshot)
+          // Other validation tree nodes (snapshot)
           dotColor = '#9e9e9e';
         }
         
         let originalDotHTML;
-        if (node.status === 'completed') {
+        if (useIconInsteadOfDot) {
+          // Use icon for day/session/scene nodes with margin-right for spacing
+          originalDotHTML = '<span style="font-size: 14px; color: ' + dotColor + '; margin-right: 4px;">' + validationIcon + '</span>';
+        } else if (node.status === 'completed') {
           originalDotHTML = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
             '<circle cx="12" cy="12" r="10" fill="' + dotColor + '"/>' +
             '<path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -5538,6 +5631,20 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const nameText = document.createTextNode(node.name || 'Item');
         label.appendChild(nameText);
+        
+        // Validation mode: show view count (from uigraph_validation.jsonl) after action name, only if > 0
+        if (node.item_category === 'ACTION' && node.view_count !== undefined && node.view_count > 0) {
+          const viewCountSpan = document.createElement('span');
+          viewCountSpan.style.marginLeft = '6px';
+          viewCountSpan.style.display = 'inline-flex';
+          viewCountSpan.style.alignItems = 'center';
+          viewCountSpan.style.gap = '4px';
+          viewCountSpan.style.fontSize = '12px';
+          viewCountSpan.style.color = '#9e9e9e';
+          const count = node.view_count ?? 0;
+          viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
+          label.appendChild(viewCountSpan);
+        }
         
         if (isIncomplete) {
           // Add badge after name
@@ -5648,10 +5755,6 @@ Bạn có chắc chắn muốn rollback?\`;
                 });
                 
                 label.appendChild(importantIcon);
-                
-                // Add border highlight to contentDiv for important actions
-                contentDiv.style.borderLeft = '3px solid #ffc107';
-                contentDiv.style.paddingLeft = (contentDiv.style.paddingLeft ? parseInt(contentDiv.style.paddingLeft) : 0) + 3 + 'px';
             } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
                 // Add tooltip for actions with empty modality_stacks array
                 label.addEventListener('mouseenter', (e) => {
@@ -5695,9 +5798,12 @@ Bạn có chắc chắn muốn rollback?\`;
             childrenDiv.classList.add('level-2');
           }
           
-          if (expandedPanels.has(expandKey)) {
+          // Auto-expand validation nodes (day/session/scene/snapshot) or if previously expanded
+          const isValidationNode = node.type === 'day' || node.type === 'session' || node.type === 'scene' || node.type === 'snapshot';
+          if (isValidationNode || expandedPanels.has(expandKey)) {
             childrenDiv.classList.add('expanded');
             expandIcon.textContent = '▼';
+            if (isValidationNode) expandedPanels.add(expandKey);
           }
           
           node.children.forEach(child => {
@@ -7629,7 +7735,7 @@ Bạn có chắc chắn muốn rollback?\`;
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/node-tree.svg" alt="Tree Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
           showModeBtn.title = 'Switch to Tree Mode';
         } else if (panelLogDisplayMode === 'tree') {
-          showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/remixicon/icons/Editor/checkbox-circle-line.svg" alt="Validation Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';
+          showModeBtn.innerHTML = '<span style="font-size: 24px; line-height: 1;">🗹</span>';
           showModeBtn.title = 'Switch to Validation Mode';
         } else {
           showModeBtn.innerHTML = '<img src="https://cdn.jsdelivr.net/npm/bootstrap-icons/icons/list.svg" alt="List Mode" style="width: 24px; height: 24px; filter: brightness(0) saturate(100%) invert(0%);" />';

@@ -448,7 +448,8 @@ export class DatabaseLoader {
                     my_ai_tool: validation.my_ai_tool,
                     my_day: validation.my_day,
                     my_session: validation.my_session,
-                    my_scene: validation.my_scene
+                    my_scene: validation.my_scene,
+                    view_count: validation.view_count
                 };
 
                 lines.push(JSON.stringify(jsonlEntry));

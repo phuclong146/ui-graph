@@ -322,21 +322,21 @@ export class PanelLogManager {
     }
 
     /**
-     * Format my_session (yyyyMMddHH) to display "session: HH dd/MM/yyyy"
+     * Format my_session (yyyyMMddHH) to display "HHh dd/MM/yyyy"
      */
     _formatSessionLabel(mySession) {
         if (!mySession || mySession.length !== 10) return mySession || '';
         const y = mySession.slice(0, 4), m = mySession.slice(4, 6), d = mySession.slice(6, 8), h = mySession.slice(8, 10);
-        return `session: ${h} ${d}/${m}/${y}`;
+        return `${h}h ${d}/${m}/${y}`;
     }
 
     /**
-     * Format my_scene (yyyyMMddHHmm) to display "scene: HH:mm dd/MM/yyyy"
+     * Format my_scene (yyyyMMddHHmm) to display "HH:mm dd/MM/yyyy"
      */
     _formatSceneLabel(myScene) {
         if (!myScene || myScene.length !== 12) return myScene || '';
         const y = myScene.slice(0, 4), m = myScene.slice(4, 6), d = myScene.slice(6, 8), h = myScene.slice(8, 10), min = myScene.slice(10, 12);
-        return `scene: ${h}:${min} ${d}/${m}/${y}`;
+        return `${h}:${min} ${d}/${m}/${y}`;
     }
 
     /**
@@ -405,11 +405,24 @@ export class PanelLogManager {
 
             if (validations.length === 0) return [];
 
+            // View count per action: lấy đúng view_count từ dòng tương ứng (key = string để tránh lệch kiểu)
+            // Dùng parseInt để xử lý cả trường hợp view_count là string
+            const actionViewCountMap = new Map();
+            for (const row of validations) {
+                const id = row.item_id;
+                if (id != null) {
+                    const key = String(id);
+                    const v = parseInt(row.view_count, 10);
+                    actionViewCountMap.set(key, isNaN(v) ? 0 : v);
+                }
+            }
+
             // Group: my_day -> my_session -> my_scene -> parent_panel -> [item_id, ...]
+            // Use __no_parent__ when action is not in myparent_panel so it still appears in tree with view_count
+            const NO_PARENT_KEY = '__no_parent__';
             const dayMap = new Map();
             for (const row of validations) {
-                const parentPanel = actionToParentPanel.get(row.item_id);
-                if (parentPanel == null) continue;
+                const parentPanel = actionToParentPanel.get(row.item_id) ?? NO_PARENT_KEY;
                 if (!dayMap.has(row.my_day)) dayMap.set(row.my_day, new Map());
                 const sessionMap = dayMap.get(row.my_day);
                 if (!sessionMap.has(row.my_session)) sessionMap.set(row.my_session, new Map());
@@ -435,16 +448,17 @@ export class PanelLogManager {
                         const panelMap = sceneMap.get(myScene);
                         const snapshotNodes = [];
                         for (const [parentPanelId, actionIds] of panelMap.entries()) {
-                            const panelName = itemNameMap.get(parentPanelId) || parentPanelId;
-                            const actionNames = actionIds.map(id => itemNameMap.get(id) || id);
-                            const snapshotLabel = `${panelName} -> ${actionNames.join(', ')}`;
+                            const panelName = parentPanelId === NO_PARENT_KEY ? 'Other' : (itemNameMap.get(parentPanelId) || parentPanelId);
                             const actionNodes = actionIds.map(itemId => {
                                 const info = itemInfoMap.get(itemId) || {};
+                                const viewKey = String(itemId);
+                                const viewCount = actionViewCountMap.has(viewKey) ? actionViewCountMap.get(viewKey) : 0;
                                 return {
                                     type: 'ACTION',
                                     panel_id: itemId,
                                     name: info.name || itemNameMap.get(itemId) || itemId,
                                     item_category: 'ACTION',
+                                    view_count: viewCount,
                                     bug_flag: info.bug_flag || false,
                                     bug_info: info.bug_info || null,
                                     bug_note: info.bug_note || null,
@@ -457,7 +471,8 @@ export class PanelLogManager {
                             snapshotNodes.push({
                                 type: 'snapshot',
                                 panel_id: parentPanelId,
-                                name: snapshotLabel,
+                                name: panelName,
+                                item_category: 'PANEL',
                                 children: actionNodes
                             });
                         }
