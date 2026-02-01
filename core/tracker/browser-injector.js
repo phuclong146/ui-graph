@@ -278,8 +278,50 @@ export async function setupTracking(tracker) {
                 };
             }
 
-            // Không early return theo __trackingSetup: sau navigate/F5 window có thể reuse nên __trackingSetup
-            // vẫn true nhưng document mới chưa có click handler → luôn đăng ký lại click handler.
+            const mouseHighlightExists = document.getElementById('__mouse_highlight_cursor');
+
+            if (window.__trackingSetup && mouseHighlightExists) {
+                return;
+            }
+
+            const existingHighlight = document.getElementById('__mouse_highlight_cursor');
+            if (existingHighlight) {
+                existingHighlight.remove();
+            }
+
+            const mouseHighlight = document.createElement('div');
+            mouseHighlight.id = '__mouse_highlight_cursor';
+            mouseHighlight.style.cssText = `
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            border: 3px solid #FFD700;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 999998;
+            transform: translate(-50%, -50%);
+            transition: none;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            display: none;
+        `;
+
+            if (document.body) {
+                document.body.appendChild(mouseHighlight);
+
+                document.addEventListener('mousemove', (e) => {
+                    mouseHighlight.style.display = 'block';
+                    mouseHighlight.style.left = e.clientX + 'px';
+                    mouseHighlight.style.top = e.clientY + 'px';
+                }, { passive: true });
+
+                document.addEventListener('mouseleave', () => {
+                    mouseHighlight.style.display = 'none';
+                }, { passive: true });
+
+                document.addEventListener('mouseenter', () => {
+                    mouseHighlight.style.display = 'block';
+                }, { passive: true });
+            }
 
             window.getClickedElementInfo = (element) => {
                 if (!element) return null;
