@@ -145,11 +145,16 @@ export async function showReadyNotification(tracker) {
     }
 }
 
-export async function setupTracking(tracker) {
+/**
+ * @param {object} tracker
+ * @param {{ skipReadyNotification?: boolean }} [options] - skipReadyNotification: true khi gọi từ re-ensure định kỳ (tránh hiện "Ready" mỗi 3s)
+ */
+export async function setupTracking(tracker, options = {}) {
     if (!tracker?.page || tracker.page.isClosed()) {
         return;
     }
-    console.log('🔧 Setting up tracking...');
+    const skipReadyNotification = !!options.skipReadyNotification;
+    if (!skipReadyNotification) console.log('🔧 Setting up tracking...');
 
     const exposeIfNotExists = async (name, fn) => {
         try {
@@ -463,7 +468,7 @@ export async function setupTracking(tracker) {
     }
 
     await showTrackerCursorIndicator(tracker.page);
-    console.log('✅ Tracking setup completed! Ctrl/Cmd+1: Detect Pages ready.');
+    if (!skipReadyNotification) console.log('✅ Tracking setup completed! Ctrl/Cmd+1: Detect Pages ready.');
 
     if (!tracker._keyboardPoller) {
         tracker._keyboardPoller = setInterval(async () => {
@@ -610,7 +615,7 @@ export async function setupTracking(tracker) {
                     tracker._clickPollerTick = 0;
                     if (tracker.page && !tracker.page.isClosed()) {
                         try {
-                            await setupTracking(tracker);
+                            await setupTracking(tracker, { skipReadyNotification: true });
                         } catch (e) {
                             if (!(e.message || '').match(/Target closed|detached/)) console.warn('Click poller re-ensure setupTracking failed:', e.message);
                         }
@@ -692,6 +697,8 @@ export async function setupTracking(tracker) {
         }, 30);
     }
 
-    await showReadyNotification(tracker);
-    await sleep(2000);
+    if (!skipReadyNotification) {
+        await showReadyNotification(tracker);
+        await sleep(2000);
+    }
 }
