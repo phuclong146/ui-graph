@@ -364,6 +364,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("showStepInfoGraph", handlers.showStepInfoGraph);
     await tracker.queuePage.exposeFunction("validateStep", handlers.validateStep);
     await tracker.queuePage.exposeFunction("raiseBug", handlers.raiseBug);
+    await tracker.queuePage.exposeFunction("resolveBug", handlers.resolveBug);
+    await tracker.queuePage.exposeFunction("cancelBug", handlers.cancelBug);
     await tracker.queuePage.exposeFunction("generateVideoForAction", handlers.generateVideoForAction);
     await tracker.queuePage.exposeFunction("regenerateTrackingVideo", handlers.regenerateTrackingVideo);
     await tracker.queuePage.exposeFunction("regenerateStepVideo", handlers.regenerateStepVideo);

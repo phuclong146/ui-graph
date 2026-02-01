@@ -8678,6 +8678,210 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Resolve bug: mark selected bug details as fixed (ADMIN/VALIDATE).
+     * @param {string} actionItemId - action item id
+     * @param {object} bugInfo - full bug_info with details[].bug_fixed and details[].resolved_at set by frontend
+     */
+    const resolveBugHandler = async (actionItemId, bugInfo) => {
+        try {
+            if (!actionItemId) {
+                console.warn('⚠️ No actionItemId provided for resolveBug');
+                return;
+            }
+            const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+            if (!actionItem) {
+                console.warn(`⚠️ Action item not found: ${actionItemId}`);
+                return;
+            }
+
+            const updates = { bug_info: bugInfo };
+            await tracker.dataItemManager.updateItem(actionItemId, updates);
+
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                await exporter.connection.execute(
+                    `UPDATE doing_item SET bug_info = ? WHERE item_id = ? AND my_ai_tool = ?`,
+                    [JSON.stringify(bugInfo), actionItemId, tracker.myAiToolCode]
+                );
+                await exporter.close();
+                console.log(`✅ Updated resolved bug info in DB for action ${actionItemId}`);
+            } catch (dbErr) {
+                console.error('⚠️ Failed to update resolved bug info in DB:', dbErr);
+            }
+
+            await tracker._broadcast({ type: 'show_toast', message: '✅ Bug resolved updated' });
+
+            const findNodeInTree = (nodes, nodeId) => {
+                for (const node of nodes) {
+                    if (node.panel_id === nodeId) return node;
+                    if (node.children && node.children.length > 0) {
+                        const found = findNodeInTree(node.children, nodeId);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const isVideoModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('videoValidationModal');
+                return modal && modal.style.display === 'flex';
+            });
+            if (isVideoModalOpen && tracker.panelLogManager) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const panelTreeData = await tracker.panelLogManager.buildTreeStructure();
+                await tracker.queuePage.evaluate((panelTreeData) => {
+                    const panelLogTree = document.getElementById('videoValidationPanelLogTree');
+                    if (panelLogTree && window.renderPanelTreeForValidation) {
+                        window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
+                    }
+                }, panelTreeData);
+            }
+
+            const isGraphModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('graphViewModal');
+                return modal && modal.style.display !== 'none';
+            });
+            if (isGraphModalOpen) {
+                await tracker.queuePage.evaluate((itemId, bugInfo) => {
+                    if (window.graphNetwork && window.vis && window.vis.DataSet) {
+                        const network = window.graphNetwork;
+                        const edges = network.body.data.edges;
+                        const nodes = network.body.data.nodes;
+                        const allEdges = edges.get();
+                        const targetEdge = allEdges.find(e => e.data && e.data.actionId === itemId);
+                        if (targetEdge) {
+                            targetEdge.data.actionBugInfo = bugInfo;
+                            edges.update(targetEdge);
+                        } else {
+                            const targetNode = nodes.get(itemId);
+                            if (targetNode && targetNode.data && targetNode.data.item) {
+                                targetNode.data.item.bug_info = bugInfo;
+                                nodes.update(targetNode);
+                            }
+                        }
+                    }
+                    const treeContainer = document.getElementById('graphPanelLogTree');
+                    if (treeContainer) {
+                        const targetNode = treeContainer.querySelector(`[data-panel-id="${itemId}"]`);
+                        if (targetNode && window.refreshPanelTree) window.refreshPanelTree();
+                    }
+                }, actionItemId, bugInfo);
+            }
+
+            await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
+        } catch (err) {
+            console.error('Failed to resolve bug:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Failed to update resolved bug' });
+        }
+    };
+
+    /**
+     * Cancel bug: bỏ đánh dấu bug của action (ADMIN/VALIDATE). Cập nhật jsonl và DB.
+     */
+    const cancelBugHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId) {
+                console.warn('⚠️ No actionItemId provided for cancelBug');
+                return;
+            }
+            const actionItem = await tracker.dataItemManager.getItem(actionItemId);
+            if (!actionItem) {
+                console.warn(`⚠️ Action item not found: ${actionItemId}`);
+                return;
+            }
+
+            const updates = { bug_flag: false, bug_info: null };
+            if (actionItem.metadata && (actionItem.metadata.bug_flag || actionItem.metadata.bug_note)) {
+                updates.metadata = { ...actionItem.metadata };
+                delete updates.metadata.bug_flag;
+                delete updates.metadata.bug_note;
+            }
+            await tracker.dataItemManager.updateItem(actionItemId, updates);
+
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                await exporter.connection.execute(
+                    `UPDATE doing_item SET bug_flag = 0, bug_info = NULL WHERE item_id = ? AND my_ai_tool = ?`,
+                    [actionItemId, tracker.myAiToolCode]
+                );
+                await exporter.close();
+                console.log(`✅ Cancelled bug in DB for action ${actionItemId}`);
+            } catch (dbErr) {
+                console.error('⚠️ Failed to cancel bug in DB:', dbErr);
+            }
+
+            await tracker._broadcast({ type: 'show_toast', message: '✅ Đã bỏ đánh dấu bug' });
+
+            const findNodeInTree = (nodes, nodeId) => {
+                for (const node of nodes) {
+                    if (node.panel_id === nodeId) return node;
+                    if (node.children && node.children.length > 0) {
+                        const found = findNodeInTree(node.children, nodeId);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            const isVideoModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('videoValidationModal');
+                return modal && modal.style.display === 'flex';
+            });
+            if (isVideoModalOpen && tracker.panelLogManager) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const panelTreeData = await tracker.panelLogManager.buildTreeStructure();
+                await tracker.queuePage.evaluate((panelTreeData) => {
+                    const panelLogTree = document.getElementById('videoValidationPanelLogTree');
+                    if (panelLogTree && window.renderPanelTreeForValidation) {
+                        window.renderPanelTreeForValidation(panelTreeData, panelLogTree);
+                    }
+                }, panelTreeData);
+            }
+
+            const isGraphModalOpen = await tracker.queuePage.evaluate(() => {
+                const modal = document.getElementById('graphViewModal');
+                return modal && modal.style.display !== 'none';
+            });
+            if (isGraphModalOpen) {
+                await tracker.queuePage.evaluate((itemId) => {
+                    if (window.graphNetwork && window.vis && window.vis.DataSet) {
+                        const network = window.graphNetwork;
+                        const edges = network.body.data.edges;
+                        const nodes = network.body.data.nodes;
+                        const allEdges = edges.get();
+                        const targetEdge = allEdges.find(e => e.data && e.data.actionId === itemId);
+                        if (targetEdge) {
+                            targetEdge.data.actionBugFlag = false;
+                            targetEdge.data.actionBugInfo = null;
+                            targetEdge.label = '';
+                            edges.update(targetEdge);
+                        } else {
+                            const targetNode = nodes.get(itemId);
+                            if (targetNode && targetNode.data && targetNode.data.item) {
+                                targetNode.data.item.bug_flag = false;
+                                targetNode.data.item.bug_info = null;
+                                if (targetNode.label && targetNode.label.includes('🐞')) {
+                                    targetNode.label = targetNode.label.replace(/\s*🐞\s*|\s*✓\s*/g, '').trim();
+                                    nodes.update(targetNode);
+                                }
+                            }
+                        }
+                    }
+                    const treeContainer = document.getElementById('graphPanelLogTree');
+                    if (treeContainer && window.refreshPanelTree) window.refreshPanelTree();
+                }, actionItemId);
+            }
+
+            await tracker._broadcast({ type: 'tree_update', data: await tracker.panelLogManager.buildTreeStructure() });
+        } catch (err) {
+            console.error('Failed to cancel bug:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Không thể bỏ đánh dấu bug' });
+        }
+    };
+
     const showStepInfoHandler = async (edgeData, nodesData) => {
         // Load images in Node.js context
         let panelBeforeImage = null;
@@ -9619,6 +9823,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
         raiseBug: raiseBugHandler,
+        resolveBug: resolveBugHandler,
+        cancelBug: cancelBugHandler,
         generateVideoForAction: generateVideoForActionHandler,
         regenerateTrackingVideo: regenerateTrackingVideoHandler,
         regenerateStepVideo: regenerateStepVideoHandler,
