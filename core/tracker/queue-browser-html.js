@@ -3959,6 +3959,10 @@ export const QUEUE_BROWSER_HTML = `
                 importantIcon.textContent = '⭐';
                 importantIcon.title = 'Important Action';
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'graph-modality-stacks-tooltip';
                     tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
@@ -4445,6 +4449,10 @@ export const QUEUE_BROWSER_HTML = `
                 importantIcon.textContent = '⭐';
                 importantIcon.title = 'Important Action';
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('video-validation-modality-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'video-validation-modality-tooltip';
                     tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
@@ -6167,6 +6175,10 @@ Bạn có chắc chắn muốn rollback?\`;
                 
                 // Add tooltip with modality_stacks info
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('modality-stacks-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'modality-stacks-tooltip';
                     tooltip.style.cssText = 'position: fixed;' +
@@ -9598,6 +9610,33 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Expose function to window
       window.openSelectPanelModal = openSelectPanelModal;
+
+      // Global tooltip cleanup mechanism to prevent stuck tooltips
+      // Clean up tooltips on scroll or when clicking anywhere
+      const cleanupAllTooltips = () => {
+        const tooltipIds = [
+          'modality-stacks-tooltip',
+          'graph-modality-stacks-tooltip',
+          'video-validation-modality-tooltip',
+          'graph-action-tooltip',
+          'action-tooltip'
+        ];
+        tooltipIds.forEach(id => {
+          const tooltip = document.getElementById(id);
+          if (tooltip) tooltip.remove();
+        });
+      };
+
+      // Clean up tooltips on scroll (tooltips can get stuck when scrolling quickly)
+      document.addEventListener('scroll', cleanupAllTooltips, true);
+      
+      // Clean up tooltips on any click (except on the tooltip itself)
+      document.addEventListener('click', (e) => {
+        // Don't clean up if clicking on an important icon (let the normal flow handle it)
+        if (!e.target.closest('.important-icon')) {
+          cleanupAllTooltips();
+        }
+      }, true);
     </script>
   </body>
 </html>

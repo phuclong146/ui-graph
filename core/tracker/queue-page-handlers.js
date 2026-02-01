@@ -7254,6 +7254,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     // Show modality_stacks tooltip if action has modality_stacks
                     if (edge.data.hasModalityStacks && edge.data.actionModalityStacks && edge.data.actionModalityStacks.length > 0) {
+                        // Remove any existing tooltips first to prevent duplicates
+                        const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                        if (existingTooltip) existingTooltip.remove();
+                        const existingActionTooltip = document.getElementById('graph-action-tooltip');
+                        if (existingActionTooltip) existingActionTooltip.remove();
+                        
                         const tooltip = document.createElement('div');
                         tooltip.id = 'graph-modality-stacks-tooltip';
                         tooltip.style.cssText = 'position: fixed;' +
@@ -7278,6 +7284,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     } else if (!edge.data.actionBugFlag && 
                                Array.isArray(edge.data.actionModalityStacks) && 
                                edge.data.actionModalityStacks.length === 0) {
+                        // Remove any existing tooltips first to prevent duplicates
+                        const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                        if (existingTooltip) existingTooltip.remove();
+                        const existingActionTooltip = document.getElementById('graph-action-tooltip');
+                        if (existingActionTooltip) existingActionTooltip.remove();
+                        
                         // Show tooltip for actions with empty modality_stacks array (if no bug)
                         const tooltip = document.createElement('div');
                         tooltip.id = 'graph-action-tooltip';
