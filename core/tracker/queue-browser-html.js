@@ -1330,6 +1330,21 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="setImportantActionModal" style="display:none; position:fixed; z-index:20003; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:520px; width:90%; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Set Important Action</h3>
+        <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:6px;">Mô tả lý do quan trọng <span style="color:red;">*</span></label>
+        <textarea id="setImportantActionReason" placeholder="Nhập lý do..." style="width:100%; min-height:80px; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:14px; box-sizing:border-box; resize:vertical;" rows="3"></textarea>
+        <p id="setImportantActionReasonError" style="display:none; color:#dc3545; font-size:12px; margin:4px 0 0 0;">Vui lòng nhập mô tả lý do quan trọng.</p>
+        <label style="display:block; font-size:14px; font-weight:600; color:#333; margin:14px 0 6px 0;">Chọn modality_stack (có thể chọn nhiều)</label>
+        <div id="setImportantActionModalityList" style="max-height:220px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="setImportantActionCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="setImportantActionOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">OK</button>
+        </div>
+      </div>
+    </div>
+
     <div id="randomlyAssignModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Randomly assign – Chọn CTV</h3>
@@ -1584,7 +1599,7 @@ export const QUEUE_BROWSER_HTML = `
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
         <div id="graphPanelLogTreeContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
           <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0; position:relative; z-index:1001;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
             <div style="display:flex; align-items:center; gap:8px;">
               <label id="graph-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
@@ -1699,6 +1714,23 @@ export const QUEUE_BROWSER_HTML = `
             <div style="padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; background:#f5f5f5;">
                 <button id="cancelRaiseBugBtn" style="padding:8px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer;">Cancel</button>
                 <button id="confirmRaiseBugBtn" style="padding:8px 16px; border:none; background:#dc3545; color:white; border-radius:4px; cursor:pointer; font-weight:600;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resolved Bug Modal (ADMIN/VALIDATE) - same layout as Raise Bug -->
+    <div id="resolvedBugModal" style="display:none; position:fixed; z-index:20008; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+        <div id="resolvedBugDialog" style="background:white; width:800px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+            <div style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5;">
+                <h3 style="margin:0; font-size:18px; color:#333;">Resolved Bug</h3>
+                <button id="closeResolvedBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
+            </div>
+            <div id="resolvedBugContent" style="padding:20px; overflow-y:auto; flex:1;">
+                <!-- Content generated dynamically -->
+            </div>
+            <div style="padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; background:#f5f5f5;">
+                <button id="cancelResolvedBugBtn" style="padding:8px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer;">Cancel</button>
+                <button id="confirmResolvedBugBtn" style="padding:8px 16px; border:none; background:#28a745; color:white; border-radius:4px; cursor:pointer; font-weight:600;">OK</button>
             </div>
         </div>
     </div>
@@ -2006,18 +2038,25 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'tree_update') {
           // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
+          const fallbackData = evt.data || [];
           if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
             getFilteredPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
+              updateGraphPanelLogTreeIfOpen(fallbackData);
+              updateVideoValidationPanelLogTreeIfOpen(fallbackData);
             }).catch(err => {
               console.error('Failed to reload tree with current mode:', err);
-              panelTreeData = evt.data || [];
+              panelTreeData = fallbackData;
               renderPanelTree();
+              updateGraphPanelLogTreeIfOpen(fallbackData);
+              updateVideoValidationPanelLogTreeIfOpen(fallbackData);
             });
           } else {
-            panelTreeData = evt.data || [];
+            panelTreeData = fallbackData;
             renderPanelTree();
+            updateGraphPanelLogTreeIfOpen(fallbackData);
+            updateVideoValidationPanelLogTreeIfOpen(fallbackData);
           }
           
           // Check for changes after panel log is loaded
@@ -3706,6 +3745,30 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
 
+      async function updateGraphPanelLogTreeIfOpen(data) {
+        const graphViewModal = document.getElementById('graphViewModal');
+        if (!graphViewModal || graphViewModal.style.display === 'none') return;
+        if (window.getPanelTree) {
+          try {
+            if (graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') {
+              graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
+            } else {
+              graphPanelTreeData = await window.getPanelTree('log');
+            }
+            renderGraphPanelTree();
+          } catch (err) {
+            console.error('Failed to reload graph panel tree:', err);
+            if (data && Array.isArray(data)) {
+              graphPanelTreeData = data;
+              renderGraphPanelTree();
+            }
+          }
+        } else if (data && Array.isArray(data)) {
+          graphPanelTreeData = data;
+          renderGraphPanelTree();
+        }
+      }
+
       function createGraphTreeNode(node, depth) {
         const expandKey = node.panel_id != null ? node.panel_id : (node.type + ':' + (node.name || '').replace(/\s/g, '_'));
         const nodeDiv = document.createElement('div');
@@ -3836,8 +3899,11 @@ export const QUEUE_BROWSER_HTML = `
           label.appendChild(badge);
         }
         
-        // Add bug icon for actions with bug_flag (after name)
+        // Bug icon: no bug / bug chưa fix (đỏ 🐞) / bug đã fix hết (xanh ✓)
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+            const allFixed = typeof hasAllBugFixed === 'function' ? hasAllBugFixed(bugInfo) : false;
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
             bugIcon.style.display = 'inline-block';
@@ -3846,9 +3912,8 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.height = '16px';
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
-            bugIcon.textContent = '🐞';
-            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
-            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+            bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
+            bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
             bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
@@ -4060,6 +4125,30 @@ export const QUEUE_BROWSER_HTML = `
         setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
         updateVideoValidationShowModeButton();
       };
+
+      async function updateVideoValidationPanelLogTreeIfOpen(data) {
+        const modal = document.getElementById('videoValidationModal');
+        const treeContainer = document.getElementById('videoValidationPanelLogTree');
+        if (!modal || modal.style.display === 'none' || !treeContainer) return;
+        if (window.getPanelTree) {
+          try {
+            if (videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') {
+              const treeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
+              renderPanelTreeForValidationInternal(treeData, treeContainer);
+            } else {
+              const treeData = await window.getPanelTree('log');
+              renderPanelTreeForValidationInternal(treeData, treeContainer);
+            }
+          } catch (err) {
+            console.error('Failed to reload video validation panel tree:', err);
+            if (data && Array.isArray(data)) {
+              renderPanelTreeForValidationInternal(data, treeContainer);
+            }
+          }
+        } else if (data && Array.isArray(data)) {
+          renderPanelTreeForValidationInternal(data, treeContainer);
+        }
+      }
 
       // Initialize video validation panel log showMode button
       const videoValidationPanelLogShowModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
@@ -4296,8 +4385,11 @@ export const QUEUE_BROWSER_HTML = `
           label.appendChild(badge);
         }
         
-        // Add bug icon for actions with bug_flag (after name)
+        // Bug icon: no bug / bug chưa fix (đỏ 🐞) / bug đã fix hết (xanh ✓)
         if (node.item_category === 'ACTION' && (node.bug_flag || (node.metadata && node.metadata.bug_flag))) {
+            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
+            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+            const allFixed = typeof hasAllBugFixed === 'function' ? hasAllBugFixed(bugInfo) : false;
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '4px';
             bugIcon.style.display = 'inline-block';
@@ -4306,9 +4398,8 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.height = '16px';
             bugIcon.style.fontSize = '14px';
             bugIcon.style.cursor = 'help';
-            bugIcon.textContent = '🐞';
-            const bugInfo = node.bug_info || (node.metadata && node.metadata.bug_info) || null;
-            const bugNote = node.bug_note || (node.metadata && node.metadata.bug_note) || null;
+            bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
+            bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
             bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
@@ -6005,8 +6096,10 @@ Bạn có chắc chắn muốn rollback?\`;
           label.appendChild(badge);
         }
 
-        // Check for bug flag
+        // Bug icon: no bug / bug chưa fix (đỏ) / bug đã fix hết (xanh)
         if (node.bug_flag) {
+            const bugInfo = node.bug_info || null;
+            const allFixed = typeof hasAllBugFixed === 'function' ? hasAllBugFixed(bugInfo) : false;
             const bugIcon = document.createElement('span');
             bugIcon.style.marginLeft = '6px';
             bugIcon.style.cursor = 'help';
@@ -6014,27 +6107,19 @@ Bạn có chắc chắn muốn rollback?\`;
             bugIcon.style.verticalAlign = 'middle';
             bugIcon.style.width = '14px';
             bugIcon.style.height = '14px';
-            bugIcon.style.color = '#dc3545';
-            bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
-              <ellipse cx="32" cy="36" rx="14" ry="18"/>
-              <circle cx="32" cy="20" r="8"/>
-              <line x1="28" y1="12" x2="22" y2="4"/>
-              <line x1="36" y1="12" x2="42" y2="4"/>
-              <line x1="18" y1="42" x2="8" y2="48"/>
-              <line x1="18" y1="36" x2="8" y2="36"/>
-              <line x1="18" y1="30" x2="8" y2="24"/>
-              <line x1="46" y1="42" x2="56" y2="48"/>
-              <line x1="46" y1="36" x2="56" y2="36"/>
-              <line x1="46" y1="30" x2="56" y2="24"/>
-            </svg>\`;
-            
-            bugIcon.addEventListener('mouseenter', (e) => {
-                showBugTooltip(e, node.bug_note, node.bug_info);
-            });
-            bugIcon.addEventListener('mouseleave', () => {
-                hideBugTooltip();
-            });
-            
+            bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
+            if (allFixed) {
+                bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;"><path d="M20 6L9 17l-5-5"/></svg>\`;
+            } else {
+                bugIcon.innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;">
+                  <ellipse cx="32" cy="36" rx="14" ry="18"/><circle cx="32" cy="20" r="8"/>
+                  <line x1="28" y1="12" x2="22" y2="4"/><line x1="36" y1="12" x2="42" y2="4"/>
+                  <line x1="18" y1="42" x2="8" y2="48"/><line x1="18" y1="36" x2="8" y2="36"/><line x1="18" y1="30" x2="8" y2="24"/>
+                  <line x1="46" y1="42" x2="56" y2="48"/><line x1="46" y1="36" x2="56" y2="36"/><line x1="46" y1="30" x2="56" y2="24"/>
+                </svg>\`;
+            }
+            bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, node.bug_note, node.bug_info); });
+            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
             label.appendChild(bugIcon);
         }
         
@@ -6194,7 +6279,7 @@ Bạn có chắc chắn muốn rollback?\`;
           if (currentRole === 'ADMIN' && node.type === 'session' && node.my_session != null) {
             showSessionContextMenu(e.clientX, e.clientY, node);
           } else if (node.panel_id != null) {
-            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber);
+            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber, node.bug_flag);
           }
         });
         
@@ -6300,7 +6385,60 @@ Bạn có chắc chắn muốn rollback?\`;
         modal.style.display = 'flex';
       }
       
-      function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber) {
+      let setImportantActionCurrentId = null;
+      async function openSetImportantActionDialog(actionId) {
+        setImportantActionCurrentId = actionId;
+        const modal = document.getElementById('setImportantActionModal');
+        const reasonEl = document.getElementById('setImportantActionReason');
+        const reasonErr = document.getElementById('setImportantActionReasonError');
+        const listEl = document.getElementById('setImportantActionModalityList');
+        const okBtn = document.getElementById('setImportantActionOkBtn');
+        const cancelBtn = document.getElementById('setImportantActionCancelBtn');
+        if (!modal || !reasonEl || !listEl || !okBtn || !cancelBtn) return;
+        reasonEl.value = '';
+        reasonErr.style.display = 'none';
+        listEl.innerHTML = '<div style="padding:12px; color:#666;">Đang tải...</div>';
+        const stacks = typeof window.getModalityStacksForCurrentTool === 'function' ? await window.getModalityStacksForCurrentTool() : [];
+        let currentStacks = [];
+        if (typeof window.getActionItem === 'function') {
+          const item = await window.getActionItem(actionId);
+          if (item && item.modality_stacks && Array.isArray(item.modality_stacks)) currentStacks = item.modality_stacks;
+          if (item && item.modality_stacks_reason) reasonEl.value = item.modality_stacks_reason;
+        }
+        listEl.innerHTML = '';
+        const codeToChecked = new Set(currentStacks);
+        stacks.forEach(s => {
+          const label = document.createElement('label');
+          label.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; cursor:pointer; font-size:14px;';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.code = s.code;
+          cb.checked = codeToChecked.has(s.code);
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode((s.name || s.code) + ' (' + s.code + ')'));
+          label.addEventListener('click', (e) => { if (e.target !== cb) cb.checked = !cb.checked; });
+          listEl.appendChild(label);
+        });
+        if (stacks.length === 0) listEl.innerHTML = '<div style="padding:12px; color:#999;">Không có modality_stack nào.</div>';
+        cancelBtn.onclick = () => { modal.style.display = 'none'; setImportantActionCurrentId = null; };
+        okBtn.onclick = async () => {
+          const reason = (reasonEl.value || '').trim();
+          if (!reason) { reasonErr.style.display = 'block'; reasonErr.textContent = 'Vui lòng nhập mô tả lý do quan trọng.'; return; }
+          reasonErr.style.display = 'none';
+          const selectedCodes = [];
+          listEl.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => { if (cb.dataset.code) selectedCodes.push(cb.dataset.code); });
+          if (typeof window.setImportantAction === 'function') await window.setImportantAction(setImportantActionCurrentId, reason, selectedCodes);
+          modal.style.display = 'none';
+          setImportantActionCurrentId = null;
+          if (window.getPanelTree) {
+            const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+            panelTreeData = data || []; renderPanelTree();
+          }
+        };
+        modal.style.display = 'flex';
+      }
+      
+      function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber, hasBug) {
         const existingMenu = document.getElementById('tree-context-menu');
         if (existingMenu) {
           existingMenu.remove();
@@ -6308,10 +6446,80 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const isRootPanel = (nodeName === 'After Login Panel');
         
-        // If role is not DRAW: only show menu for After Login Panel, hide for others
+        // If role is ADMIN or VALIDATE: show Set Important Action / Set Normal Action (and Resolved Bug only if action has bug) for ACTION nodes
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && itemCategory === 'ACTION') {
+          const menu = document.createElement('div');
+          menu.id = 'tree-context-menu';
+          menu.style.cssText = \`
+            position: fixed;
+            left: \${x}px;
+            top: \${y}px;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            min-width: 180px;
+          \`;
+          const addItem = (text, handler) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px;';
+            div.addEventListener('mouseenter', () => { div.style.background = '#f0f0f0'; });
+            div.addEventListener('mouseleave', () => { div.style.background = 'transparent'; });
+            div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
+            menu.appendChild(div);
+          };
+          addItem('⭐ Set Important Action', () => { openSetImportantActionDialog(panelId); });
+          addItem('➖ Set Normal Action', async () => {
+            if (window.confirm('Đặt action này thành Normal (xóa modality_stacks và lý do)?')) {
+              if (typeof window.setNormalAction === 'function') await window.setNormalAction(panelId);
+              if (window.getPanelTree) {
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
+              }
+            }
+          });
+          if (hasBug) {
+            addItem('✅ Resolved Bug', async () => {
+              if (typeof window.getActionItem !== 'function') { showToast('Không thể tải action.'); return; }
+              const item = await window.getActionItem(panelId);
+              if (!item || !item.bug_flag || !item.bug_info || !item.bug_info.details || item.bug_info.details.length === 0) {
+                if (typeof showToast === 'function') showToast('Action này chưa có bug hoặc chưa có chi tiết bug.');
+                else alert('Action này chưa có bug hoặc chưa có chi tiết bug.');
+                return;
+              }
+              openResolvedBugDialog(panelId, item.bug_info, item);
+            });
+            addItem('❌ Cancel bug', async () => {
+              if (!window.confirm('Bỏ đánh dấu bug của action này?')) return;
+              if (typeof window.cancelBug !== 'function') { showToast('Cancel bug không khả dụng.'); return; }
+              try {
+                await window.cancelBug(panelId);
+                if (window.getPanelTree) {
+                  const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                  panelTreeData = data || []; renderPanelTree();
+                }
+                if (typeof showToast === 'function') showToast('✅ Đã bỏ đánh dấu bug.');
+              } catch (err) {
+                console.error('cancelBug error:', err);
+                if (typeof showToast === 'function') showToast('❌ Không thể bỏ đánh dấu bug.');
+              }
+            });
+          }
+          document.body.appendChild(menu);
+          const menuRect = menu.getBoundingClientRect();
+          if (y + menuRect.height > window.innerHeight) menu.style.top = (Math.max(10, y - menuRect.height)) + 'px';
+          const closeMenu = (e) => {
+            if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
+          };
+          setTimeout(() => document.addEventListener('click', closeMenu), 100);
+          return;
+        }
+        
+        // If role is not DRAW: only show menu for After Login Panel (PANEL), hide for others
         if (currentRole !== 'DRAW') {
           if (!isRootPanel || itemCategory !== 'PANEL') {
-            // Don't show menu for non-root panels or actions when role is not DRAW
             return;
           }
           // For root panel with non-DRAW role: only show Detect Important Actions
@@ -6862,7 +7070,22 @@ Bạn có chắc chắn muốn rollback?\`;
           };
       }
 
-      // Bug Tooltip
+      // Bug Tooltip + helpers for bug state
+      function formatResolvedAtGmt7(iso) {
+          if (!iso) return '';
+          try {
+              const d = new Date(iso);
+              return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }) + ' (GMT+7)';
+          } catch (e) { return iso; }
+      }
+      function hasAllBugFixed(bugInfo) {
+          if (!bugInfo || !Array.isArray(bugInfo.details) || bugInfo.details.length === 0) return false;
+          return bugInfo.details.every(d => d.bug_fixed === true);
+      }
+      function hasUnfixedBug(bugInfo) {
+          if (!bugInfo || !Array.isArray(bugInfo.details)) return !!bugInfo;
+          return bugInfo.details.some(d => d.bug_fixed !== true);
+      }
       let bugTooltip = null;
       function showBugTooltip(e, note, bugInfo) {
           if (bugTooltip) bugTooltip.remove();
@@ -6878,14 +7101,13 @@ Bạn có chắc chắn muốn rollback?\`;
               border-radius: 6px;
               font-size: 12px;
               z-index: 10000001;
-              max-width: 300px;
+              max-width: 320px;
               pointer-events: none;
               white-space: pre-wrap;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
           
           let content = '';
-          // If bugInfo is available, use it (new format)
           if (bugInfo) {
               if (bugInfo.note) {
                   content += \`<strong>Note:</strong> \${bugInfo.note}\n\`;
@@ -6894,12 +7116,11 @@ Bạn có chắc chắn muốn rollback?\`;
                   content += \`\n<strong>Details:</strong>\n\`;
                   bugInfo.details.forEach(d => {
                       const statusText = d.bug_fixed ? '[đã sửa]' : '[cần sửa]';
-                      content += \`- \${d.bug_name} \${statusText}\n\`;
+                      const resolvedAt = d.bug_fixed && d.resolved_at ? ' — ' + formatResolvedAtGmt7(d.resolved_at) : '';
+                      content += \`- \${d.bug_name} \${statusText}\${resolvedAt}\n\`;
                   });
               }
-          } 
-          // Fallback to simple note (old format)
-          else if (note) {
+          } else if (note) {
                content += \`<strong>Note:</strong> \${note}\`;
           } else {
                content += \`Bug detected\`;
@@ -6914,6 +7135,153 @@ Bạn có chắc chắn muốn rollback?\`;
               bugTooltip.remove();
               bugTooltip = null;
           }
+      }
+
+      // Resolved Bug Dialog (ADMIN/VALIDATE): same layout as Raise Bug, mark bug details as fixed
+      let resolvedBugCurrentActionId = null;
+      async function openResolvedBugDialog(actionId, bugInfo, actionItem = null) {
+          if (!bugInfo || !Array.isArray(bugInfo.details) || bugInfo.details.length === 0) {
+              if (typeof showToast === 'function') showToast('Action này chưa có chi tiết bug.');
+              else alert('Action này chưa có chi tiết bug.');
+              return;
+          }
+          if (!actionItem && typeof window.getActionItem === 'function') {
+              try { actionItem = await window.getActionItem(actionId); } catch (e) { console.warn('getActionItem failed:', e); }
+          }
+          resolvedBugCurrentActionId = actionId;
+          const modal = document.getElementById('resolvedBugModal');
+          const content = document.getElementById('resolvedBugContent');
+          const closeBtn = document.getElementById('closeResolvedBugModalBtn');
+          const cancelBtn = document.getElementById('cancelResolvedBugBtn');
+          const confirmBtn = document.getElementById('confirmResolvedBugBtn');
+          if (!modal || !content) return;
+          modal.style.display = 'flex';
+
+          const getActionValue = (field) => {
+              if (!actionItem) return '';
+              const val = (prop) => actionItem[prop] !== undefined ? actionItem[prop] : '';
+              switch (field) {
+                  case 'action.name': return val('item_name') || val('name');
+                  case 'action.type': return val('item_type') || val('type');
+                  case 'action.verb': return val('item_verb') || val('verb');
+                  case 'action.content': return val('item_content') || val('content');
+                  case 'action.purpose': return val('item_purpose') || val('purpose');
+                  case 'action.image': return val('image_url') || val('item_image_url') || '';
+                  case 'panel_after.name': return val('panel_after_name');
+                  case 'panel_after.type': return val('panel_after_type');
+                  case 'panel_after.verb': return val('panel_after_verb');
+                  case 'panel_after.image': return val('panel_after_image');
+                  default: return '';
+              }
+          };
+          const formatLabel = (label, value) => {
+              if (value === undefined || value === null || value === '') return \`<span>\${label}: <span style="font-weight:normal; color:#999;">N/A</span></span>\`;
+              if (typeof value === 'string' && value.match(/^https?:.*\\.(jpg|jpeg|png|gif|webp|svg)/i)) return \`<span>\${label}: <img src="\${value}" style="max-height: 40px; vertical-align: middle; margin-left: 5px; border: 1px solid #ddd; border-radius: 4px;" alt="Image" /></span>\`;
+              const displayValue = String(value).length > 100 ? String(value).substring(0, 100) + '...' : value;
+              return \`<span>\${label}: <span style="font-weight:normal; color:#555;">\${displayValue}</span></span>\`;
+          };
+          const formatResolvedAt = (iso) => {
+              if (!iso) return '';
+              try { const d = new Date(iso); return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }) + ' (GMT+7)'; } catch (e) { return iso; }
+          };
+          const getDetailByType = (type) => bugInfo.details.find(d => d.bug_type === type);
+          const isFixed = (type) => { const d = getDetailByType(type); return d && d.bug_fixed === true; };
+          const getDetailIndex = (type) => bugInfo.details.findIndex(d => d.bug_type === type);
+          const bugNameMap = { 'action.name': 'Action Name', 'action.image': 'Action Image or Position', 'action.type': 'Action Type', 'action.verb': 'Action Verb', 'action.content': 'Action Content', 'action.purpose': 'Action Purpose', 'panel_after.name': 'Panel After Name', 'panel_after.image': 'Panel After Image or Position', 'panel_after.type': 'Panel After Type', 'panel_after.verb': 'Panel After Verb' };
+
+          const rowHtml = (type) => {
+              const detail = getDetailByType(type);
+              const idx = getDetailIndex(type);
+              const name = bugNameMap[type] || type;
+              const isImageType = type === 'action.image' || type === 'panel_after.image';
+              const valueHtml = isImageType ? name : formatLabel(name, getActionValue(type));
+              if (detail && detail.bug_fixed === true) {
+                  return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span style="color:#28a745;">✓</span> \${valueHtml} <span style="color:#28a745; font-size:12px;">[đã sửa] \${formatResolvedAt(detail.resolved_at)}</span></div>\`;
+              }
+              if (detail) {
+                  return \`<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" name="resolved_bug" data-index="\${idx}"> \${valueHtml}</label>\`;
+              }
+              return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;">\${valueHtml}</div>\`;
+          };
+
+          content.innerHTML = \`
+              <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #d4edda; border: 1px solid #28a745; border-radius: 6px; line-height: 1.5;">
+                  <strong>Hướng dẫn:</strong> Chọn các mục đã được sửa xong, sau đó bấm <strong>OK</strong>.
+              </div>
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          \${rowHtml('action.name')}
+                          \${rowHtml('action.type')}
+                          \${rowHtml('action.verb')}
+                          \${rowHtml('action.content')}
+                          \${rowHtml('action.purpose')}
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                          \${getActionValue('action.image') ? \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                          \${rowHtml('action.image')}
+                      </div>
+                  </div>
+              </div>
+              <div style="margin-bottom: 15px;">
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
+                  <div style="display: flex; gap: 15px;">
+                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
+                          \${rowHtml('panel_after.name')}
+                          \${rowHtml('panel_after.type')}
+                          \${rowHtml('panel_after.verb')}
+                      </div>
+                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                          \${getActionValue('panel_after.image') ? \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                          \${rowHtml('panel_after.image')}
+                      </div>
+                  </div>
+              </div>
+              <div>
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
+                  <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
+              </div>
+          \`;
+
+          const closeHandler = () => {
+              modal.style.display = 'none';
+              resolvedBugCurrentActionId = null;
+              if (closeBtn) closeBtn.removeEventListener('click', closeHandler);
+              if (cancelBtn) cancelBtn.removeEventListener('click', closeHandler);
+          };
+          closeBtn.onclick = closeHandler;
+          cancelBtn.onclick = closeHandler;
+          confirmBtn.onclick = async () => {
+              const checkboxes = content.querySelectorAll('input[name="resolved_bug"]:checked');
+              const indicesToMark = new Set(Array.from(checkboxes).map(cb => parseInt(cb.dataset.index, 10)));
+              const updatedDetails = bugInfo.details.map((d, i) => {
+                  if (indicesToMark.has(i)) return { ...d, bug_fixed: true, resolved_at: new Date().toISOString() };
+                  return d;
+              });
+              const updatedBugInfo = { ...bugInfo, details: updatedDetails };
+              if (typeof window.resolveBug === 'function') {
+                  try {
+                      await window.resolveBug(resolvedBugCurrentActionId, updatedBugInfo);
+                      if (typeof refreshPanelTree === 'function') refreshPanelTree();
+                      if (window.getPanelTree) {
+                          const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                          panelTreeData = data || []; renderPanelTree();
+                      }
+                      if (typeof showToast === 'function') showToast('✅ Đã cập nhật bug resolved.');
+                      closeHandler();
+                  } catch (err) {
+                      console.error('resolveBug error:', err);
+                      if (typeof showToast === 'function') showToast('❌ Cập nhật thất bại.');
+                      else alert('Cập nhật thất bại: ' + (err.message || err));
+                  }
+              } else {
+                  if (typeof showToast === 'function') showToast('ResolveBug không khả dụng.');
+                  else alert('ResolveBug không khả dụng.');
+              }
+          };
       }
 
       let viewersTooltip = null;
@@ -8522,8 +8890,9 @@ Bạn có chắc chắn muốn rollback?\`;
         if (graphCb) graphCb.checked = myAssignmentFilterEnabled;
         if (videoCb) videoCb.checked = myAssignmentFilterEnabled;
       }
-      function onMyAssignmentCheckboxChange() {
-        myAssignmentFilterEnabled = document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
+      function onMyAssignmentCheckboxChange(e) {
+        const clickedCb = e?.target;
+        myAssignmentFilterEnabled = clickedCb?.checked ?? document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
         setLocalStorage('panel-log-my-assignment', myAssignmentFilterEnabled ? 'true' : 'false');
         syncMyAssignmentCheckboxState();
         if (panelLogDisplayMode === 'validation' && window.getPanelTree) {

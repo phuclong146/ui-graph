@@ -364,6 +364,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("showStepInfoGraph", handlers.showStepInfoGraph);
     await tracker.queuePage.exposeFunction("validateStep", handlers.validateStep);
     await tracker.queuePage.exposeFunction("raiseBug", handlers.raiseBug);
+    await tracker.queuePage.exposeFunction("resolveBug", handlers.resolveBug);
+    await tracker.queuePage.exposeFunction("cancelBug", handlers.cancelBug);
     await tracker.queuePage.exposeFunction("generateVideoForAction", handlers.generateVideoForAction);
     await tracker.queuePage.exposeFunction("regenerateTrackingVideo", handlers.regenerateTrackingVideo);
     await tracker.queuePage.exposeFunction("regenerateStepVideo", handlers.regenerateStepVideo);
@@ -385,6 +387,9 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("saveAccountInfo", handlers.saveAccountInfo);
     await tracker.queuePage.exposeFunction("validateAdminPassword", handlers.validateAdminPassword);
     await tracker.queuePage.exposeFunction("detectImportantActionsForPanel", handlers.detectImportantActionsForPanel);
+    await tracker.queuePage.exposeFunction("getModalityStacksForCurrentTool", handlers.getModalityStacksForCurrentTool);
+    await tracker.queuePage.exposeFunction("setImportantAction", handlers.setImportantAction);
+    await tracker.queuePage.exposeFunction("setNormalAction", handlers.setNormalAction);
     await tracker.queuePage.exposeFunction("getAiToolsList", handlers.getAiToolsList);
     await tracker.queuePage.exposeFunction("adminOpenOrCreateSession", handlers.adminOpenOrCreateSession);
 
