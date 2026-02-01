@@ -1330,6 +1330,21 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="setImportantActionModal" style="display:none; position:fixed; z-index:20003; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:520px; width:90%; max-height:85vh; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Set Important Action</h3>
+        <label style="display:block; font-size:14px; font-weight:600; color:#333; margin-bottom:6px;">Mô tả lý do quan trọng <span style="color:red;">*</span></label>
+        <textarea id="setImportantActionReason" placeholder="Nhập lý do..." style="width:100%; min-height:80px; padding:10px; border:1px solid #ddd; border-radius:6px; font-size:14px; box-sizing:border-box; resize:vertical;" rows="3"></textarea>
+        <p id="setImportantActionReasonError" style="display:none; color:#dc3545; font-size:12px; margin:4px 0 0 0;">Vui lòng nhập mô tả lý do quan trọng.</p>
+        <label style="display:block; font-size:14px; font-weight:600; color:#333; margin:14px 0 6px 0;">Chọn modality_stack (có thể chọn nhiều)</label>
+        <div id="setImportantActionModalityList" style="max-height:220px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="setImportantActionCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="setImportantActionOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">OK</button>
+        </div>
+      </div>
+    </div>
+
     <div id="randomlyAssignModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Randomly assign – Chọn CTV</h3>
@@ -6300,6 +6315,59 @@ Bạn có chắc chắn muốn rollback?\`;
         modal.style.display = 'flex';
       }
       
+      let setImportantActionCurrentId = null;
+      async function openSetImportantActionDialog(actionId) {
+        setImportantActionCurrentId = actionId;
+        const modal = document.getElementById('setImportantActionModal');
+        const reasonEl = document.getElementById('setImportantActionReason');
+        const reasonErr = document.getElementById('setImportantActionReasonError');
+        const listEl = document.getElementById('setImportantActionModalityList');
+        const okBtn = document.getElementById('setImportantActionOkBtn');
+        const cancelBtn = document.getElementById('setImportantActionCancelBtn');
+        if (!modal || !reasonEl || !listEl || !okBtn || !cancelBtn) return;
+        reasonEl.value = '';
+        reasonErr.style.display = 'none';
+        listEl.innerHTML = '<div style="padding:12px; color:#666;">Đang tải...</div>';
+        const stacks = typeof window.getModalityStacksForCurrentTool === 'function' ? await window.getModalityStacksForCurrentTool() : [];
+        let currentStacks = [];
+        if (typeof window.getActionItem === 'function') {
+          const item = await window.getActionItem(actionId);
+          if (item && item.modality_stacks && Array.isArray(item.modality_stacks)) currentStacks = item.modality_stacks;
+          if (item && item.modality_stacks_reason) reasonEl.value = item.modality_stacks_reason;
+        }
+        listEl.innerHTML = '';
+        const codeToChecked = new Set(currentStacks);
+        stacks.forEach(s => {
+          const label = document.createElement('label');
+          label.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; cursor:pointer; font-size:14px;';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.code = s.code;
+          cb.checked = codeToChecked.has(s.code);
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode((s.name || s.code) + ' (' + s.code + ')'));
+          label.addEventListener('click', (e) => { if (e.target !== cb) cb.checked = !cb.checked; });
+          listEl.appendChild(label);
+        });
+        if (stacks.length === 0) listEl.innerHTML = '<div style="padding:12px; color:#999;">Không có modality_stack nào.</div>';
+        cancelBtn.onclick = () => { modal.style.display = 'none'; setImportantActionCurrentId = null; };
+        okBtn.onclick = async () => {
+          const reason = (reasonEl.value || '').trim();
+          if (!reason) { reasonErr.style.display = 'block'; reasonErr.textContent = 'Vui lòng nhập mô tả lý do quan trọng.'; return; }
+          reasonErr.style.display = 'none';
+          const selectedCodes = [];
+          listEl.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => { if (cb.dataset.code) selectedCodes.push(cb.dataset.code); });
+          if (typeof window.setImportantAction === 'function') await window.setImportantAction(setImportantActionCurrentId, reason, selectedCodes);
+          modal.style.display = 'none';
+          setImportantActionCurrentId = null;
+          if (window.getPanelTree) {
+            const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+            panelTreeData = data || []; renderPanelTree();
+          }
+        };
+        modal.style.display = 'flex';
+      }
+      
       function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber) {
         const existingMenu = document.getElementById('tree-context-menu');
         if (existingMenu) {
@@ -6308,10 +6376,53 @@ Bạn có chắc chắn muốn rollback?\`;
         
         const isRootPanel = (nodeName === 'After Login Panel');
         
-        // If role is not DRAW: only show menu for After Login Panel, hide for others
+        // If role is ADMIN or VALIDATE: show Set Important Action / Set Normal Action for ACTION nodes
+        if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && itemCategory === 'ACTION') {
+          const menu = document.createElement('div');
+          menu.id = 'tree-context-menu';
+          menu.style.cssText = \`
+            position: fixed;
+            left: \${x}px;
+            top: \${y}px;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 10000;
+            min-width: 180px;
+          \`;
+          const addItem = (text, handler) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px;';
+            div.addEventListener('mouseenter', () => { div.style.background = '#f0f0f0'; });
+            div.addEventListener('mouseleave', () => { div.style.background = 'transparent'; });
+            div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
+            menu.appendChild(div);
+          };
+          addItem('⭐ Set Important Action', () => { openSetImportantActionDialog(panelId); });
+          addItem('➖ Set Normal Action', async () => {
+            if (window.confirm('Đặt action này thành Normal (xóa modality_stacks và lý do)?')) {
+              if (typeof window.setNormalAction === 'function') await window.setNormalAction(panelId);
+              if (window.getPanelTree) {
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
+              }
+            }
+          });
+          document.body.appendChild(menu);
+          const menuRect = menu.getBoundingClientRect();
+          if (y + menuRect.height > window.innerHeight) menu.style.top = (Math.max(10, y - menuRect.height)) + 'px';
+          const closeMenu = (e) => {
+            if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); }
+          };
+          setTimeout(() => document.addEventListener('click', closeMenu), 100);
+          return;
+        }
+        
+        // If role is not DRAW: only show menu for After Login Panel (PANEL), hide for others
         if (currentRole !== 'DRAW') {
           if (!isRootPanel || itemCategory !== 'PANEL') {
-            // Don't show menu for non-root panels or actions when role is not DRAW
             return;
           }
           // For root panel with non-DRAW role: only show Detect Important Actions

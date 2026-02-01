@@ -3654,6 +3654,110 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get modality_stacks list for current AI tool (for Set Important Action dialog).
+     * @returns {Promise<Array<{code: string, name: string}>>}
+     */
+    const getModalityStacksForCurrentToolHandler = async () => {
+        try {
+            const aiToolCode = tracker.myAiToolCode;
+            if (!aiToolCode) {
+                console.warn('⚠️ No AI tool selected');
+                return [];
+            }
+            const rows = await getAiToolModalityStacks(aiToolCode);
+            return rows.map(r => ({ code: r.code, name: r.name || r.code }));
+        } catch (err) {
+            console.error('❌ getModalityStacksForCurrentTool failed:', err);
+            return [];
+        }
+    };
+
+    /**
+     * Set Important Action: save reason + selected modality_stacks to item and DB (ADMIN/VALIDATE).
+     * @param {string} actionId - item_id of the action
+     * @param {string} reason - modality_stacks_reason (required)
+     * @param {string[]} modalityStackCodes - selected modality stack codes
+     */
+    const setImportantActionHandler = async (actionId, reason, modalityStackCodes) => {
+        try {
+            if (!actionId || !tracker.dataItemManager) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Thiếu action hoặc chưa khởi tạo data.' });
+                return;
+            }
+            const trimmedReason = (reason || '').trim();
+            if (!trimmedReason) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Vui lòng nhập mô tả lý do quan trọng.' });
+                return;
+            }
+            const codes = Array.isArray(modalityStackCodes) ? modalityStackCodes : [];
+            const aiToolCode = tracker.myAiToolCode;
+            if (!aiToolCode) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Chưa chọn AI tool.' });
+                return;
+            }
+            const validStacks = await getAiToolModalityStacks(aiToolCode);
+            const validCodes = new Set(validStacks.map(s => s.code));
+            const filteredCodes = codes.filter(c => validCodes.has(c));
+
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+            try {
+                await exporter.init();
+                await tracker.dataItemManager.updateItem(actionId, {
+                    modality_stacks: filteredCodes,
+                    modality_stacks_reason: trimmedReason
+                });
+                const dbUpdated = await exporter.updateItemModalityStacks(actionId, filteredCodes, trimmedReason);
+                if (dbUpdated) console.log(`✅ Updated modality_stacks for action ${actionId}`);
+            } finally {
+                await exporter.close();
+            }
+
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+            await tracker._broadcast({ type: 'show_toast', message: '✅ Đã set Important Action!' });
+        } catch (err) {
+            console.error('❌ setImportantAction failed:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Lỗi: ' + (err.message || 'Set Important Action thất bại') });
+        }
+    };
+
+    /**
+     * Set Normal Action: clear modality_stacks and reason, update item and DB (ADMIN/VALIDATE).
+     * @param {string} actionId - item_id of the action
+     */
+    const setNormalActionHandler = async (actionId) => {
+        try {
+            if (!actionId || !tracker.dataItemManager) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Thiếu action hoặc chưa khởi tạo data.' });
+                return;
+            }
+            const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+            try {
+                await exporter.init();
+                await tracker.dataItemManager.updateItem(actionId, {
+                    modality_stacks: [],
+                    modality_stacks_reason: null
+                });
+                const dbUpdated = await exporter.updateItemModalityStacks(actionId, [], null);
+                if (dbUpdated) console.log(`✅ Cleared modality_stacks for action ${actionId}`);
+            } finally {
+                await exporter.close();
+            }
+
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
+            await tracker._broadcast({ type: 'show_toast', message: '✅ Đã set Normal Action!' });
+        } catch (err) {
+            console.error('❌ setNormalAction failed:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Lỗi: ' + (err.message || 'Set Normal Action thất bại') });
+        }
+    };
+
     const captureActionsHandler = async () => {
         try {
             if (tracker.geminiAsking) {
@@ -9479,6 +9583,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         resetActionStep: resetActionStepHandler,
         detectActionPurpose: detectActionPurposeHandler,
         detectImportantActionsForPanel: detectImportantActionsForPanelHandler,
+        getModalityStacksForCurrentTool: getModalityStacksForCurrentToolHandler,
+        setImportantAction: setImportantActionHandler,
+        setNormalAction: setNormalActionHandler,
         renamePanel: renamePanelHandler,
         renameActionByAI: renameActionByAIHandler,
         getClickEventsForPanel: getClickEventsForPanelHandler,
