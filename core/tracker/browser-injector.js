@@ -146,9 +146,6 @@ export async function showReadyNotification(tracker) {
 }
 
 export async function setupTracking(tracker) {
-    if (!tracker?.page || tracker.page.isClosed()) {
-        return;
-    }
     console.log('🔧 Setting up tracking...');
 
     const exposeIfNotExists = async (name, fn) => {
@@ -588,8 +585,6 @@ export async function setupTracking(tracker) {
     }
 
     if (!tracker._clickPoller) {
-        tracker._clickPollerTick = 0;
-        const CLICK_POLLER_RE_ENSURE_INTERVAL = 100; // ~3s (100 * 30ms) - re-ensure click handler sau chuỗi thao tác phức tạp
         tracker._clickPoller = setInterval(async () => {
             try {
                 // Nếu không có tracker hợp lệ thì thử chỉ định tab đầu tiên của tracking browser làm tracker
@@ -601,19 +596,6 @@ export async function setupTracking(tracker) {
                             tracker._clickPoller = null;
                         }
                         return;
-                    }
-                }
-
-                // Định kỳ re-ensure tracking (click handler) để phục hồi khi document bị thay thế mà không fire load
-                tracker._clickPollerTick = (tracker._clickPollerTick || 0) + 1;
-                if (tracker._clickPollerTick >= CLICK_POLLER_RE_ENSURE_INTERVAL) {
-                    tracker._clickPollerTick = 0;
-                    if (tracker.page && !tracker.page.isClosed()) {
-                        try {
-                            await setupTracking(tracker);
-                        } catch (e) {
-                            if (!(e.message || '').match(/Target closed|detached/)) console.warn('Click poller re-ensure setupTracking failed:', e.message);
-                        }
                     }
                 }
 
