@@ -1318,6 +1318,31 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="correctChildModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:720px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 id="correctChildModalTitle" style="margin:0 0 16px 0; font-size:18px; color:#333;">Correct Child Actions & Panels</h3>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Chọn actions để chuyển:</label>
+          <div id="correctChildActionsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:180px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Chọn panels để chuyển:</label>
+          <div id="correctChildPanelsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:180px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Panel đích (chọn 1):</label>
+          <div id="correctChildDestList" style="max-height:160px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px;"></div>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="correctChildCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="correctChildMoveBtn" style="background:linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Move</button>
+        </div>
+      </div>
+    </div>
+    <div id="correctChildImageLightbox" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.9); justify-content:center; align-items:center; cursor:pointer;" title="Click to close">
+      <img id="correctChildLightboxImg" style="max-width:95%; max-height:95%; object-fit:contain;" />
+    </div>
+
     <div id="assignValidatorModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <h3 style="margin:0 0 16px 0; font-size:18px; color:#333;">Chọn CTV (Assign Validator)</h3>
@@ -3934,6 +3959,10 @@ export const QUEUE_BROWSER_HTML = `
                 importantIcon.textContent = '⭐';
                 importantIcon.title = 'Important Action';
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'graph-modality-stacks-tooltip';
                     tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
@@ -4420,6 +4449,10 @@ export const QUEUE_BROWSER_HTML = `
                 importantIcon.textContent = '⭐';
                 importantIcon.title = 'Important Action';
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('video-validation-modality-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'video-validation-modality-tooltip';
                     tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
@@ -6142,6 +6175,10 @@ Bạn có chắc chắn muốn rollback?\`;
                 
                 // Add tooltip with modality_stacks info
                 importantIcon.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates
+                    const existingTooltip = document.getElementById('modality-stacks-tooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
                     const tooltip = document.createElement('div');
                     tooltip.id = 'modality-stacks-tooltip';
                     tooltip.style.cssText = 'position: fixed;' +
@@ -6334,6 +6371,126 @@ Bạn có chắc chắn muốn rollback?\`;
         setTimeout(() => document.addEventListener('click', closeMenu), 100);
       }
       
+      async function openCorrectChildDialog(panelId) {
+        const modal = document.getElementById('correctChildModal');
+        const titleEl = document.getElementById('correctChildModalTitle');
+        const actionsList = document.getElementById('correctChildActionsList');
+        const panelsList = document.getElementById('correctChildPanelsList');
+        const destList = document.getElementById('correctChildDestList');
+        const moveBtn = document.getElementById('correctChildMoveBtn');
+        const cancelBtn = document.getElementById('correctChildCancelBtn');
+        const lightbox = document.getElementById('correctChildImageLightbox');
+        const lightboxImg = document.getElementById('correctChildLightboxImg');
+        if (!modal || !actionsList || !panelsList || !destList) return;
+        actionsList.innerHTML = '<div style="padding:12px; color:#666;">Đang tải...</div>';
+        panelsList.innerHTML = '';
+        destList.innerHTML = '';
+        modal.style.display = 'flex';
+        const res = await (typeof window.getCorrectChildDialogData === 'function' ? window.getCorrectChildDialogData(panelId) : { success: false });
+        if (!res.success) {
+          if (typeof showToast === 'function') showToast(res.message || 'Không thể tải dữ liệu');
+          modal.style.display = 'none';
+          return;
+        }
+        titleEl.textContent = 'Correct Child Actions & Panels - ' + (res.panelName || 'Panel');
+        const showLightbox = (src) => {
+          if (!lightbox || !lightboxImg) return;
+          lightboxImg.src = src || '';
+          lightbox.style.display = 'flex';
+        };
+        if (lightbox) lightbox.onclick = () => { lightbox.style.display = 'none'; };
+        actionsList.innerHTML = '';
+        (res.childActions || []).forEach(a => {
+          const wrap = document.createElement('label');
+          wrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; cursor:pointer; border:2px solid #eee; border-radius:8px; padding:8px; min-width:100px;';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.id = a.id;
+          cb.style.marginBottom = '4px';
+          const img = document.createElement('img');
+          img.src = a.imageBase64 ? 'data:image/png;base64,' + a.imageBase64 : '';
+          img.style.cssText = 'width:80px; height:60px; object-fit:cover; border-radius:4px; cursor:pointer;';
+          img.alt = a.name || '';
+          img.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (a.imageBase64) showLightbox(img.src); };
+          const name = document.createElement('span');
+          name.textContent = (a.name || '').slice(0, 20) + ((a.name || '').length > 20 ? '...' : '');
+          name.style.cssText = 'font-size:11px; text-align:center; margin-top:4px; max-width:100px; overflow:hidden; text-overflow:ellipsis;';
+          wrap.appendChild(cb);
+          wrap.appendChild(img);
+          wrap.appendChild(name);
+          actionsList.appendChild(wrap);
+        });
+        if ((res.childActions || []).length === 0) actionsList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có actions con</div>';
+        panelsList.innerHTML = '';
+        (res.childPanels || []).forEach(p => {
+          const wrap = document.createElement('label');
+          wrap.style.cssText = 'display:flex; flex-direction:column; align-items:center; cursor:pointer; border:2px solid #eee; border-radius:8px; padding:8px; min-width:100px;';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.dataset.id = p.id;
+          cb.style.marginBottom = '4px';
+          const img = document.createElement('img');
+          img.src = p.imageBase64 ? 'data:image/png;base64,' + p.imageBase64 : '';
+          img.style.cssText = 'width:80px; height:60px; object-fit:cover; border-radius:4px; cursor:pointer;';
+          img.alt = p.name || '';
+          img.onclick = (e) => { e.preventDefault(); e.stopPropagation(); if (p.imageBase64) showLightbox(img.src); };
+          const name = document.createElement('span');
+          name.textContent = (p.name || '').slice(0, 20) + ((p.name || '').length > 20 ? '...' : '');
+          name.style.cssText = 'font-size:11px; text-align:center; margin-top:4px; max-width:100px; overflow:hidden; text-overflow:ellipsis;';
+          wrap.appendChild(cb);
+          wrap.appendChild(img);
+          wrap.appendChild(name);
+          panelsList.appendChild(wrap);
+        });
+        if ((res.childPanels || []).length === 0) panelsList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có panels con</div>';
+        let selectedDest = null;
+        (res.allPanels || []).forEach(p => {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:8px 10px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:8px;';
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'correctChildDest';
+          radio.value = p.item_id;
+          radio.onchange = () => { selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          const name = document.createElement('span');
+          name.textContent = p.name || p.item_id || '';
+          row.setAttribute('data-dest', '1');
+          row.appendChild(radio);
+          row.appendChild(name);
+          row.onclick = () => { radio.checked = true; selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          destList.appendChild(row);
+        });
+        if ((res.allPanels || []).length === 0) destList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có panel nào khác để chọn làm đích</div>';
+        cancelBtn.onclick = () => { modal.style.display = 'none'; };
+        moveBtn.onclick = async () => {
+          if (!selectedDest) { if (typeof showToast === 'function') showToast('Vui lòng chọn panel đích'); return; }
+          const selActions = [].slice.call(actionsList.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.id).filter(Boolean);
+          const selPanels = [].slice.call(panelsList.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.id).filter(Boolean);
+          if (selActions.length === 0 && selPanels.length === 0) { if (typeof showToast === 'function') showToast('Vui lòng chọn ít nhất 1 action hoặc 1 panel để chuyển'); return; }
+          moveBtn.textContent = 'Moving...';
+          moveBtn.disabled = true;
+          moveBtn.style.cursor = 'not-allowed';
+          try {
+            const r = await (typeof window.correctChildActionsAndPanels === 'function' ? window.correctChildActionsAndPanels(panelId, selActions, selPanels, selectedDest) : { success: false });
+            modal.style.display = 'none';
+            if (r.success) {
+              if (typeof showToast === 'function') showToast('Đã chuyển thành công');
+              if (window.getPanelTree) {
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
+              }
+            } else {
+              if (typeof showToast === 'function') showToast(r.message || 'Lỗi khi chuyển');
+            }
+          } finally {
+            moveBtn.textContent = 'Move';
+            moveBtn.disabled = false;
+            moveBtn.style.cursor = 'pointer';
+          }
+        };
+      }
+      window.openCorrectChildDialog = openCorrectChildDialog;
+
       let assignValidatorModalSession = null;
       async function openAssignValidatorModal(node) {
         assignValidatorModalSession = node;
@@ -6517,12 +6674,13 @@ Bạn có chắc chắn muốn rollback?\`;
           return;
         }
         
-        // If role is not DRAW: only show menu for After Login Panel (PANEL), hide for others
+        // If role is not DRAW: show menu for PANEL (ADMIN: any panel; VALIDATE: only root)
         if (currentRole !== 'DRAW') {
-          if (!isRootPanel || itemCategory !== 'PANEL') {
+          const showMenuForPanel = (currentRole === 'ADMIN' && itemCategory === 'PANEL') ||
+            (currentRole === 'VALIDATE' && isRootPanel && itemCategory === 'PANEL');
+          if (!showMenuForPanel) {
             return;
           }
-          // For root panel with non-DRAW role: only show Detect Important Actions
           const menu = document.createElement('div');
           menu.id = 'tree-context-menu';
           menu.style.cssText = \`
@@ -6534,57 +6692,34 @@ Bạn có chắc chắn muốn rollback?\`;
             border-radius: 4px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
             z-index: 10000;
-            min-width: 150px;
+            min-width: 200px;
           \`;
-          
-          const detectImportantActionsOption = document.createElement('div');
-          detectImportantActionsOption.textContent = '🎯 Detect Important Actions';
-          detectImportantActionsOption.style.cssText = \`
-            padding: 8px 12px;
-            cursor: pointer;
-            font-size: 14px;
-          \`;
-          detectImportantActionsOption.addEventListener('mouseenter', () => {
-            detectImportantActionsOption.style.background = '#f0f0f0';
-          });
-          detectImportantActionsOption.addEventListener('mouseleave', () => {
-            detectImportantActionsOption.style.background = 'transparent';
-          });
-          detectImportantActionsOption.addEventListener('click', async () => {
-            // Check if already running
-            if (isDetectingImportantActions) {
-              showToast('⚠️ Đang detect important actions, vui lòng đợi...');
-              return;
-            }
-            
-            menu.remove();
-            if (window.detectImportantActionsForPanel) {
-              await window.detectImportantActionsForPanel(panelId);
-            }
-          });
-          menu.appendChild(detectImportantActionsOption);
-          
-          document.body.appendChild(menu);
-          
-          const menuRect = menu.getBoundingClientRect();
-          const viewportHeight = window.innerHeight;
-          
-          if (y + menuRect.height > viewportHeight) {
-            const newY = Math.max(10, y - menuRect.height);
-            menu.style.top = \`\${newY}px\`;
-          }
-          
-          const closeMenu = (e) => {
-            if (!menu.contains(e.target)) {
-              menu.remove();
-              document.removeEventListener('click', closeMenu);
-            }
+          const addItem = (text, handler) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px;' + (menu.children.length ? ' border-top: 1px solid #eee;' : '');
+            div.addEventListener('mouseenter', () => { div.style.background = '#f0f0f0'; });
+            div.addEventListener('mouseleave', () => { div.style.background = 'transparent'; });
+            div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
+            menu.appendChild(div);
           };
-          
-          setTimeout(() => {
-            document.addEventListener('click', closeMenu);
-          }, 100);
-          
+          if (currentRole === 'ADMIN') {
+            addItem('🔧 Correct Child Actions & Panels', () => { if (window.openCorrectChildDialog) window.openCorrectChildDialog(panelId); });
+          }
+          if (isRootPanel) {
+            addItem('🎯 Detect Important Actions', async () => {
+              if (isDetectingImportantActions) {
+                showToast('⚠️ Đang detect important actions, vui lòng đợi...');
+                return;
+              }
+              if (window.detectImportantActionsForPanel) await window.detectImportantActionsForPanel(panelId);
+            });
+          }
+          document.body.appendChild(menu);
+          const menuRect = menu.getBoundingClientRect();
+          if (y + menuRect.height > window.innerHeight) menu.style.top = (Math.max(10, y - menuRect.height)) + 'px';
+          const closeMenu = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', closeMenu); } };
+          setTimeout(() => document.addEventListener('click', closeMenu), 100);
           return;
         }
         
@@ -7366,11 +7501,23 @@ Bạn có chắc chắn muốn rollback?\`;
               if (!info) {
                   sessionAssigneeTooltip.innerHTML = '<div style="color:#9e9e9e;">Chưa có assignee</div>';
               } else {
-                  const fmtTime = (s) => { if (!s) return ''; try { const d = new Date(s); return d.toLocaleString('vi-VN'); } catch (_) { return s; } };
+                  // Hiển thị thời điểm assigned theo GMT+7 (Asia/Ho_Chi_Minh)
+                  const fmtTimeGMT7 = (s) => {
+                      if (!s) return '';
+                      try {
+                          let iso = String(s).trim();
+                          if (iso && !/Z|[+-]\d{2}:?\d{2}$/.test(iso) && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(iso)) {
+                              iso = iso.replace(' ', 'T') + 'Z';
+                          }
+                          const d = new Date(iso);
+                          if (isNaN(d.getTime())) return s;
+                          return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                      } catch (_) { return s; }
+                  };
                   let html = '<div style="font-weight:600; margin-bottom:8px; color:#4fc3f7;">Assigned</div>';
                   html += '<div style="padding:4px 0;">Name: ' + (info.name || info.assignee || '—') + '</div>';
                   html += '<div style="padding:4px 0;">Device ID: ' + (info.device_id || '—') + '</div>';
-                  html += '<div style="padding:4px 0; color:#9e9e9e;">Updated: ' + fmtTime(info.updated_at) + '</div>';
+                  html += '<div style="padding:4px 0; color:#9e9e9e;">Assigned: ' + fmtTimeGMT7(info.updated_at) + ' (GMT+7)</div>';
                   sessionAssigneeTooltip.innerHTML = html;
               }
           } catch (err) {
@@ -9475,6 +9622,33 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // Expose function to window
       window.openSelectPanelModal = openSelectPanelModal;
+
+      // Global tooltip cleanup mechanism to prevent stuck tooltips
+      // Clean up tooltips on scroll or when clicking anywhere
+      const cleanupAllTooltips = () => {
+        const tooltipIds = [
+          'modality-stacks-tooltip',
+          'graph-modality-stacks-tooltip',
+          'video-validation-modality-tooltip',
+          'graph-action-tooltip',
+          'action-tooltip'
+        ];
+        tooltipIds.forEach(id => {
+          const tooltip = document.getElementById(id);
+          if (tooltip) tooltip.remove();
+        });
+      };
+
+      // Clean up tooltips on scroll (tooltips can get stuck when scrolling quickly)
+      document.addEventListener('scroll', cleanupAllTooltips, true);
+      
+      // Clean up tooltips on any click (except on the tooltip itself)
+      document.addEventListener('click', (e) => {
+        // Don't clean up if clicking on an important icon (let the normal flow handle it)
+        if (!e.target.closest('.important-icon')) {
+          cleanupAllTooltips();
+        }
+      }, true);
     </script>
   </body>
 </html>

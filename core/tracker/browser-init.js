@@ -4,6 +4,7 @@ import { WebSocketServer } from "ws";
 import { getScreenSize } from "../utils/utils.js";
 import { fetchWebsiteList } from "../media/uploader.js";
 import { injectWebsiteSelector } from "../../ui/injectWebsiteSelector.js";
+import { showTrackerCursorIndicator, ensureTrackerCursorIndicatorOnLoad } from "./tracker-cursor-indicator.js";
 import { ENV } from "../config/env.js";
 import { QUEUE_BROWSER_HTML } from "./queue-browser-html.js";
 import { createQueuePageHandlers } from "./queue-page-handlers.js";
@@ -106,6 +107,8 @@ export async function initTrackingBrowser(tracker) {
     tracker.originalPage = initialPage;
     await tracker.page.setJavaScriptEnabled(true);
     await tracker.page.setBypassCSP(true);
+    await ensureTrackerCursorIndicatorOnLoad(tracker.page);
+    await showTrackerCursorIndicator(tracker.page);
 
     // Listen for newly opened tabs
     trackingBrowser.on('targetcreated', async (target) => {
@@ -355,6 +358,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("useSelectPanel", handlers.useSelectPanel);
     await tracker.queuePage.exposeFunction("getAllPanels", handlers.getAllPanels);
     await tracker.queuePage.exposeFunction("getPanelImage", handlers.getPanelImage);
+    await tracker.queuePage.exposeFunction("getCorrectChildDialogData", handlers.getCorrectChildDialogData);
+    await tracker.queuePage.exposeFunction("correctChildActionsAndPanels", handlers.correctChildActionsAndPanels);
     await tracker.queuePage.exposeFunction("broadcastToast", handlers.broadcastToast);
     await tracker.queuePage.exposeFunction("bringQueueBrowserToFront", handlers.bringQueueBrowserToFront);
     await tracker.queuePage.exposeFunction("hideTrackingBrowser", handlers.hideTrackingBrowser);

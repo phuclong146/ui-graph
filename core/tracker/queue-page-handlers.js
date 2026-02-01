@@ -9,6 +9,8 @@ import { cropBase64Image } from '../media/screenshot.js';
 import { getDbPool } from '../data/db-connection.js';
 import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 import { fetchWebsiteList } from '../media/uploader.js';
+import { showTrackerCursorIndicator, hideTrackerCursorIndicator } from './tracker-cursor-indicator.js';
+import { attachTrackerCursorIndicatorOnNavigate, setupTracking } from './browser-injector.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -2125,6 +2127,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('🤖 Gemini AI capture on PAGE triggered');
             console.log(`[RECORD] 📤 Gemini AI capture (PAGE) - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+            await setupTracking(tracker);
+
             const recordingResult = await tracker.stopPanelRecording();
 
             const timestamp = Date.now();
@@ -2412,6 +2424,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Set flow state to 'capture' at the start
             await setPanelDrawFlowState(tracker.selectedPanelId, 'capture');
 
+            // Nếu không có tracker hợp lệ thì chỉ định tab đầu tiên của tracking browser làm tracker
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+            await setupTracking(tracker);
+
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
             // Show loading indicator (only in queue browser)
@@ -2450,11 +2473,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     if (newTabUrl && newTabUrl !== 'about:blank') {
                         console.log(`🆕 Switching to newly opened tab: ${newTabUrl}`);
+                        try {
+                            if (tracker.page && !tracker.page.isClosed()) {
+                                await hideTrackerCursorIndicator(tracker.page);
+                            }
+                        } catch (e) { /* ignore detached/closed */ }
                         tracker.originalPage = tracker.page; // Store original page
                         tracker.page = newestTab.page;
                         pageToCapture = newestTab.page;
                         switchedToNewTab = true;
-                        
+                        try {
+                            await showTrackerCursorIndicator(tracker.page);
+                            await attachTrackerCursorIndicatorOnNavigate(tracker, tracker.page);
+                            await setupTracking(tracker);
+                        } catch (e) { /* ignore detached/closed */ }
                         // Wait a bit for the page to fully load
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     } else {
@@ -2491,9 +2523,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Clear frozen screenshot after use
                 tracker.clearFrozenScreenshot();
             } else {
-                // Capture fresh screenshot
+                // Đảm bảo page còn hợp lệ (không detached/closed) trước khi capture
+                try {
+                    await pageToCapture.evaluate(() => true);
+                } catch (e) {
+                    await tracker.ensureTrackerPage?.();
+                    pageToCapture = tracker.page;
+                    if (!pageToCapture || pageToCapture.isClosed()) throw new Error('Không có tab nào trong tracking browser để capture.');
+                }
                 const { captureScreenshot } = await import('../media/screenshot.js');
-                const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                let result;
+                try {
+                    result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                } catch (captureErr) {
+                    const msg = captureErr.message || '';
+                    if (msg.includes('detached') || msg.includes('Target closed')) {
+                        await tracker.ensureTrackerPage?.();
+                        pageToCapture = tracker.page;
+                        if (pageToCapture && !pageToCapture.isClosed()) {
+                            result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                        } else throw captureErr;
+                    } else throw captureErr;
+                }
                 screenshot = result.screenshot;
                 imageWidth = result.imageWidth;
                 imageHeight = result.imageHeight;
@@ -2608,7 +2659,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log('User canceled panel type confirmation');
                     await setPanelDrawFlowState(tracker.selectedPanelId, null);
                     if (restoreViewport) {
-                        await restoreViewport();
+                        try { await restoreViewport(); } catch (e) {
+                            if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                        }
                     }
                     await tracker._broadcast({
                         type: 'show_toast',
@@ -2681,7 +2734,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await restoreViewport();
                     console.log('✅ Viewport restored');
                 } catch (restoreErr) {
-                    console.error('❌ Failed to restore viewport:', restoreErr);
+                    const m = (restoreErr.message || '');
+                    if (!m.match(/Target closed|Session closed|detached/)) console.error('❌ Failed to restore viewport:', restoreErr);
                 }
             }
         }
@@ -2741,7 +2795,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Restore viewport nếu có
             if (restoreViewportFn) {
-                await restoreViewportFn();
+                try { await restoreViewportFn(); } catch (e) {
+                    if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewportFn:', e.message);
+                }
             }
 
             await tracker._broadcast({
@@ -2763,7 +2819,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Cleanup context
                 const { restoreViewport } = tracker.__drawPanelContext;
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
                 delete tracker.__drawPanelContext;
                 
@@ -3295,7 +3353,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.parentPanelManager.updateParentDom(tracker.selectedPanelId, adjustedActions);
 
             if (restoreViewport) {
-                await restoreViewport();
+                try { await restoreViewport(); } catch (e) {
+                    if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                }
             }
 
             try {
@@ -3370,7 +3430,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (switchedToNewTab && originalPage) {
                 try {
                     console.log('🔄 Restoring original page...');
+                    if (tracker.page && !tracker.page.isClosed()) {
+                        await hideTrackerCursorIndicator(tracker.page);
+                    }
                     tracker.page = originalPage;
+                    await showTrackerCursorIndicator(tracker.page);
+                    await setupTracking(tracker);
                     // Bring original page to front
                     await originalPage.bringToFront().catch(() => {});
                     console.log('✅ Restored to original page');
@@ -3823,6 +3888,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('📸 DOM Capture triggered');
             console.log(`[RECORD] 📤 DOM Capture - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+            await setupTracking(tracker);
+
             const recordingResult = await tracker.stopPanelRecording();
 
             let screenshot = null;
@@ -4029,6 +4104,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('🤖 Gemini AI capture (SCROLLING) triggered');
             console.log(`[RECORD] 📤 Gemini AI capture (SCROLLING) - checking for recording...`);
+
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+            await setupTracking(tracker);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -4242,7 +4327,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
 
                 console.log('🔄 Reloading page to restore scroll (website-shot changed DOM structure)...');
@@ -4338,6 +4425,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('📸 DOM Capture (SCROLLING) triggered');
             console.log(`[RECORD] 📤 DOM Capture (SCROLLING) - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+            await setupTracking(tracker);
+
             const recordingResult = await tracker.stopPanelRecording();
 
             // Show loading indicator (only in queue browser)
@@ -4378,12 +4475,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const { detectScreenByDOM } = await import('./gemini-handler.js');
                 await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
-                await tracker.page.evaluate(() => {
-                    document.documentElement.style.overflow = '';
-                    document.body.style.overflow = '';
-                });
+                try {
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = '';
+                        document.body.style.overflow = '';
+                    });
+                } catch (e) { /* page may be closed */ }
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
             }
 
@@ -5042,8 +5143,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (!myAiToolCode) return null;
 
             const pool = getDbPool();
+            // Lấy updated_at dạng chuỗi (DATE_FORMAT) để tránh driver MySQL hiểu theo giờ local server.
+            // DB lưu UTC → gửi xuống client dạng ISO UTC (thêm Z).
             const [rows] = await pool.execute(
-                `SELECT a.my_collaborator as assignee, c.name, c.device_id, a.updated_at
+                `SELECT a.my_collaborator as assignee, c.name, c.device_id,
+                        DATE_FORMAT(a.updated_at, '%Y-%m-%dT%H:%i:%s') as updated_at_iso
                  FROM uigraph_validation_assignee a
                  LEFT JOIN uigraph_collaborator c ON c.code = a.my_collaborator AND c.published = 1
                  WHERE a.my_ai_tool = ? AND a.my_session = ? AND a.published = 1
@@ -5052,11 +5156,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             );
             if (!rows || rows.length === 0) return null;
             const r = rows[0];
+            const raw = (r.updated_at_iso != null && r.updated_at_iso !== '') ? String(r.updated_at_iso).trim() : null;
+            const updated_at = raw ? raw + 'Z' : null;
             return {
                 assignee: r.assignee,
                 name: r.name ?? r.assignee ?? '',
                 device_id: r.device_id ?? null,
-                updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : null
+                updated_at
             };
         } catch (err) {
             console.error('[getSessionAssigneeInfo] failed:', err);
@@ -6146,6 +6252,150 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get data for Correct Child Actions & Panels dialog (ADMIN only).
+     * Returns childActions (with name, imageBase64), childPanels (with name, imageBase64), allPanels, panelName.
+     */
+    const getCorrectChildDialogDataHandler = async (panelId) => {
+        try {
+            const accountData = await tracker._getAccountInfo?.();
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { success: false, message: 'Chỉ ADMIN mới được sử dụng tính năng này.' };
+            }
+            if (!tracker.parentPanelManager || !tracker.dataItemManager) {
+                return { success: false, message: 'Managers chưa khởi tạo.' };
+            }
+
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+            if (!parentEntry) {
+                return { success: false, message: 'Panel không tồn tại.' };
+            }
+
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            const panelName = panelItem?.name || 'Panel';
+
+            const childActions = [];
+            const actionIds = parentEntry.child_actions || [];
+            const panelImageBase64 = await loadPanelImage(panelItem);
+
+            for (const actionId of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                if (!actionItem) continue;
+                let imageBase64 = null;
+                if (panelImageBase64 && actionItem.metadata?.global_pos) {
+                    try {
+                        imageBase64 = await cropBase64Image(panelImageBase64, actionItem.metadata.global_pos);
+                    } catch (e) {
+                        console.warn('Failed to crop action image:', actionId, e);
+                    }
+                }
+                childActions.push({
+                    id: actionId,
+                    name: actionItem.name || 'Action',
+                    imageBase64: imageBase64 || null
+                });
+            }
+
+            const childPanels = [];
+            const childPanelIds = parentEntry.child_panels || [];
+            for (const childPanelId of childPanelIds) {
+                const childPanelItem = await tracker.dataItemManager.getItem(childPanelId);
+                if (!childPanelItem || childPanelItem.item_category !== 'PANEL') continue;
+                const img = await loadPanelImage(childPanelItem);
+                childPanels.push({
+                    id: childPanelId,
+                    name: childPanelItem.name || 'Panel',
+                    imageBase64: img || null
+                });
+            }
+
+            const allPanels = await getAllPanelsHandler();
+            const allPanelsFiltered = (allPanels || []).filter(p => p.item_id !== panelId);
+
+            return {
+                success: true,
+                childActions,
+                childPanels,
+                allPanels: allPanelsFiltered,
+                panelName
+            };
+        } catch (err) {
+            console.error('getCorrectChildDialogData failed:', err);
+            return { success: false, message: err.message || 'Lỗi khi tải dữ liệu.' };
+        }
+    };
+
+    /**
+     * Move selected actions and panels from source panel to destination panel (ADMIN only).
+     * Syncs changes to DB so DRAW sees them when opening session later.
+     */
+    const correctChildActionsAndPanelsHandler = async (sourcePanelId, selectedActionIds, selectedPanelIds, destinationPanelId) => {
+        try {
+            const accountData = await tracker._getAccountInfo?.();
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { success: false, message: 'Chỉ ADMIN mới được sử dụng tính năng này.' };
+            }
+            if (!tracker.parentPanelManager) {
+                return { success: false, message: 'ParentPanelManager chưa khởi tạo.' };
+            }
+
+            if (!destinationPanelId) {
+                return { success: false, message: 'Vui lòng chọn panel đích.' };
+            }
+            if (sourcePanelId === destinationPanelId) {
+                return { success: false, message: 'Panel đích không được trùng với panel nguồn.' };
+            }
+
+            const allPanels = await getAllPanelsHandler();
+            const destExists = (allPanels || []).some(p => p.item_id === destinationPanelId);
+            if (!destExists) {
+                return { success: false, message: 'Panel đích không tồn tại.' };
+            }
+
+            const actionIds = Array.isArray(selectedActionIds) ? selectedActionIds : [];
+            const panelIds = Array.isArray(selectedPanelIds) ? selectedPanelIds : [];
+
+            for (const actionId of actionIds) {
+                await tracker.parentPanelManager.removeChildAction(sourcePanelId, actionId);
+                await tracker.parentPanelManager.addChildAction(destinationPanelId, actionId);
+            }
+            for (const panelId of panelIds) {
+                await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
+                await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+            }
+
+            let mode = 'log';
+            try {
+                if (tracker.queuePage) {
+                    mode = await tracker.queuePage.evaluate(() =>
+                        (typeof window.panelLogDisplayMode !== 'undefined' ? window.panelLogDisplayMode : null) || 'log'
+                    ) || 'log';
+                }
+            } catch (_) { mode = 'log'; }
+            const treeData = mode === 'tree'
+                ? await tracker.panelLogManager.buildTreeStructureWithChildPanels()
+                : await tracker.panelLogManager.buildTreeStructure();
+            await tracker._broadcast({ type: 'tree_update', data: treeData });
+
+            if (tracker.sessionFolder && tracker.myAiToolCode) {
+                try {
+                    const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                    await exporter.init();
+                    await exporter.exportToMySQL();
+                    await exporter.close();
+                    console.log('✅ Synced myparent_panel to DB after Correct Child');
+                } catch (dbErr) {
+                    console.warn('⚠️ Failed to sync Correct Child to DB:', dbErr);
+                }
+            }
+
+            return { success: true };
+        } catch (err) {
+            console.error('correctChildActionsAndPanels failed:', err);
+            return { success: false, message: err.message || 'Lỗi khi chuyển.' };
+        }
+    };
+
     const triggerDrawPanelNewHandler = async () => {
         await tracker._broadcast({ type: 'trigger_draw_panel', mode: 'DRAW_NEW' });
     };
@@ -6170,6 +6420,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const hideTrackingBrowserHandler = async () => {
         try {
+            await tracker.ensureTrackerPage?.();
             if (tracker.page) {
                 const session = await tracker.page.target().createCDPSession();
                 await session.send('Browser.setWindowBounds', {
@@ -6197,6 +6448,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
             
+            await tracker.ensureTrackerPage?.();
             if (tracker.page) {
                 const session = await tracker.page.target().createCDPSession();
                 const bounds = {
@@ -7110,6 +7362,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     // Show modality_stacks tooltip if action has modality_stacks
                     if (edge.data.hasModalityStacks && edge.data.actionModalityStacks && edge.data.actionModalityStacks.length > 0) {
+                        // Remove any existing tooltips first to prevent duplicates
+                        const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                        if (existingTooltip) existingTooltip.remove();
+                        const existingActionTooltip = document.getElementById('graph-action-tooltip');
+                        if (existingActionTooltip) existingActionTooltip.remove();
+                        
                         const tooltip = document.createElement('div');
                         tooltip.id = 'graph-modality-stacks-tooltip';
                         tooltip.style.cssText = 'position: fixed;' +
@@ -7134,6 +7392,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     } else if (!edge.data.actionBugFlag && 
                                Array.isArray(edge.data.actionModalityStacks) && 
                                edge.data.actionModalityStacks.length === 0) {
+                        // Remove any existing tooltips first to prevent duplicates
+                        const existingTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                        if (existingTooltip) existingTooltip.remove();
+                        const existingActionTooltip = document.getElementById('graph-action-tooltip');
+                        if (existingActionTooltip) existingActionTooltip.remove();
+                        
                         // Show tooltip for actions with empty modality_stacks array (if no bug)
                         const tooltip = document.createElement('div');
                         tooltip.id = 'graph-action-tooltip';
@@ -9799,6 +10063,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         useSelectPanel: useSelectPanelHandler,
         getAllPanels: getAllPanelsHandler,
         getPanelImage: getPanelImageHandler,
+        getCorrectChildDialogData: getCorrectChildDialogDataHandler,
+        correctChildActionsAndPanels: correctChildActionsAndPanelsHandler,
         triggerDrawPanelNew: triggerDrawPanelNewHandler,
         triggerUseBeforePanel: triggerUseBeforePanelHandler,
         broadcastToast: broadcastToastHandler,
