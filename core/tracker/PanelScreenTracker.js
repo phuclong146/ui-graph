@@ -127,6 +127,7 @@ export class PanelScreenTracker {
                         const { showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
                         await showTrackerCursorIndicator(this.page);
                         await attachTrackerCursorIndicatorOnNavigate(this, this.page);
+                        await setupTracking(this);
                         return this.page;
                     }
                 } catch (_) {}
@@ -141,6 +142,7 @@ export class PanelScreenTracker {
                 const { showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
                 await showTrackerCursorIndicator(this.page);
                 await attachTrackerCursorIndicatorOnNavigate(this, this.page);
+                await setupTracking(this);
                 return this.page;
             }
         } catch (e) {
@@ -778,6 +780,7 @@ export class PanelScreenTracker {
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
                 await showTrackerCursorIndicator(this.page);
+                await setupTracking(this);
                 console.log(`[RECORD] ✅ Restored to original page`);
             }
             
@@ -805,6 +808,7 @@ export class PanelScreenTracker {
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
                 await showTrackerCursorIndicator(this.page);
+                await setupTracking(this);
             }
             
             this.panelRecorder = null;
@@ -882,6 +886,7 @@ export class PanelScreenTracker {
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
                 await showTrackerCursorIndicator(this.page);
+                await setupTracking(this);
                 console.log(`[RECORD] ✅ Restored to original page`);
             }
             
@@ -963,6 +968,7 @@ export class PanelScreenTracker {
             // Update tracker.page to new page
             this.page = newPage;
             await showTrackerCursorIndicator(this.page);
+            await setupTracking(this);
             console.log(`[RECORD] 📄 Updated tracker.page to new page`);
             
             // Start new recording on new page

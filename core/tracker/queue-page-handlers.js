@@ -10,7 +10,7 @@ import { getDbPool } from '../data/db-connection.js';
 import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 import { fetchWebsiteList } from '../media/uploader.js';
 import { showTrackerCursorIndicator, hideTrackerCursorIndicator } from './tracker-cursor-indicator.js';
-import { attachTrackerCursorIndicatorOnNavigate } from './browser-injector.js';
+import { attachTrackerCursorIndicatorOnNavigate, setupTracking } from './browser-injector.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -2135,6 +2135,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+            await setupTracking(tracker);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -2432,6 +2433,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+            await setupTracking(tracker);
 
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
@@ -2483,6 +2485,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         try {
                             await showTrackerCursorIndicator(tracker.page);
                             await attachTrackerCursorIndicatorOnNavigate(tracker, tracker.page);
+                            await setupTracking(tracker);
                         } catch (e) { /* ignore detached/closed */ }
                         // Wait a bit for the page to fully load
                         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -3432,6 +3435,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                     tracker.page = originalPage;
                     await showTrackerCursorIndicator(tracker.page);
+                    await setupTracking(tracker);
                     // Bring original page to front
                     await originalPage.bringToFront().catch(() => {});
                     console.log('✅ Restored to original page');
@@ -3892,6 +3896,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+            await setupTracking(tracker);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -4108,6 +4113,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+            await setupTracking(tracker);
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -4427,6 +4433,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
                 return;
             }
+            await setupTracking(tracker);
 
             const recordingResult = await tracker.stopPanelRecording();
 

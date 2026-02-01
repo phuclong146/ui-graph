@@ -1,6 +1,7 @@
 import { sleep } from '../utils/utils.js';
 import { drawPanelBoundingBoxes, resizeBase64, cropBase64Image } from '../media/screenshot.js';
 import { captureActionsFromDOM } from '../media/dom-capture.js';
+import { setupTracking } from './browser-injector.js';
 
 const GEMINI_TIMEOUT_MS = 30000;
 const GEMINI_TIMEOUT_IMPORTANT_ACTIONS_MS = 300000; // 60s for detectImportantActions
@@ -559,6 +560,7 @@ export async function detectScreenByGemini(tracker) {
 export async function detectScreenByDOM(tracker, panelId, fullPage = false, imageWidth = null, imageHeight = null, skipDrawingBoundingBox = false) {
     await tracker.ensureTrackerPage?.();
     if (!tracker.page || !panelId) return;
+    await setupTracking(tracker);
 
     tracker.geminiAsking = true;
 
