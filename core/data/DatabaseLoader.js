@@ -86,8 +86,9 @@ export class DatabaseLoader {
             }
 
             if (role === 'DRAW') {
-                // DRAW role: Only load uigraph_validation (upsert mode)
-                console.log(`🎨 DRAW mode: Only loading uigraph_validation...`);
+                // DRAW role: Load uigraph_validation (upsert) + myparent_panel from DB (so ADMIN corrections are visible)
+                console.log(`🎨 DRAW mode: Loading uigraph_validation and myparent_panel...`);
+                await this.createMyparentPanelJsonl(doingItems);
                 await this.createValidationJsonl(codeToItemIdMap, role);
             } else {
                 // Non-DRAW role: Load full data

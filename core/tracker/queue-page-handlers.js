@@ -6146,6 +6146,150 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get data for Correct Child Actions & Panels dialog (ADMIN only).
+     * Returns childActions (with name, imageBase64), childPanels (with name, imageBase64), allPanels, panelName.
+     */
+    const getCorrectChildDialogDataHandler = async (panelId) => {
+        try {
+            const accountData = await tracker._getAccountInfo?.();
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { success: false, message: 'Chỉ ADMIN mới được sử dụng tính năng này.' };
+            }
+            if (!tracker.parentPanelManager || !tracker.dataItemManager) {
+                return { success: false, message: 'Managers chưa khởi tạo.' };
+            }
+
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+            if (!parentEntry) {
+                return { success: false, message: 'Panel không tồn tại.' };
+            }
+
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            const panelName = panelItem?.name || 'Panel';
+
+            const childActions = [];
+            const actionIds = parentEntry.child_actions || [];
+            const panelImageBase64 = await loadPanelImage(panelItem);
+
+            for (const actionId of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                if (!actionItem) continue;
+                let imageBase64 = null;
+                if (panelImageBase64 && actionItem.metadata?.global_pos) {
+                    try {
+                        imageBase64 = await cropBase64Image(panelImageBase64, actionItem.metadata.global_pos);
+                    } catch (e) {
+                        console.warn('Failed to crop action image:', actionId, e);
+                    }
+                }
+                childActions.push({
+                    id: actionId,
+                    name: actionItem.name || 'Action',
+                    imageBase64: imageBase64 || null
+                });
+            }
+
+            const childPanels = [];
+            const childPanelIds = parentEntry.child_panels || [];
+            for (const childPanelId of childPanelIds) {
+                const childPanelItem = await tracker.dataItemManager.getItem(childPanelId);
+                if (!childPanelItem || childPanelItem.item_category !== 'PANEL') continue;
+                const img = await loadPanelImage(childPanelItem);
+                childPanels.push({
+                    id: childPanelId,
+                    name: childPanelItem.name || 'Panel',
+                    imageBase64: img || null
+                });
+            }
+
+            const allPanels = await getAllPanelsHandler();
+            const allPanelsFiltered = (allPanels || []).filter(p => p.item_id !== panelId);
+
+            return {
+                success: true,
+                childActions,
+                childPanels,
+                allPanels: allPanelsFiltered,
+                panelName
+            };
+        } catch (err) {
+            console.error('getCorrectChildDialogData failed:', err);
+            return { success: false, message: err.message || 'Lỗi khi tải dữ liệu.' };
+        }
+    };
+
+    /**
+     * Move selected actions and panels from source panel to destination panel (ADMIN only).
+     * Syncs changes to DB so DRAW sees them when opening session later.
+     */
+    const correctChildActionsAndPanelsHandler = async (sourcePanelId, selectedActionIds, selectedPanelIds, destinationPanelId) => {
+        try {
+            const accountData = await tracker._getAccountInfo?.();
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { success: false, message: 'Chỉ ADMIN mới được sử dụng tính năng này.' };
+            }
+            if (!tracker.parentPanelManager) {
+                return { success: false, message: 'ParentPanelManager chưa khởi tạo.' };
+            }
+
+            if (!destinationPanelId) {
+                return { success: false, message: 'Vui lòng chọn panel đích.' };
+            }
+            if (sourcePanelId === destinationPanelId) {
+                return { success: false, message: 'Panel đích không được trùng với panel nguồn.' };
+            }
+
+            const allPanels = await getAllPanelsHandler();
+            const destExists = (allPanels || []).some(p => p.item_id === destinationPanelId);
+            if (!destExists) {
+                return { success: false, message: 'Panel đích không tồn tại.' };
+            }
+
+            const actionIds = Array.isArray(selectedActionIds) ? selectedActionIds : [];
+            const panelIds = Array.isArray(selectedPanelIds) ? selectedPanelIds : [];
+
+            for (const actionId of actionIds) {
+                await tracker.parentPanelManager.removeChildAction(sourcePanelId, actionId);
+                await tracker.parentPanelManager.addChildAction(destinationPanelId, actionId);
+            }
+            for (const panelId of panelIds) {
+                await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
+                await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+            }
+
+            let mode = 'log';
+            try {
+                if (tracker.queuePage) {
+                    mode = await tracker.queuePage.evaluate(() =>
+                        (typeof window.panelLogDisplayMode !== 'undefined' ? window.panelLogDisplayMode : null) || 'log'
+                    ) || 'log';
+                }
+            } catch (_) { mode = 'log'; }
+            const treeData = mode === 'tree'
+                ? await tracker.panelLogManager.buildTreeStructureWithChildPanels()
+                : await tracker.panelLogManager.buildTreeStructure();
+            await tracker._broadcast({ type: 'tree_update', data: treeData });
+
+            if (tracker.sessionFolder && tracker.myAiToolCode) {
+                try {
+                    const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                    await exporter.init();
+                    await exporter.exportToMySQL();
+                    await exporter.close();
+                    console.log('✅ Synced myparent_panel to DB after Correct Child');
+                } catch (dbErr) {
+                    console.warn('⚠️ Failed to sync Correct Child to DB:', dbErr);
+                }
+            }
+
+            return { success: true };
+        } catch (err) {
+            console.error('correctChildActionsAndPanels failed:', err);
+            return { success: false, message: err.message || 'Lỗi khi chuyển.' };
+        }
+    };
+
     const triggerDrawPanelNewHandler = async () => {
         await tracker._broadcast({ type: 'trigger_draw_panel', mode: 'DRAW_NEW' });
     };
@@ -9799,6 +9943,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         useSelectPanel: useSelectPanelHandler,
         getAllPanels: getAllPanelsHandler,
         getPanelImage: getPanelImageHandler,
+        getCorrectChildDialogData: getCorrectChildDialogDataHandler,
+        correctChildActionsAndPanels: correctChildActionsAndPanelsHandler,
         triggerDrawPanelNew: triggerDrawPanelNewHandler,
         triggerUseBeforePanel: triggerUseBeforePanelHandler,
         broadcastToast: broadcastToastHandler,

@@ -355,6 +355,8 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("useSelectPanel", handlers.useSelectPanel);
     await tracker.queuePage.exposeFunction("getAllPanels", handlers.getAllPanels);
     await tracker.queuePage.exposeFunction("getPanelImage", handlers.getPanelImage);
+    await tracker.queuePage.exposeFunction("getCorrectChildDialogData", handlers.getCorrectChildDialogData);
+    await tracker.queuePage.exposeFunction("correctChildActionsAndPanels", handlers.correctChildActionsAndPanels);
     await tracker.queuePage.exposeFunction("broadcastToast", handlers.broadcastToast);
     await tracker.queuePage.exposeFunction("bringQueueBrowserToFront", handlers.bringQueueBrowserToFront);
     await tracker.queuePage.exposeFunction("hideTrackingBrowser", handlers.hideTrackingBrowser);
