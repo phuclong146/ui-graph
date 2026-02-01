@@ -5042,8 +5042,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (!myAiToolCode) return null;
 
             const pool = getDbPool();
+            // Lấy updated_at dạng chuỗi (DATE_FORMAT) để tránh driver MySQL hiểu theo giờ local server.
+            // DB lưu UTC → gửi xuống client dạng ISO UTC (thêm Z).
             const [rows] = await pool.execute(
-                `SELECT a.my_collaborator as assignee, c.name, c.device_id, a.updated_at
+                `SELECT a.my_collaborator as assignee, c.name, c.device_id,
+                        DATE_FORMAT(a.updated_at, '%Y-%m-%dT%H:%i:%s') as updated_at_iso
                  FROM uigraph_validation_assignee a
                  LEFT JOIN uigraph_collaborator c ON c.code = a.my_collaborator AND c.published = 1
                  WHERE a.my_ai_tool = ? AND a.my_session = ? AND a.published = 1
@@ -5052,11 +5055,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             );
             if (!rows || rows.length === 0) return null;
             const r = rows[0];
+            const raw = (r.updated_at_iso != null && r.updated_at_iso !== '') ? String(r.updated_at_iso).trim() : null;
+            const updated_at = raw ? raw + 'Z' : null;
             return {
                 assignee: r.assignee,
                 name: r.name ?? r.assignee ?? '',
                 device_id: r.device_id ?? null,
-                updated_at: r.updated_at ? (r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at)) : null
+                updated_at
             };
         } catch (err) {
             console.error('[getSessionAssigneeInfo] failed:', err);

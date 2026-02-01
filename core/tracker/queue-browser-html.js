@@ -7501,11 +7501,23 @@ Bạn có chắc chắn muốn rollback?\`;
               if (!info) {
                   sessionAssigneeTooltip.innerHTML = '<div style="color:#9e9e9e;">Chưa có assignee</div>';
               } else {
-                  const fmtTime = (s) => { if (!s) return ''; try { const d = new Date(s); return d.toLocaleString('vi-VN'); } catch (_) { return s; } };
+                  // Hiển thị thời điểm assigned theo GMT+7 (Asia/Ho_Chi_Minh)
+                  const fmtTimeGMT7 = (s) => {
+                      if (!s) return '';
+                      try {
+                          let iso = String(s).trim();
+                          if (iso && !/Z|[+-]\d{2}:?\d{2}$/.test(iso) && /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(iso)) {
+                              iso = iso.replace(' ', 'T') + 'Z';
+                          }
+                          const d = new Date(iso);
+                          if (isNaN(d.getTime())) return s;
+                          return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                      } catch (_) { return s; }
+                  };
                   let html = '<div style="font-weight:600; margin-bottom:8px; color:#4fc3f7;">Assigned</div>';
                   html += '<div style="padding:4px 0;">Name: ' + (info.name || info.assignee || '—') + '</div>';
                   html += '<div style="padding:4px 0;">Device ID: ' + (info.device_id || '—') + '</div>';
-                  html += '<div style="padding:4px 0; color:#9e9e9e;">Updated: ' + fmtTime(info.updated_at) + '</div>';
+                  html += '<div style="padding:4px 0; color:#9e9e9e;">Assigned: ' + fmtTimeGMT7(info.updated_at) + ' (GMT+7)</div>';
                   sessionAssigneeTooltip.innerHTML = html;
               }
           } catch (err) {
