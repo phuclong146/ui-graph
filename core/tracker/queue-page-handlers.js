@@ -9,6 +9,8 @@ import { cropBase64Image } from '../media/screenshot.js';
 import { getDbPool } from '../data/db-connection.js';
 import { MAX_CAPTURE_PAGES } from '../lib/website-capture.js';
 import { fetchWebsiteList } from '../media/uploader.js';
+import { showTrackerCursorIndicator, hideTrackerCursorIndicator } from './tracker-cursor-indicator.js';
+import { attachTrackerCursorIndicatorOnNavigate } from './browser-injector.js';
 
 export function createQueuePageHandlers(tracker, width, height, trackingWidth, queueWidth) {
     let lastLoadedPanelId = null;
@@ -2125,6 +2127,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('🤖 Gemini AI capture on PAGE triggered');
             console.log(`[RECORD] 📤 Gemini AI capture (PAGE) - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+
             const recordingResult = await tracker.stopPanelRecording();
 
             const timestamp = Date.now();
@@ -2412,6 +2423,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             // Set flow state to 'capture' at the start
             await setPanelDrawFlowState(tracker.selectedPanelId, 'capture');
 
+            // Nếu không có tracker hợp lệ thì chỉ định tab đầu tiên của tracking browser làm tracker
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+
             console.log('📸 Draw Panel & Detect Actions: Capturing long scroll screenshot...');
 
             // Show loading indicator (only in queue browser)
@@ -2450,11 +2471,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     
                     if (newTabUrl && newTabUrl !== 'about:blank') {
                         console.log(`🆕 Switching to newly opened tab: ${newTabUrl}`);
+                        try {
+                            if (tracker.page && !tracker.page.isClosed()) {
+                                await hideTrackerCursorIndicator(tracker.page);
+                            }
+                        } catch (e) { /* ignore detached/closed */ }
                         tracker.originalPage = tracker.page; // Store original page
                         tracker.page = newestTab.page;
                         pageToCapture = newestTab.page;
                         switchedToNewTab = true;
-                        
+                        try {
+                            await showTrackerCursorIndicator(tracker.page);
+                            await attachTrackerCursorIndicatorOnNavigate(tracker, tracker.page);
+                        } catch (e) { /* ignore detached/closed */ }
                         // Wait a bit for the page to fully load
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     } else {
@@ -2491,9 +2520,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Clear frozen screenshot after use
                 tracker.clearFrozenScreenshot();
             } else {
-                // Capture fresh screenshot
+                // Đảm bảo page còn hợp lệ (không detached/closed) trước khi capture
+                try {
+                    await pageToCapture.evaluate(() => true);
+                } catch (e) {
+                    await tracker.ensureTrackerPage?.();
+                    pageToCapture = tracker.page;
+                    if (!pageToCapture || pageToCapture.isClosed()) throw new Error('Không có tab nào trong tracking browser để capture.');
+                }
                 const { captureScreenshot } = await import('../media/screenshot.js');
-                const result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                let result;
+                try {
+                    result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                } catch (captureErr) {
+                    const msg = captureErr.message || '';
+                    if (msg.includes('detached') || msg.includes('Target closed')) {
+                        await tracker.ensureTrackerPage?.();
+                        pageToCapture = tracker.page;
+                        if (pageToCapture && !pageToCapture.isClosed()) {
+                            result = await captureScreenshot(pageToCapture, "base64", true, true, progressCallback);
+                        } else throw captureErr;
+                    } else throw captureErr;
+                }
                 screenshot = result.screenshot;
                 imageWidth = result.imageWidth;
                 imageHeight = result.imageHeight;
@@ -2608,7 +2656,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log('User canceled panel type confirmation');
                     await setPanelDrawFlowState(tracker.selectedPanelId, null);
                     if (restoreViewport) {
-                        await restoreViewport();
+                        try { await restoreViewport(); } catch (e) {
+                            if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                        }
                     }
                     await tracker._broadcast({
                         type: 'show_toast',
@@ -2681,7 +2731,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await restoreViewport();
                     console.log('✅ Viewport restored');
                 } catch (restoreErr) {
-                    console.error('❌ Failed to restore viewport:', restoreErr);
+                    const m = (restoreErr.message || '');
+                    if (!m.match(/Target closed|Session closed|detached/)) console.error('❌ Failed to restore viewport:', restoreErr);
                 }
             }
         }
@@ -2741,7 +2792,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             // Restore viewport nếu có
             if (restoreViewportFn) {
-                await restoreViewportFn();
+                try { await restoreViewportFn(); } catch (e) {
+                    if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewportFn:', e.message);
+                }
             }
 
             await tracker._broadcast({
@@ -2763,7 +2816,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 // Cleanup context
                 const { restoreViewport } = tracker.__drawPanelContext;
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
                 delete tracker.__drawPanelContext;
                 
@@ -3295,7 +3350,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.parentPanelManager.updateParentDom(tracker.selectedPanelId, adjustedActions);
 
             if (restoreViewport) {
-                await restoreViewport();
+                try { await restoreViewport(); } catch (e) {
+                    if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                }
             }
 
             try {
@@ -3370,7 +3427,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (switchedToNewTab && originalPage) {
                 try {
                     console.log('🔄 Restoring original page...');
+                    if (tracker.page && !tracker.page.isClosed()) {
+                        await hideTrackerCursorIndicator(tracker.page);
+                    }
                     tracker.page = originalPage;
+                    await showTrackerCursorIndicator(tracker.page);
                     // Bring original page to front
                     await originalPage.bringToFront().catch(() => {});
                     console.log('✅ Restored to original page');
@@ -3823,6 +3884,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('📸 DOM Capture triggered');
             console.log(`[RECORD] 📤 DOM Capture - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+
             const recordingResult = await tracker.stopPanelRecording();
 
             let screenshot = null;
@@ -4029,6 +4099,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             console.log('🤖 Gemini AI capture (SCROLLING) triggered');
             console.log(`[RECORD] 📤 Gemini AI capture (SCROLLING) - checking for recording...`);
+
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
 
             const recordingResult = await tracker.stopPanelRecording();
 
@@ -4242,7 +4321,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
 
                 console.log('🔄 Reloading page to restore scroll (website-shot changed DOM structure)...');
@@ -4338,6 +4419,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             console.log('📸 DOM Capture (SCROLLING) triggered');
             console.log(`[RECORD] 📤 DOM Capture (SCROLLING) - checking for recording...`);
 
+            await tracker.ensureTrackerPage?.();
+            if (!tracker.page || tracker.page.isClosed()) {
+                await tracker._broadcast({
+                    type: 'show_toast',
+                    message: '⚠️ Không có tab nào trong tracking browser để capture.'
+                });
+                return;
+            }
+
             const recordingResult = await tracker.stopPanelRecording();
 
             // Show loading indicator (only in queue browser)
@@ -4378,12 +4468,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const { detectScreenByDOM } = await import('./gemini-handler.js');
                 await detectScreenByDOM(tracker, tracker.selectedPanelId, true, imageWidth, imageHeight, true);
             } finally {
-                await tracker.page.evaluate(() => {
-                    document.documentElement.style.overflow = '';
-                    document.body.style.overflow = '';
-                });
+                try {
+                    await tracker.page.evaluate(() => {
+                        document.documentElement.style.overflow = '';
+                        document.body.style.overflow = '';
+                    });
+                } catch (e) { /* page may be closed */ }
                 if (restoreViewport) {
-                    await restoreViewport();
+                    try { await restoreViewport(); } catch (e) {
+                        if (!(e.message || '').match(/Target closed|Session closed|detached/)) console.warn('restoreViewport:', e.message);
+                    }
                 }
             }
 
@@ -6319,6 +6413,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     const hideTrackingBrowserHandler = async () => {
         try {
+            await tracker.ensureTrackerPage?.();
             if (tracker.page) {
                 const session = await tracker.page.target().createCDPSession();
                 await session.send('Browser.setWindowBounds', {
@@ -6346,6 +6441,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
             
+            await tracker.ensureTrackerPage?.();
             if (tracker.page) {
                 const session = await tracker.page.target().createCDPSession();
                 const bounds = {

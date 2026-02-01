@@ -80,7 +80,13 @@ export async function captureScreenshot(page, asType = "base64", fullPage = fals
                     imageWidth: metadata.width,
                     imageHeight: metadata.height,
                     restoreViewport: async () => {
-                        await page.setViewport(originalViewport);
+                        try {
+                            if (!page.isClosed()) await page.setViewport(originalViewport);
+                        } catch (e) {
+                            if (!(e.message || '').includes('Target closed') && !(e.message || '').includes('Session closed') && !(e.message || '').includes('detached')) {
+                                console.warn('restoreViewport failed:', e.message);
+                            }
+                        }
                     }
                 };
             }
@@ -89,7 +95,9 @@ export async function captureScreenshot(page, asType = "base64", fullPage = fals
             return screenshot;
         } catch (err) {
             console.log('⚠️ Full page capture error, fallback to viewport:', err.message);
-            await page.setViewport(originalViewport);
+            try {
+                if (!page.isClosed()) await page.setViewport(originalViewport);
+            } catch (e) { /* page may be closed */ }
             const fallbackScreenshot = asType === "buffer"
                 ? await page.screenshot()
                 : await page.screenshot({ encoding: "base64" });

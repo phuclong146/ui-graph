@@ -4,7 +4,7 @@ import { ENV } from "../config/env.js";
 import { TrackingLogger } from "../data/logger.js";
 import { AsyncQueue } from "./AsyncQueue.js";
 import { initBrowsers } from "./browser-init.js";
-import { setupNavigationListener, setupTracking } from "./browser-injector.js";
+import { setupNavigationListener, setupTracking, attachTrackerCursorIndicatorOnNavigate } from "./browser-injector.js";
 import { saveResults } from "./tracking.js";
 import { detectScreenByGemini } from "./gemini-handler.js";
 import { ClickManager } from "../data/ClickManager.js";
@@ -103,6 +103,50 @@ export class PanelScreenTracker {
         this.wss.clients.forEach((c) => {
             if (c.readyState === 1) c.send(msg);
         });
+    }
+
+    /**
+     * Đảm bảo có tracker.page hợp lệ để capture. Nếu không có (null/closed) thì chỉ định tab đầu tiên
+     * từ trái qua phải của tracking browser làm tracker, và hiện vòng tròn vàng quanh con trỏ trên tab đó.
+     * @returns {Promise<import('puppeteer').Page|null>} tracker.page sau khi ensure, hoặc null nếu không có tab nào.
+     */
+    async ensureTrackerPage() {
+        if (!this.browser) return this.page || null;
+        if (this.page && !this.page.isClosed()) return this.page;
+        try {
+            // Chọn tab đầu tiên từ trái qua phải: targets() thường trả về theo thứ tự tab trong Chrome
+            const targets = this.browser.targets();
+            const pageTargets = targets.filter((t) => t.type() === 'page');
+            for (const target of pageTargets) {
+                try {
+                    const page = await target.page();
+                    if (page && !page.isClosed()) {
+                        this.page = page;
+                        if (!this.originalPage || this.originalPage.isClosed()) this.originalPage = this.page;
+                        console.log('🔄 Không có tracker hợp lệ → đã chỉ định tab đầu tiên (từ trái qua phải) của tracking browser làm tracker');
+                        const { showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+                        await showTrackerCursorIndicator(this.page);
+                        await attachTrackerCursorIndicatorOnNavigate(this, this.page);
+                        return this.page;
+                    }
+                } catch (_) {}
+            }
+            // Fallback: dùng browser.pages()[0]
+            const pages = await this.browser.pages();
+            const valid = pages.filter((p) => !p.isClosed());
+            if (valid.length > 0) {
+                this.page = valid[0];
+                if (!this.originalPage || this.originalPage.isClosed()) this.originalPage = this.page;
+                console.log('🔄 Không có tracker hợp lệ → đã chỉ định tab đầu tiên của tracking browser làm tracker');
+                const { showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+                await showTrackerCursorIndicator(this.page);
+                await attachTrackerCursorIndicatorOnNavigate(this, this.page);
+                return this.page;
+            }
+        } catch (e) {
+            console.warn('ensureTrackerPage failed:', e);
+        }
+        return this.page || null;
     }
 
     async _getAccountInfo() {
@@ -729,8 +773,11 @@ export class PanelScreenTracker {
             // Restore original page if we switched to a new tab during recording
             if (this.recordingOriginalPage) {
                 console.log(`[RECORD] 🔄 Restoring tracker.page to original page...`);
+                const { hideTrackerCursorIndicator, showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+                if (this.page && !this.page.isClosed()) await hideTrackerCursorIndicator(this.page);
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
+                await showTrackerCursorIndicator(this.page);
                 console.log(`[RECORD] ✅ Restored to original page`);
             }
             
@@ -753,8 +800,11 @@ export class PanelScreenTracker {
             // Restore original page even on error
             if (this.recordingOriginalPage) {
                 console.log(`[RECORD] 🔄 Restoring tracker.page to original page (error recovery)...`);
+                const { hideTrackerCursorIndicator, showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+                if (this.page && !this.page.isClosed()) await hideTrackerCursorIndicator(this.page);
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
+                await showTrackerCursorIndicator(this.page);
             }
             
             this.panelRecorder = null;
@@ -827,8 +877,11 @@ export class PanelScreenTracker {
             // Restore original page if we switched to a new tab during recording
             if (this.recordingOriginalPage) {
                 console.log(`[RECORD] 🔄 Restoring tracker.page to original page...`);
+                const { hideTrackerCursorIndicator, showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+                if (this.page && !this.page.isClosed()) await hideTrackerCursorIndicator(this.page);
                 this.page = this.recordingOriginalPage;
                 this.recordingOriginalPage = null;
+                await showTrackerCursorIndicator(this.page);
                 console.log(`[RECORD] ✅ Restored to original page`);
             }
             
@@ -903,8 +956,13 @@ export class PanelScreenTracker {
                 console.log(`[RECORD] 📄 Saved original page for later restoration`);
             }
             
+            const { hideTrackerCursorIndicator, showTrackerCursorIndicator } = await import('./tracker-cursor-indicator.js');
+            if (this.page && !this.page.isClosed()) {
+                await hideTrackerCursorIndicator(this.page);
+            }
             // Update tracker.page to new page
             this.page = newPage;
+            await showTrackerCursorIndicator(this.page);
             console.log(`[RECORD] 📄 Updated tracker.page to new page`);
             
             // Start new recording on new page
