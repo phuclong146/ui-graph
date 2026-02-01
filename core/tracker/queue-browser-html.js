@@ -1599,7 +1599,7 @@ export const QUEUE_BROWSER_HTML = `
       <div style="flex:1; display:flex; overflow:hidden; position:relative;">
         <div id="graphPanelLogTreeContainer" style="width:320px; min-width:200px; max-width:40vw; background:#2a2a2a; border-right:1px solid #333; overflow:hidden; display:flex; flex-direction:column; position:relative;">
           <div id="graphPanelLogTreeResizer" style="position:absolute; right:-6px; top:0; width:12px; height:100%; cursor:col-resize; background:transparent; z-index:1000; user-select:none; touch-action:none;"></div>
-          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0;">
+          <div style="padding:15px; border-bottom:1px solid #333; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; flex-shrink:0; position:relative; z-index:1001;">
             <h4 style="margin:0; font-size:16px; color:#fff;">Panel Log</h4>
             <div style="display:flex; align-items:center; gap:8px;">
               <label id="graph-panel-log-my-assignment-wrapper" style="display:none; align-items:center; gap:3px; cursor:pointer; font-size:11px; font-weight:500; margin:0; color:#fff; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px;">
@@ -2038,21 +2038,25 @@ export const QUEUE_BROWSER_HTML = `
         if (evt.type === 'tree_update') {
           // If we're in tree or validation mode, reload data with current mode
           // (tree_update from server is always log mode)
+          const fallbackData = evt.data || [];
           if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
             getFilteredPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
-              updateGraphPanelLogTreeIfOpen(panelTreeData);
+              updateGraphPanelLogTreeIfOpen(fallbackData);
+              updateVideoValidationPanelLogTreeIfOpen(fallbackData);
             }).catch(err => {
               console.error('Failed to reload tree with current mode:', err);
-              panelTreeData = evt.data || [];
+              panelTreeData = fallbackData;
               renderPanelTree();
-              updateGraphPanelLogTreeIfOpen(panelTreeData);
+              updateGraphPanelLogTreeIfOpen(fallbackData);
+              updateVideoValidationPanelLogTreeIfOpen(fallbackData);
             });
           } else {
-            panelTreeData = evt.data || [];
+            panelTreeData = fallbackData;
             renderPanelTree();
-            updateGraphPanelLogTreeIfOpen(panelTreeData);
+            updateGraphPanelLogTreeIfOpen(fallbackData);
+            updateVideoValidationPanelLogTreeIfOpen(fallbackData);
           }
           
           // Check for changes after panel log is loaded
@@ -3741,9 +3745,25 @@ export const QUEUE_BROWSER_HTML = `
         }
       }
 
-      function updateGraphPanelLogTreeIfOpen(data) {
+      async function updateGraphPanelLogTreeIfOpen(data) {
         const graphViewModal = document.getElementById('graphViewModal');
-        if (graphViewModal && graphViewModal.style.display !== 'none' && data && Array.isArray(data)) {
+        if (!graphViewModal || graphViewModal.style.display === 'none') return;
+        if (window.getPanelTree) {
+          try {
+            if (graphPanelLogDisplayMode === 'tree' || graphPanelLogDisplayMode === 'validation') {
+              graphPanelTreeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(graphPanelLogDisplayMode) : window.getPanelTree(graphPanelLogDisplayMode));
+            } else {
+              graphPanelTreeData = await window.getPanelTree('log');
+            }
+            renderGraphPanelTree();
+          } catch (err) {
+            console.error('Failed to reload graph panel tree:', err);
+            if (data && Array.isArray(data)) {
+              graphPanelTreeData = data;
+              renderGraphPanelTree();
+            }
+          }
+        } else if (data && Array.isArray(data)) {
           graphPanelTreeData = data;
           renderGraphPanelTree();
         }
@@ -4105,6 +4125,30 @@ export const QUEUE_BROWSER_HTML = `
         setLocalStorage('video-validation-panel-log-display-mode', videoValidationPanelLogDisplayMode);
         updateVideoValidationShowModeButton();
       };
+
+      async function updateVideoValidationPanelLogTreeIfOpen(data) {
+        const modal = document.getElementById('videoValidationModal');
+        const treeContainer = document.getElementById('videoValidationPanelLogTree');
+        if (!modal || modal.style.display === 'none' || !treeContainer) return;
+        if (window.getPanelTree) {
+          try {
+            if (videoValidationPanelLogDisplayMode === 'tree' || videoValidationPanelLogDisplayMode === 'validation') {
+              const treeData = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(videoValidationPanelLogDisplayMode) : window.getPanelTree(videoValidationPanelLogDisplayMode));
+              renderPanelTreeForValidationInternal(treeData, treeContainer);
+            } else {
+              const treeData = await window.getPanelTree('log');
+              renderPanelTreeForValidationInternal(treeData, treeContainer);
+            }
+          } catch (err) {
+            console.error('Failed to reload video validation panel tree:', err);
+            if (data && Array.isArray(data)) {
+              renderPanelTreeForValidationInternal(data, treeContainer);
+            }
+          }
+        } else if (data && Array.isArray(data)) {
+          renderPanelTreeForValidationInternal(data, treeContainer);
+        }
+      }
 
       // Initialize video validation panel log showMode button
       const videoValidationPanelLogShowModeBtn = document.getElementById('video-validation-panel-log-show-mode-btn');
@@ -8846,8 +8890,9 @@ Bạn có chắc chắn muốn rollback?\`;
         if (graphCb) graphCb.checked = myAssignmentFilterEnabled;
         if (videoCb) videoCb.checked = myAssignmentFilterEnabled;
       }
-      function onMyAssignmentCheckboxChange() {
-        myAssignmentFilterEnabled = document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
+      function onMyAssignmentCheckboxChange(e) {
+        const clickedCb = e?.target;
+        myAssignmentFilterEnabled = clickedCb?.checked ?? document.getElementById('panel-log-my-assignment-cb')?.checked ?? false;
         setLocalStorage('panel-log-my-assignment', myAssignmentFilterEnabled ? 'true' : 'false');
         syncMyAssignmentCheckboxState();
         if (panelLogDisplayMode === 'validation' && window.getPanelTree) {
