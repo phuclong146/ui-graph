@@ -557,7 +557,6 @@ export async function detectScreenByGemini(tracker) {
 }
 
 export async function detectScreenByDOM(tracker, panelId, fullPage = false, imageWidth = null, imageHeight = null, skipDrawingBoundingBox = false) {
-    await tracker.ensureTrackerPage?.();
     if (!tracker.page || !panelId) return;
 
     tracker.geminiAsking = true;

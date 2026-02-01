@@ -4,7 +4,6 @@ import { WebSocketServer } from "ws";
 import { getScreenSize } from "../utils/utils.js";
 import { fetchWebsiteList } from "../media/uploader.js";
 import { injectWebsiteSelector } from "../../ui/injectWebsiteSelector.js";
-import { showTrackerCursorIndicator, ensureTrackerCursorIndicatorOnLoad } from "./tracker-cursor-indicator.js";
 import { ENV } from "../config/env.js";
 import { QUEUE_BROWSER_HTML } from "./queue-browser-html.js";
 import { createQueuePageHandlers } from "./queue-page-handlers.js";
@@ -107,8 +106,6 @@ export async function initTrackingBrowser(tracker) {
     tracker.originalPage = initialPage;
     await tracker.page.setJavaScriptEnabled(true);
     await tracker.page.setBypassCSP(true);
-    await ensureTrackerCursorIndicatorOnLoad(tracker.page);
-    await showTrackerCursorIndicator(tracker.page);
 
     // Listen for newly opened tabs
     trackingBrowser.on('targetcreated', async (target) => {

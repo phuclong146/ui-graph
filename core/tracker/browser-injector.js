@@ -1,5 +1,4 @@
 import { sleep } from '../utils/utils.js';
-import { showTrackerCursorIndicator, ensureTrackerCursorIndicatorOnLoad } from './tracker-cursor-indicator.js';
 
 export async function setupNavigationListener(tracker) {
     if (tracker._navigationListenerSetup) return;
@@ -23,15 +22,6 @@ export async function setupNavigationListener(tracker) {
         } catch (e) {
             console.error("re-inject failed:", e);
         }
-        // Luôn re-inject vòng tròn vàng sau load (F5 hoặc link mới) vì DOM đã thay thế
-        if (tracker.page && !tracker.page.isClosed()) {
-            try {
-                await showTrackerCursorIndicator(tracker.page);
-            } catch (e) {
-                const m = e.message || '';
-                if (!m.includes('Target closed') && !m.includes('detached')) console.warn('Re-inject cursor indicator on load failed:', m);
-            }
-        }
     });
 
     tracker.page.on("framenavigated", async (frame) => {
@@ -51,48 +41,10 @@ export async function setupNavigationListener(tracker) {
             } else {
                 tracker.currenPage = newUrl;
             }
-            // Re-inject vòng tròn vàng sau mỗi lần frame navigated (F5 hoặc link mới)
-            if (tracker.page && !tracker.page.isClosed()) {
-                try {
-                    await sleep(200);
-                    await showTrackerCursorIndicator(tracker.page);
-                } catch (e) {
-                    const m = e.message || '';
-                    if (!m.includes('Target closed') && !m.includes('detached')) console.warn('Re-inject cursor on framenavigated failed:', m);
-                }
-            }
         }
     });
 
     tracker._navigationListenerSetup = true;
-}
-
-/**
- * Gắn listener load/framenavigated lên page để sau F5 hoặc mở link mới vẫn re-inject vòng tròn vàng.
- * Gọi khi chuyển tracker.page sang tab mới (tab mới chưa có listener từ setupNavigationListener).
- */
-export async function attachTrackerCursorIndicatorOnNavigate(tracker, page) {
-    if (!page || page.isClosed()) return;
-    try {
-        await ensureTrackerCursorIndicatorOnLoad(page);
-        page.on('load', async () => {
-            try {
-                if (tracker.page === page && !page.isClosed()) await showTrackerCursorIndicator(page);
-            } catch (e) { /* ignore detached/closed */ }
-        });
-        page.on('framenavigated', async (frame) => {
-            try {
-                if (frame === page.mainFrame() && tracker.page === page && !page.isClosed()) {
-                    await sleep(200);
-                    await showTrackerCursorIndicator(page);
-                }
-            } catch (e) { /* ignore */ }
-        });
-    } catch (e) {
-        if (!(e.message || '').includes('Target closed') && !(e.message || '').includes('detached')) {
-            console.warn('attachTrackerCursorIndicatorOnNavigate failed:', e.message);
-        }
-    }
 }
 
 export async function showReadyNotification(tracker) {
@@ -501,22 +453,18 @@ export async function setupTracking(tracker) {
         return;
     }
 
-    await showTrackerCursorIndicator(tracker.page);
     console.log('✅ Tracking setup completed! Ctrl/Cmd+1: Detect Pages ready.');
 
     if (!tracker._keyboardPoller) {
         tracker._keyboardPoller = setInterval(async () => {
             try {
-                // Nếu không có tracker hợp lệ thì thử chỉ định tab đầu tiên của tracking browser làm tracker
+                // Check if page is closed or browser is closing
                 if (!tracker.page || tracker.page.isClosed()) {
-                    await tracker.ensureTrackerPage?.();
-                    if (!tracker.page || tracker.page.isClosed()) {
-                        if (tracker._keyboardPoller) {
-                            clearInterval(tracker._keyboardPoller);
-                            tracker._keyboardPoller = null;
-                        }
-                        return;
+                    if (tracker._keyboardPoller) {
+                        clearInterval(tracker._keyboardPoller);
+                        tracker._keyboardPoller = null;
                     }
+                    return;
                 }
 
                 const keyboardActions = await tracker.page.evaluate(() => {
@@ -629,16 +577,13 @@ export async function setupTracking(tracker) {
     if (!tracker._clickPoller) {
         tracker._clickPoller = setInterval(async () => {
             try {
-                // Nếu không có tracker hợp lệ thì thử chỉ định tab đầu tiên của tracking browser làm tracker
+                // Check if page is closed or browser is closing
                 if (!tracker.page || tracker.page.isClosed()) {
-                    await tracker.ensureTrackerPage?.();
-                    if (!tracker.page || tracker.page.isClosed()) {
-                        if (tracker._clickPoller) {
-                            clearInterval(tracker._clickPoller);
-                            tracker._clickPoller = null;
-                        }
-                        return;
+                    if (tracker._clickPoller) {
+                        clearInterval(tracker._clickPoller);
+                        tracker._clickPoller = null;
                     }
+                    return;
                 }
 
                 const clicks = await tracker.page.evaluate(() => {
