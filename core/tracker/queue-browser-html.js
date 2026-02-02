@@ -1420,29 +1420,46 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
-    <div id="correctChildModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+    <div id="correctChildActionsModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:24px; max-width:720px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-        <h3 id="correctChildModalTitle" style="margin:0 0 16px 0; font-size:18px; color:#333;">Correct Child Actions & Panels</h3>
+        <h3 id="correctChildActionsModalTitle" style="margin:0 0 16px 0; font-size:18px; color:#333;">Correct Child Actions</h3>
         <div style="margin-bottom:16px;">
           <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Chọn actions để chuyển:</label>
-          <div id="correctChildActionsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:180px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
-        </div>
-        <div style="margin-bottom:16px;">
-          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Chọn panels để chuyển:</label>
-          <div id="correctChildPanelsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:180px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
+          <div id="correctChildActionsActionsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:300px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
         </div>
         <div style="margin-bottom:16px;">
           <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Panel đích (chọn 1):</label>
-          <div id="correctChildDestList" style="max-height:160px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px;"></div>
+          <div id="correctChildActionsDestList" style="max-height:200px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px;"></div>
         </div>
         <div style="display:flex; gap:10px; justify-content:flex-end;">
-          <button id="correctChildCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
-          <button id="correctChildMoveBtn" style="background:linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Move</button>
+          <button id="correctChildActionsCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="correctChildActionsMoveBtn" style="background:linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Move</button>
         </div>
       </div>
     </div>
-    <div id="correctChildImageLightbox" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.9); justify-content:center; align-items:center; cursor:pointer;" title="Click to close">
-      <img id="correctChildLightboxImg" style="max-width:95%; max-height:95%; object-fit:contain;" />
+    <div id="correctChildActionsImageLightbox" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.9); justify-content:center; align-items:center; cursor:pointer;" title="Click to close">
+      <img id="correctChildActionsLightboxImg" style="max-width:95%; max-height:95%; object-fit:contain;" />
+    </div>
+
+    <div id="correctChildPanelsModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:24px; max-width:720px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <h3 id="correctChildPanelsModalTitle" style="margin:0 0 16px 0; font-size:18px; color:#333;">Correct Child Panels</h3>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Chọn panels để chuyển:</label>
+          <div id="correctChildPanelsPanelsList" style="display:flex; flex-wrap:wrap; gap:12px; max-height:300px; overflow-y:auto; padding:8px; border:1px solid #eee; border-radius:6px;"></div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="font-weight:600; font-size:13px; display:block; margin-bottom:8px;">Panel đích (chọn 1):</label>
+          <div id="correctChildPanelsDestList" style="max-height:200px; overflow-y:auto; border:1px solid #eee; border-radius:6px; padding:8px;"></div>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="correctChildPanelsCancelBtn" style="background:#6c757d; color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px;">Hủy</button>
+          <button id="correctChildPanelsMoveBtn" style="background:linear-gradient(135deg, #28a745 0%, #1e7e34 100%); color:white; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; font-size:14px; font-weight:600;">Move</button>
+        </div>
+      </div>
+    </div>
+    <div id="correctChildPanelsImageLightbox" style="display:none; position:fixed; z-index:20005; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.9); justify-content:center; align-items:center; cursor:pointer;" title="Click to close">
+      <img id="correctChildPanelsLightboxImg" style="max-width:95%; max-height:95%; object-fit:contain;" />
     </div>
 
     <div id="assignValidatorModal" style="display:none; position:fixed; z-index:20002; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
@@ -6891,28 +6908,26 @@ Bạn có chắc chắn muốn rollback?\`;
         setTimeout(() => document.addEventListener('click', closeMenu), 100);
       }
       
-      async function openCorrectChildDialog(panelId) {
-        const modal = document.getElementById('correctChildModal');
-        const titleEl = document.getElementById('correctChildModalTitle');
-        const actionsList = document.getElementById('correctChildActionsList');
-        const panelsList = document.getElementById('correctChildPanelsList');
-        const destList = document.getElementById('correctChildDestList');
-        const moveBtn = document.getElementById('correctChildMoveBtn');
-        const cancelBtn = document.getElementById('correctChildCancelBtn');
-        const lightbox = document.getElementById('correctChildImageLightbox');
-        const lightboxImg = document.getElementById('correctChildLightboxImg');
-        if (!modal || !actionsList || !panelsList || !destList) return;
+      async function openCorrectChildActionsDialog(panelId) {
+        const modal = document.getElementById('correctChildActionsModal');
+        const titleEl = document.getElementById('correctChildActionsModalTitle');
+        const actionsList = document.getElementById('correctChildActionsActionsList');
+        const destList = document.getElementById('correctChildActionsDestList');
+        const moveBtn = document.getElementById('correctChildActionsMoveBtn');
+        const cancelBtn = document.getElementById('correctChildActionsCancelBtn');
+        const lightbox = document.getElementById('correctChildActionsImageLightbox');
+        const lightboxImg = document.getElementById('correctChildActionsLightboxImg');
+        if (!modal || !actionsList || !destList) return;
         actionsList.innerHTML = '<div style="padding:12px; color:#666;">Đang tải...</div>';
-        panelsList.innerHTML = '';
         destList.innerHTML = '';
         modal.style.display = 'flex';
-        const res = await (typeof window.getCorrectChildDialogData === 'function' ? window.getCorrectChildDialogData(panelId) : { success: false });
+        const res = await (typeof window.getCorrectChildActionsDialogData === 'function' ? window.getCorrectChildActionsDialogData(panelId) : { success: false });
         if (!res.success) {
           if (typeof showToast === 'function') showToast(res.message || 'Không thể tải dữ liệu');
           modal.style.display = 'none';
           return;
         }
-        titleEl.textContent = 'Correct Child Actions & Panels - ' + (res.panelName || 'Panel');
+        titleEl.textContent = 'Correct Child Actions - ' + (res.panelName || 'Panel');
         const showLightbox = (src) => {
           if (!lightbox || !lightboxImg) return;
           lightboxImg.src = src || '';
@@ -6941,6 +6956,79 @@ Bạn có chắc chắn muốn rollback?\`;
           actionsList.appendChild(wrap);
         });
         if ((res.childActions || []).length === 0) actionsList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có actions con</div>';
+        let selectedDest = null;
+        (res.allPanels || []).forEach(p => {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:8px 10px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:8px;';
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'correctChildActionsDest';
+          radio.value = p.item_id;
+          radio.onchange = () => { selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          const name = document.createElement('span');
+          name.textContent = p.name || p.item_id || '';
+          row.setAttribute('data-dest', '1');
+          row.appendChild(radio);
+          row.appendChild(name);
+          row.onclick = () => { radio.checked = true; selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          destList.appendChild(row);
+        });
+        if ((res.allPanels || []).length === 0) destList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có panel nào khác để chọn làm đích</div>';
+        cancelBtn.onclick = () => { modal.style.display = 'none'; };
+        moveBtn.onclick = async () => {
+          if (!selectedDest) { if (typeof showToast === 'function') showToast('Vui lòng chọn panel đích'); return; }
+          const selActions = [].slice.call(actionsList.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.id).filter(Boolean);
+          if (selActions.length === 0) { if (typeof showToast === 'function') showToast('Vui lòng chọn ít nhất 1 action để chuyển'); return; }
+          moveBtn.textContent = 'Moving...';
+          moveBtn.disabled = true;
+          moveBtn.style.cursor = 'not-allowed';
+          try {
+            const r = await (typeof window.correctChildActions === 'function' ? window.correctChildActions(panelId, selActions, selectedDest) : { success: false });
+            modal.style.display = 'none';
+            if (r.success) {
+              if (typeof showToast === 'function') showToast('Đã chuyển actions thành công');
+              if (window.getPanelTree) {
+                const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                panelTreeData = data || []; renderPanelTree();
+              }
+            } else {
+              if (typeof showToast === 'function') showToast(r.message || 'Lỗi khi chuyển actions');
+            }
+          } finally {
+            moveBtn.textContent = 'Move';
+            moveBtn.disabled = false;
+            moveBtn.style.cursor = 'pointer';
+          }
+        };
+      }
+      window.openCorrectChildActionsDialog = openCorrectChildActionsDialog;
+
+      async function openCorrectChildPanelsDialog(panelId) {
+        const modal = document.getElementById('correctChildPanelsModal');
+        const titleEl = document.getElementById('correctChildPanelsModalTitle');
+        const panelsList = document.getElementById('correctChildPanelsPanelsList');
+        const destList = document.getElementById('correctChildPanelsDestList');
+        const moveBtn = document.getElementById('correctChildPanelsMoveBtn');
+        const cancelBtn = document.getElementById('correctChildPanelsCancelBtn');
+        const lightbox = document.getElementById('correctChildPanelsImageLightbox');
+        const lightboxImg = document.getElementById('correctChildPanelsLightboxImg');
+        if (!modal || !panelsList || !destList) return;
+        panelsList.innerHTML = '<div style="padding:12px; color:#666;">Đang tải...</div>';
+        destList.innerHTML = '';
+        modal.style.display = 'flex';
+        const res = await (typeof window.getCorrectChildPanelsDialogData === 'function' ? window.getCorrectChildPanelsDialogData(panelId) : { success: false });
+        if (!res.success) {
+          if (typeof showToast === 'function') showToast(res.message || 'Không thể tải dữ liệu');
+          modal.style.display = 'none';
+          return;
+        }
+        titleEl.textContent = 'Correct Child Panels - ' + (res.panelName || 'Panel');
+        const showLightbox = (src) => {
+          if (!lightbox || !lightboxImg) return;
+          lightboxImg.src = src || '';
+          lightbox.style.display = 'flex';
+        };
+        if (lightbox) lightbox.onclick = () => { lightbox.style.display = 'none'; };
         panelsList.innerHTML = '';
         (res.childPanels || []).forEach(p => {
           const wrap = document.createElement('label');
@@ -6963,13 +7051,30 @@ Bạn có chắc chắn muốn rollback?\`;
           panelsList.appendChild(wrap);
         });
         if ((res.childPanels || []).length === 0) panelsList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có panels con</div>';
+        const CORRECT_CHILD_PANELS_DEST_NONE = '__NONE__';
         let selectedDest = null;
+        (function addDestRow(value, label) {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:8px 10px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:8px;';
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'correctChildPanelsDest';
+          radio.value = value;
+          radio.onchange = () => { selectedDest = value; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          const name = document.createElement('span');
+          name.textContent = label;
+          row.setAttribute('data-dest', '1');
+          row.appendChild(radio);
+          row.appendChild(name);
+          row.onclick = () => { radio.checked = true; selectedDest = value; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
+          destList.appendChild(row);
+        })(CORRECT_CHILD_PANELS_DEST_NONE, 'Không thuộc panel nào');
         (res.allPanels || []).forEach(p => {
           const row = document.createElement('div');
           row.style.cssText = 'padding:8px 10px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:8px;';
           const radio = document.createElement('input');
           radio.type = 'radio';
-          radio.name = 'correctChildDest';
+          radio.name = 'correctChildPanelsDest';
           radio.value = p.item_id;
           radio.onchange = () => { selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
           const name = document.createElement('span');
@@ -6980,27 +7085,25 @@ Bạn có chắc chắn muốn rollback?\`;
           row.onclick = () => { radio.checked = true; selectedDest = p.item_id; destList.querySelectorAll('[data-dest]').forEach(el => { el.style.background = 'transparent'; }); row.style.background = '#e3f2fd'; };
           destList.appendChild(row);
         });
-        if ((res.allPanels || []).length === 0) destList.innerHTML = '<div style="padding:8px; color:#999; font-size:13px;">Không có panel nào khác để chọn làm đích</div>';
         cancelBtn.onclick = () => { modal.style.display = 'none'; };
         moveBtn.onclick = async () => {
-          if (!selectedDest) { if (typeof showToast === 'function') showToast('Vui lòng chọn panel đích'); return; }
-          const selActions = [].slice.call(actionsList.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.id).filter(Boolean);
+          if (!selectedDest) { if (typeof showToast === 'function') showToast('Vui lòng chọn panel đích hoặc Không thuộc panel nào'); return; }
           const selPanels = [].slice.call(panelsList.querySelectorAll('input[type=checkbox]:checked')).map(cb => cb.dataset.id).filter(Boolean);
-          if (selActions.length === 0 && selPanels.length === 0) { if (typeof showToast === 'function') showToast('Vui lòng chọn ít nhất 1 action hoặc 1 panel để chuyển'); return; }
-          moveBtn.textContent = 'Moving...';
+          if (selPanels.length === 0) { if (typeof showToast === 'function') showToast('Vui lòng chọn ít nhất 1 panel để chuyển'); return; }
+          moveBtn.textContent = selectedDest === CORRECT_CHILD_PANELS_DEST_NONE ? 'Đang xóa...' : 'Moving...';
           moveBtn.disabled = true;
           moveBtn.style.cursor = 'not-allowed';
           try {
-            const r = await (typeof window.correctChildActionsAndPanels === 'function' ? window.correctChildActionsAndPanels(panelId, selActions, selPanels, selectedDest) : { success: false });
+            const r = await (typeof window.correctChildPanels === 'function' ? window.correctChildPanels(panelId, selPanels, selectedDest) : { success: false });
             modal.style.display = 'none';
             if (r.success) {
-              if (typeof showToast === 'function') showToast('Đã chuyển thành công');
+              if (typeof showToast === 'function') showToast(selectedDest === CORRECT_CHILD_PANELS_DEST_NONE ? 'Đã xóa panels khỏi panel cha' : 'Đã chuyển panels thành công');
               if (window.getPanelTree) {
                 const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
                 panelTreeData = data || []; renderPanelTree();
               }
             } else {
-              if (typeof showToast === 'function') showToast(r.message || 'Lỗi khi chuyển');
+              if (typeof showToast === 'function') showToast(r.message || 'Lỗi khi chuyển panels');
             }
           } finally {
             moveBtn.textContent = 'Move';
@@ -7009,7 +7112,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
         };
       }
-      window.openCorrectChildDialog = openCorrectChildDialog;
+      window.openCorrectChildPanelsDialog = openCorrectChildPanelsDialog;
 
       let assignValidatorModalSession = null;
       async function openAssignValidatorModal(node) {
@@ -7224,7 +7327,8 @@ Bạn có chắc chắn muốn rollback?\`;
             menu.appendChild(div);
           };
           if (currentRole === 'ADMIN') {
-            addItem('🔧 Correct Child Actions & Panels', () => { if (window.openCorrectChildDialog) window.openCorrectChildDialog(panelId); });
+            addItem('🔧 Correct Child Actions', () => { if (window.openCorrectChildActionsDialog) window.openCorrectChildActionsDialog(panelId); });
+            addItem('🔧 Correct Child Panels', () => { if (window.openCorrectChildPanelsDialog) window.openCorrectChildPanelsDialog(panelId); });
           }
           if (isRootPanel) {
             addItem('🎯 Detect Important Actions', async () => {

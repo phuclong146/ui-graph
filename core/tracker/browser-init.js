@@ -360,6 +360,10 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("getPanelImage", handlers.getPanelImage);
     await tracker.queuePage.exposeFunction("getCorrectChildDialogData", handlers.getCorrectChildDialogData);
     await tracker.queuePage.exposeFunction("correctChildActionsAndPanels", handlers.correctChildActionsAndPanels);
+    await tracker.queuePage.exposeFunction("getCorrectChildActionsDialogData", handlers.getCorrectChildActionsDialogData);
+    await tracker.queuePage.exposeFunction("getCorrectChildPanelsDialogData", handlers.getCorrectChildPanelsDialogData);
+    await tracker.queuePage.exposeFunction("correctChildActions", handlers.correctChildActions);
+    await tracker.queuePage.exposeFunction("correctChildPanels", handlers.correctChildPanels);
     await tracker.queuePage.exposeFunction("broadcastToast", handlers.broadcastToast);
     await tracker.queuePage.exposeFunction("bringQueueBrowserToFront", handlers.bringQueueBrowserToFront);
     await tracker.queuePage.exposeFunction("hideTrackingBrowser", handlers.hideTrackingBrowser);
