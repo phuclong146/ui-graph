@@ -4631,9 +4631,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.log('⚠️ Could not read account.json for role check, using default: DRAW');
                 }
                 
-                // Skip recording for VALIDATE role
-                if (accountRole === 'VALIDATE') {
-                    console.log(`[RECORD] ⏸️  Skipping recording for VALIDATE role`);
+                // Only start panel recording for DRAW role (skip VALIDATE and ADMIN)
+                if (accountRole !== 'DRAW') {
+                    console.log(`[RECORD] ⏸️  Skipping recording for role=${accountRole} (only DRAW starts recording)`);
                 } else {
                     const { ENV } = await import('../config/env.js');
                     const enable = ENV.RECORD_PANEL === 'true' || ENV.RECORD_PANEL === true;
