@@ -339,6 +339,11 @@ export const QUEUE_BROWSER_HTML = `
         background: #f0f0f0;
       }
       
+      .collaborators-active-cell:hover {
+        color: #0056b3 !important;
+        text-decoration: underline !important;
+      }
+      
       .tree-children {
         display: none;
       }
@@ -1190,7 +1195,7 @@ export const QUEUE_BROWSER_HTML = `
         <div id="panel-log-resizer"></div>
       </div>
       
-      <div id="content-container">
+      <div id="content-container" style="position:relative;">
     <div id="controls">
       <div id="controls-draw-group" class="controls-group">
         <button id="captureActionsDOMBtn" style="display:none; background:#007bff;">📸 Detect Action</button>
@@ -1222,6 +1227,7 @@ export const QUEUE_BROWSER_HTML = `
         <button id="aiToolsBtn" style="background:#9c27b0; color:white;">AI Tools</button>
         <span id="controls-current-tool" style="display:none; align-items:center; padding:4px 10px; background:#e8e0f0; border-radius:6px; font-size:13px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Tool đang chọn"></span>
         <button id="randomlyAssignBtn" style="background:#17a2b8; color:white;">Randomly assign</button>
+        <button id="collaboratorsBtn" style="background:#5a6268; color:white;">Collaborators</button>
       </div>
       <button id="quitBtn" class="controls-quit" style="background:#6c757d;">✕ Quit</button>
     </div>
@@ -1234,6 +1240,56 @@ export const QUEUE_BROWSER_HTML = `
     <button id="clearAllClicksBtn" style="display:none; margin:10px; padding:8px 16px; background:#ff9800; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600;">🗑️ Clear All Clicks</button>
 
     <div id="events"></div>
+      </div>
+    </div>
+
+    <div id="collaboratorsModal" style="display:none; position:fixed; inset:0; z-index:20005; background-color:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
+      <div id="collaboratorsModalPanel" style="position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:1200px; max-width:95vw; height:85vh; min-width:400px; min-height:300px; background:white; border-radius:12px; padding:0; box-shadow:0 8px 32px rgba(0,0,0,0.3); display:flex; flex-direction:column; overflow:hidden;">
+        <div id="collaboratorsModalDragHandle" style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid #e0e0e0; flex-shrink:0; cursor:move; user-select:none;">
+          <h3 style="margin:0; font-size:20px; color:#333;">Quản lý phiên làm việc CTV</h3>
+          <button id="closeCollaboratorsModal" style="background:none; border:none; font-size:28px; cursor:pointer; color:#666; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:12px 16px; flex-shrink:0;">
+          <input type="text" id="collaboratorsSearchInput" placeholder="Tên CTV" style="padding:8px 12px; border:1px solid #ced4da; border-radius:6px; width:200px; font-size:13px;" />
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;">AI Tool:</label>
+          <select id="collaboratorsAiToolSelect" style="padding:6px 12px; border:1px solid #ced4da; border-radius:6px; min-width:180px; font-size:13px;">
+            <option value="">Tất cả</option>
+          </select>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px;">Role:</label>
+          <div id="collaboratorsRoleDropdownWrap" style="position:relative;">
+            <button type="button" id="collaboratorsRoleTrigger" style="padding:6px 12px; border:1px solid #ced4da; border-radius:6px; min-width:140px; font-size:13px; background:#fff; cursor:pointer; text-align:left;">DRAW ▼</button>
+            <div id="collaboratorsRoleDropdown" style="display:none; position:absolute; left:0; top:100%; margin-top:2px; background:#fff; border:1px solid #ced4da; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:20006; padding:6px 0; min-width:140px;">
+              <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px;"><input type="checkbox" class="collaborators-role-cb" value="DRAW" checked /> DRAW</label>
+              <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px;"><input type="checkbox" class="collaborators-role-cb" value="VALIDATE" /> VALIDATE</label>
+              <label style="display:flex; align-items:center; gap:8px; padding:6px 12px; cursor:pointer; font-size:13px;"><input type="checkbox" class="collaborators-role-cb" value="ADMIN" /> ADMIN</label>
+            </div>
+          </div>
+          <label style="font-size:13px;">Từ:</label>
+          <input type="datetime-local" id="collaboratorsDateFrom" style="padding:6px 10px; border:1px solid #ced4da; border-radius:6px; font-size:13px;" />
+          <label style="font-size:13px;">Đến:</label>
+          <input type="datetime-local" id="collaboratorsDateTo" style="padding:6px 10px; border:1px solid #ced4da; border-radius:6px; font-size:13px;" />
+          <button id="collaboratorsFilterBtn" style="padding:8px 16px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Tìm</button>
+        </div>
+        <div id="collaboratorsTableWrap" style="flex:1; overflow:auto; margin:0 16px; border:1px solid #dee2e6; border-radius:6px; min-height:200px;">
+          <table id="collaboratorsSessionsTable" style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+              <tr style="background:#f8f9fa;">
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">session_id</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">Tên tool</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">Tên CTV</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">ROLE</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">Session name</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">created_at (GMT+7)</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">updated_at (GMT+7)</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;">active</th>
+                <th style="padding:8px; text-align:left; border-bottom:1px solid #dee2e6;"></th>
+              </tr>
+            </thead>
+            <tbody id="collaboratorsSessionsTbody"></tbody>
+          </table>
+        </div>
+        <div id="collaboratorsPagination" style="display:flex; align-items:center; gap:12px; margin:12px 16px; flex-shrink:0;"></div>
+        <div id="collaboratorsModalResizeHandle" style="position:absolute; right:0; bottom:0; width:16px; height:16px; cursor:nwse-resize; background:linear-gradient(135deg, transparent 50%, #dee2e6 50%); border-radius:0 0 12px 0;"></div>
       </div>
     </div>
 
@@ -1267,6 +1323,40 @@ export const QUEUE_BROWSER_HTML = `
           <button id="saveReminderSaveBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s ease; box-shadow:0 2px 8px rgba(0,123,255,0.3);">
             Lưu
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sessionDetailsDialog" style="display:none; position:fixed; z-index:20010; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:20px; max-width:95vw; width:800px; max-height:90vh; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.3); display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #e0e0e0; padding-bottom:10px; flex-shrink:0;">
+          <h3 style="margin:0; font-size:18px; color:#333;">Session Details</h3>
+          <button id="closeSessionDetailsDialog" style="background:none; border:none; font-size:28px; cursor:pointer; color:#666; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
+        </div>
+        <div style="margin-bottom:16px; flex-shrink:0;">
+          <h4 style="margin:0 0 8px 0; font-size:14px;">DeviceInfo</h4>
+          <div id="sessionDetailsDeviceInfo" style="background:#f8f9fa; padding:12px; border-radius:6px; font-size:12px; white-space:pre-wrap;"></div>
+        </div>
+        <div style="flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0;">
+          <h4 style="margin:0 0 8px 0; font-size:14px;">History</h4>
+          <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+            <input type="text" id="sessionDetailsHistorySearch" placeholder="Tìm theo name, description" style="padding:6px 10px; border:1px solid #ced4da; border-radius:6px; width:240px; font-size:12px;" />
+            <button id="sessionDetailsHistorySearchBtn" style="padding:6px 12px; background:#007bff; color:white; border:none; border-radius:6px; cursor:pointer; font-size:12px;">Tìm</button>
+          </div>
+          <div id="sessionDetailsHistoryWrap" style="flex:1; overflow:auto; border:1px solid #dee2e6; border-radius:6px; min-height:120px;">
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead>
+                <tr style="background:#f8f9fa;">
+                  <th style="padding:6px; text-align:left; border-bottom:1px solid #dee2e6;">my_ai_tool</th>
+                  <th style="padding:6px; text-align:left; border-bottom:1px solid #dee2e6;">name</th>
+                  <th style="padding:6px; text-align:left; border-bottom:1px solid #dee2e6;">description</th>
+                  <th style="padding:6px; text-align:left; border-bottom:1px solid #dee2e6;">created_at (GMT+7)</th>
+                </tr>
+              </thead>
+              <tbody id="sessionDetailsHistoryTbody"></tbody>
+            </table>
+          </div>
+          <div id="sessionDetailsHistoryPagination" style="display:flex; align-items:center; gap:8px; margin-top:8px;"></div>
         </div>
       </div>
     </div>
@@ -4869,6 +4959,335 @@ Bạn có chắc chắn muốn rollback?\`;
         }
       });
 
+      // Collaborators modal (admin sessions list)
+      const collaboratorsModal = document.getElementById('collaboratorsModal');
+      const closeCollaboratorsModalBtn = document.getElementById('closeCollaboratorsModal');
+      const collaboratorsBtn = document.getElementById('collaboratorsBtn');
+      const collaboratorsSearchInput = document.getElementById('collaboratorsSearchInput');
+      const collaboratorsAiToolSelect = document.getElementById('collaboratorsAiToolSelect');
+      const collaboratorsRoleTrigger = document.getElementById('collaboratorsRoleTrigger');
+      const collaboratorsRoleDropdown = document.getElementById('collaboratorsRoleDropdown');
+      const collaboratorsDateFrom = document.getElementById('collaboratorsDateFrom');
+      const collaboratorsDateTo = document.getElementById('collaboratorsDateTo');
+      const collaboratorsFilterBtn = document.getElementById('collaboratorsFilterBtn');
+      const collaboratorsSessionsTbody = document.getElementById('collaboratorsSessionsTbody');
+      const collaboratorsPagination = document.getElementById('collaboratorsPagination');
+
+      let collaboratorsCurrentPage = 1;
+      const collaboratorsPerPage = 100;
+
+      const formatGmt7 = (isoStr) => {
+        if (isoStr == null || isoStr === '') return '-';
+        try {
+          let str = String(isoStr).trim();
+          if (!str) return '-';
+          if (!/Z|[+-]\d{2}:?\d{2}$/.test(str) && /^\d{4}-\d{2}-\d{2}/.test(str)) {
+            str = str.replace(' ', 'T') + 'Z';
+          }
+          const d = new Date(str);
+          if (isNaN(d.getTime())) return String(isoStr);
+          return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        } catch (_) { return String(isoStr); }
+      };
+
+      const getSelectedRoles = () => {
+        const cbs = document.querySelectorAll('.collaborators-role-cb:checked');
+        const roles = Array.from(cbs).map((el) => el.value).filter((v) => v);
+        return roles.length > 0 ? roles : ['DRAW'];
+      };
+
+      const updateCollaboratorsRoleTriggerText = () => {
+        if (collaboratorsRoleTrigger) collaboratorsRoleTrigger.textContent = getSelectedRoles().join(', ') + ' ▼';
+      };
+
+      if (collaboratorsRoleTrigger && collaboratorsRoleDropdown) {
+        collaboratorsRoleTrigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = collaboratorsRoleDropdown.style.display === 'block';
+          collaboratorsRoleDropdown.style.display = open ? 'none' : 'block';
+        });
+        collaboratorsRoleDropdown.addEventListener('click', (e) => e.stopPropagation());
+        document.querySelectorAll('.collaborators-role-cb').forEach((cb) => {
+          cb.addEventListener('change', updateCollaboratorsRoleTriggerText);
+        });
+        document.addEventListener('click', () => { if (collaboratorsRoleDropdown) collaboratorsRoleDropdown.style.display = 'none'; });
+      }
+
+      const loadCollaboratorsSessions = async (page) => {
+        if (!collaboratorsSessionsTbody) return;
+        collaboratorsSessionsTbody.innerHTML = '<tr><td colspan="9" style="padding:20px; text-align:center;">Loading...</td></tr>';
+        try {
+          const search = collaboratorsSearchInput ? collaboratorsSearchInput.value.trim() : '';
+          const myAiTool = collaboratorsAiToolSelect && collaboratorsAiToolSelect.value ? collaboratorsAiToolSelect.value.trim() : '';
+          const roles = getSelectedRoles();
+          if (roles.length === 0) roles.push('DRAW');
+          const dateFrom = collaboratorsDateFrom && collaboratorsDateFrom.value ? collaboratorsDateFrom.value : null;
+          const dateTo = collaboratorsDateTo && collaboratorsDateTo.value ? collaboratorsDateTo.value : null;
+          const params = { page: page || 1, perPage: collaboratorsPerPage, search, roles, dateFrom, dateTo, my_ai_tool: myAiTool || null };
+          const res = window.getAdminSessionsList ? await window.getAdminSessionsList(params) : { items: [], total: 0, page: 1, perPage: 100 };
+          const items = res.items || [];
+          const total = res.total || 0;
+          const currentPage = res.page || 1;
+          collaboratorsCurrentPage = currentPage;
+
+          if (items.length === 0) {
+            collaboratorsSessionsTbody.innerHTML = '<tr><td colspan="9" style="padding:20px; text-align:center;">Không có phiên nào.</td></tr>';
+          } else {
+            collaboratorsSessionsTbody.innerHTML = '';
+            items.forEach((row) => {
+              const tr = document.createElement('tr');
+              if (row.active === 1) tr.style.background = '#e8f5e9';
+              const activeLabel = row.active === 1 ? 'Active' : 'Inactive';
+              tr.innerHTML = \`
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${row.session_id ?? ''}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${(row.toolName || row.my_ai_tool || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${(row.name || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${(row.role || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${(row.session_name || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${formatGmt7(row.created_at)}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">\${formatGmt7(row.updated_at)}</td>
+                <td class="collaborators-active-cell" data-session-id="\${row.session_id}" data-active="\${row.active}" style="padding:8px; border-bottom:1px solid #eee; cursor:pointer; color:#007bff; text-decoration:underline;" title="Bấm hoặc chuột phải để đổi trạng thái">\${activeLabel}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;"><button class="collaborators-details-btn" data-session-id="\${row.session_id}" style="padding:4px 10px; font-size:12px; cursor:pointer;">Details</button></td>
+              \`;
+              tr.querySelector('.collaborators-active-cell').addEventListener('click', (e) => showActiveContextMenu(e, row.session_id, row.active));
+              tr.querySelector('.collaborators-active-cell').addEventListener('contextmenu', (e) => { e.preventDefault(); showActiveContextMenu(e, row.session_id, row.active); });
+              tr.querySelector('.collaborators-details-btn').addEventListener('click', () => openSessionDetailsDialog(row.session_id));
+              collaboratorsSessionsTbody.appendChild(tr);
+            });
+          }
+
+          const totalPages = Math.max(1, Math.ceil(total / collaboratorsPerPage));
+          collaboratorsPagination.innerHTML = '';
+          collaboratorsPagination.appendChild(document.createTextNode(\`Trang \${currentPage} / \${totalPages} (\${total} phiên)\`));
+          const prevBtn = document.createElement('button');
+          prevBtn.textContent = 'Trước';
+          prevBtn.disabled = currentPage <= 1;
+          prevBtn.style.marginLeft = '12px';
+          prevBtn.addEventListener('click', () => { if (currentPage > 1) loadCollaboratorsSessions(currentPage - 1); });
+          collaboratorsPagination.appendChild(prevBtn);
+          const nextBtn = document.createElement('button');
+          nextBtn.textContent = 'Sau';
+          nextBtn.disabled = currentPage >= totalPages;
+          nextBtn.style.marginLeft = '8px';
+          nextBtn.addEventListener('click', () => { if (currentPage < totalPages) loadCollaboratorsSessions(currentPage + 1); });
+          collaboratorsPagination.appendChild(nextBtn);
+        } catch (err) {
+          console.error('loadCollaboratorsSessions failed:', err);
+          collaboratorsSessionsTbody.innerHTML = '<tr><td colspan="9" style="padding:20px; color:#c00;">Lỗi: ' + (err.message || '') + '</td></tr>';
+        }
+      };
+
+      const showActiveContextMenu = (e, sessionId, currentActive) => {
+        const existing = document.getElementById('collaborators-active-context-menu');
+        if (existing) existing.remove();
+        const menu = document.createElement('div');
+        menu.id = 'collaborators-active-context-menu';
+        menu.style.cssText = 'position:fixed; background:#fff; border:1px solid #dee2e6; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:20006; padding:4px 0; min-width:120px;';
+        menu.style.left = (e.clientX + 4) + 'px';
+        menu.style.top = (e.clientY + 4) + 'px';
+        const label = currentActive === 1 ? 'Inactive' : 'Active';
+        const newVal = currentActive === 1 ? 0 : 1;
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.style.cssText = 'display:block; width:100%; padding:8px 14px; border:none; background:transparent; text-align:left; cursor:pointer; font-size:13px;';
+        btn.addEventListener('click', async () => {
+          menu.remove();
+          if (window.updateSessionActive) await window.updateSessionActive(sessionId, newVal);
+          loadCollaboratorsSessions(collaboratorsCurrentPage);
+        });
+        menu.appendChild(btn);
+        document.body.appendChild(menu);
+        const closeMenu = () => {
+          const m = document.getElementById('collaborators-active-context-menu');
+          if (m) m.remove();
+          document.removeEventListener('click', closeMenu);
+          document.removeEventListener('contextmenu', closeMenu);
+        };
+        setTimeout(() => {
+          document.addEventListener('click', closeMenu);
+          document.addEventListener('contextmenu', closeMenu);
+        }, 0);
+      };
+
+      const openCollaboratorsModal = async () => {
+        if (!collaboratorsModal) return;
+        collaboratorsModal.style.display = 'flex';
+        if (collaboratorsAiToolSelect) {
+          collaboratorsAiToolSelect.innerHTML = '<option value="">Tất cả</option>';
+          if (window.getAiToolsList) {
+            const res = await window.getAiToolsList();
+            const tools = (res && res.data) ? res.data : [];
+            tools.forEach((t) => {
+              const opt = document.createElement('option');
+              opt.value = t.code || '';
+              opt.textContent = (t.toolName || t.code || '');
+              collaboratorsAiToolSelect.appendChild(opt);
+            });
+          }
+          collaboratorsAiToolSelect.value = (currentToolInfo && currentToolInfo.toolCode) ? currentToolInfo.toolCode : '';
+        }
+        loadCollaboratorsSessions(1);
+      };
+
+      const closeCollaboratorsModalFn = () => {
+        if (collaboratorsModal) collaboratorsModal.style.display = 'none';
+      };
+
+      const collaboratorsModalPanel = document.getElementById('collaboratorsModalPanel');
+      const collaboratorsModalDragHandle = document.getElementById('collaboratorsModalDragHandle');
+      const collaboratorsModalResizeHandle = document.getElementById('collaboratorsModalResizeHandle');
+
+      if (collaboratorsModalPanel && collaboratorsModalDragHandle) {
+        let dragStartX = 0, dragStartY = 0, panelStartLeft = 0, panelStartTop = 0, isDragging = false;
+        collaboratorsModalDragHandle.addEventListener('mousedown', (e) => {
+          if (e.target && e.target.id === 'closeCollaboratorsModal') return;
+          e.preventDefault();
+          isDragging = true;
+          const rect = collaboratorsModalPanel.getBoundingClientRect();
+          panelStartLeft = rect.left;
+          panelStartTop = rect.top;
+          dragStartX = e.clientX;
+          dragStartY = e.clientY;
+          collaboratorsModalPanel.style.transform = 'none';
+          collaboratorsModalPanel.style.left = panelStartLeft + 'px';
+          collaboratorsModalPanel.style.top = panelStartTop + 'px';
+        });
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging || !collaboratorsModalPanel) return;
+          const dx = e.clientX - dragStartX;
+          const dy = e.clientY - dragStartY;
+          collaboratorsModalPanel.style.left = (panelStartLeft + dx) + 'px';
+          collaboratorsModalPanel.style.top = (panelStartTop + dy) + 'px';
+        });
+        document.addEventListener('mouseup', () => { isDragging = false; });
+      }
+
+      if (collaboratorsModalPanel && collaboratorsModalResizeHandle) {
+        let resizeStartX = 0, resizeStartY = 0, startWidth = 0, startHeight = 0, isResizing = false;
+        collaboratorsModalResizeHandle.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          isResizing = true;
+          const rect = collaboratorsModalPanel.getBoundingClientRect();
+          startWidth = rect.width;
+          startHeight = rect.height;
+          resizeStartX = e.clientX;
+          resizeStartY = e.clientY;
+        });
+        document.addEventListener('mousemove', (e) => {
+          if (!isResizing || !collaboratorsModalPanel) return;
+          const dw = e.clientX - resizeStartX;
+          const dh = e.clientY - resizeStartY;
+          const newW = Math.max(400, startWidth + dw);
+          const newH = Math.max(300, startHeight + dh);
+          collaboratorsModalPanel.style.width = newW + 'px';
+          collaboratorsModalPanel.style.height = newH + 'px';
+        });
+        document.addEventListener('mouseup', () => { isResizing = false; });
+      }
+
+      if (collaboratorsBtn) collaboratorsBtn.addEventListener('click', openCollaboratorsModal);
+      if (closeCollaboratorsModalBtn) closeCollaboratorsModalBtn.addEventListener('click', closeCollaboratorsModalFn);
+      if (collaboratorsModal) collaboratorsModal.addEventListener('click', (e) => { if (e.target === collaboratorsModal) closeCollaboratorsModalFn(); });
+      if (collaboratorsFilterBtn) collaboratorsFilterBtn.addEventListener('click', () => loadCollaboratorsSessions(1));
+      if (collaboratorsSearchInput) collaboratorsSearchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadCollaboratorsSessions(1); });
+      if (collaboratorsAiToolSelect) collaboratorsAiToolSelect.addEventListener('change', () => loadCollaboratorsSessions(1));
+
+      // Session Details dialog
+      const sessionDetailsDialog = document.getElementById('sessionDetailsDialog');
+      const closeSessionDetailsDialogBtn = document.getElementById('closeSessionDetailsDialog');
+      const sessionDetailsDeviceInfo = document.getElementById('sessionDetailsDeviceInfo');
+      const sessionDetailsHistoryTbody = document.getElementById('sessionDetailsHistoryTbody');
+      const sessionDetailsHistorySearch = document.getElementById('sessionDetailsHistorySearch');
+      const sessionDetailsHistoryPagination = document.getElementById('sessionDetailsHistoryPagination');
+
+      let sessionDetailsCurrentSessionId = null;
+      let sessionDetailsHistoryPage = 1;
+
+      const loadSessionDetailsHistory = async (sessionId, page, search) => {
+        if (!sessionDetailsHistoryTbody) return;
+        sessionDetailsHistoryTbody.innerHTML = '<tr><td colspan="4" style="padding:12px;">Loading...</td></tr>';
+        try {
+          const res = window.getSessionProcessHistory ? await window.getSessionProcessHistory(sessionId, page || 1, 100, search || '') : { items: [], total: 0, page: 1, perPage: 100 };
+          const items = res.items || [];
+          const total = res.total || 0;
+          const currentPage = res.page || 1;
+          sessionDetailsHistoryPage = currentPage;
+
+          if (items.length === 0) {
+            sessionDetailsHistoryTbody.innerHTML = '<tr><td colspan="4" style="padding:12px;">Không có bản ghi.</td></tr>';
+          } else {
+            sessionDetailsHistoryTbody.innerHTML = '';
+            items.forEach((row) => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = \`
+                <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.my_ai_tool || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.name || '').replace(/</g, '&lt;')}</td>
+                <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.description || '').replace(/</g, '&lt;').substring(0, 200)}\${(row.description && row.description.length > 200) ? '...' : ''}</td>
+                <td style="padding:6px; border-bottom:1px solid #eee;">\${formatGmt7(row.created_at)}</td>
+              \`;
+              sessionDetailsHistoryTbody.appendChild(tr);
+            });
+          }
+
+          const totalPages = Math.max(1, Math.ceil(total / 100));
+          sessionDetailsHistoryPagination.innerHTML = '';
+          sessionDetailsHistoryPagination.appendChild(document.createTextNode(\`Trang \${currentPage} / \${totalPages}\`));
+          const prevBtn = document.createElement('button');
+          prevBtn.textContent = 'Trước';
+          prevBtn.disabled = currentPage <= 1;
+          prevBtn.style.marginLeft = '8px';
+          prevBtn.addEventListener('click', () => loadSessionDetailsHistory(sessionDetailsCurrentSessionId, currentPage - 1, sessionDetailsHistorySearch ? sessionDetailsHistorySearch.value.trim() : ''));
+          sessionDetailsHistoryPagination.appendChild(prevBtn);
+          const nextBtn = document.createElement('button');
+          nextBtn.textContent = 'Sau';
+          nextBtn.disabled = currentPage >= totalPages;
+          nextBtn.style.marginLeft = '4px';
+          nextBtn.addEventListener('click', () => loadSessionDetailsHistory(sessionDetailsCurrentSessionId, currentPage + 1, sessionDetailsHistorySearch ? sessionDetailsHistorySearch.value.trim() : ''));
+          sessionDetailsHistoryPagination.appendChild(nextBtn);
+        } catch (err) {
+          console.error('loadSessionDetailsHistory failed:', err);
+          sessionDetailsHistoryTbody.innerHTML = '<tr><td colspan="4" style="padding:12px; color:#c00;">Lỗi</td></tr>';
+        }
+      };
+
+      const openSessionDetailsDialog = async (sessionId) => {
+        sessionDetailsCurrentSessionId = sessionId;
+        if (!sessionDetailsDialog) return;
+        sessionDetailsDialog.style.display = 'flex';
+        sessionDetailsDeviceInfo.textContent = 'Loading...';
+        if (window.getSessionDetails) {
+          const info = await window.getSessionDetails(sessionId);
+          if (info) {
+            let text = 'my_collaborator: ' + (info.my_collaborator || '') + '\\n';
+            text += 'device_id: ' + (info.device_id || '') + '\\n';
+            text += 'device_info: ' + (typeof info.device_info === 'object' ? JSON.stringify(info.device_info, null, 2) : (info.device_info || ''));
+            sessionDetailsDeviceInfo.textContent = text;
+          } else {
+            sessionDetailsDeviceInfo.textContent = '-';
+          }
+        } else {
+          sessionDetailsDeviceInfo.textContent = '-';
+        }
+        sessionDetailsHistoryPage = 1;
+        const search = sessionDetailsHistorySearch ? sessionDetailsHistorySearch.value.trim() : '';
+        await loadSessionDetailsHistory(sessionId, 1, search);
+      };
+
+      const closeSessionDetailsDialogFn = () => {
+        if (sessionDetailsDialog) sessionDetailsDialog.style.display = 'none';
+      };
+
+      if (closeSessionDetailsDialogBtn) closeSessionDetailsDialogBtn.addEventListener('click', closeSessionDetailsDialogFn);
+      if (sessionDetailsDialog) sessionDetailsDialog.addEventListener('click', (e) => { if (e.target === sessionDetailsDialog) closeSessionDetailsDialogFn(); });
+      const sessionDetailsHistorySearchBtn = document.getElementById('sessionDetailsHistorySearchBtn');
+      if (sessionDetailsHistorySearch) {
+        const runHistorySearch = () => {
+          if (sessionDetailsCurrentSessionId != null) loadSessionDetailsHistory(sessionDetailsCurrentSessionId, 1, sessionDetailsHistorySearch.value.trim());
+        };
+        sessionDetailsHistorySearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') runHistorySearch(); });
+        if (sessionDetailsHistorySearchBtn) sessionDetailsHistorySearchBtn.addEventListener('click', runHistorySearch);
+      }
+
       // Save Reminder Modal handlers
       const saveReminderModal = document.getElementById('saveReminderModal');
       const saveReminderSaveBtn = document.getElementById('saveReminderSaveBtn');
@@ -5166,6 +5585,7 @@ Bạn có chắc chắn muốn rollback?\`;
         const videoValidationRaiseBugBtn = document.getElementById('videoValidationRaiseBugBtn');
         const aiToolsBtn = document.getElementById('aiToolsBtn');
         const randomlyAssignBtn = document.getElementById('randomlyAssignBtn');
+        const collaboratorsBtn = document.getElementById('collaboratorsBtn');
 
         if (role === 'VALIDATE' || role === 'ADMIN') {
           if (drawGroup) drawGroup.style.display = 'none';
@@ -5173,6 +5593,7 @@ Bạn có chắc chắn muốn rollback?\`;
           if (quitBtn) quitBtn.style.display = 'inline-block';
           if (aiToolsBtn) aiToolsBtn.style.display = 'inline-block';
           if (randomlyAssignBtn) randomlyAssignBtn.style.display = (role === 'ADMIN') ? 'inline-block' : 'none';
+          if (collaboratorsBtn) collaboratorsBtn.style.display = (role === 'ADMIN') ? 'inline-block' : 'none';
           if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
           if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         } else {
@@ -5192,6 +5613,8 @@ Bạn có chắc chắn muốn rollback?\`;
           if (viewGraphBtn) viewGraphBtn.style.display = 'flex';
           if (validateBtn) validateBtn.style.display = 'inline-block';
           if (aiToolsBtn) aiToolsBtn.style.display = 'none';
+          if (randomlyAssignBtn) randomlyAssignBtn.style.display = 'none';
+          if (collaboratorsBtn) collaboratorsBtn.style.display = 'none';
           if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
           if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         }
@@ -5889,9 +6312,19 @@ Bạn có chắc chắn muốn rollback?\`;
       };
 
       document.addEventListener("keydown", async (e) => {
-        if (e.key === "Escape" && checkpointModal.style.display === 'flex') {
-          closeCheckpointModalFn();
-          return;
+        if (e.key === "Escape") {
+          if (sessionDetailsDialog && sessionDetailsDialog.style.display === 'flex') {
+            closeSessionDetailsDialogFn();
+            return;
+          }
+          if (collaboratorsModal && collaboratorsModal.style.display === 'flex') {
+            closeCollaboratorsModalFn();
+            return;
+          }
+          if (checkpointModal.style.display === 'flex') {
+            closeCheckpointModalFn();
+            return;
+          }
         }
         if ((e.ctrlKey || e.metaKey) && e.key === "1") {
           e.preventDefault();

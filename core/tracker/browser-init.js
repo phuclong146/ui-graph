@@ -397,6 +397,10 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("setNormalAction", handlers.setNormalAction);
     await tracker.queuePage.exposeFunction("getAiToolsList", handlers.getAiToolsList);
     await tracker.queuePage.exposeFunction("adminOpenOrCreateSession", handlers.adminOpenOrCreateSession);
+    await tracker.queuePage.exposeFunction("getAdminSessionsList", handlers.getAdminSessionsList);
+    await tracker.queuePage.exposeFunction("updateSessionActive", handlers.updateSessionActive);
+    await tracker.queuePage.exposeFunction("getSessionDetails", handlers.getSessionDetails);
+    await tracker.queuePage.exposeFunction("getSessionProcessHistory", handlers.getSessionProcessHistory);
 
     // Show RoleSelectionModal immediately when queue tracker opens
     const accountInfo = await handlers.getAccountInfo();
