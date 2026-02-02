@@ -73,8 +73,12 @@ export class CheckpointManager {
 
     /**
      * Creates a checkpoint by snapshotting both local data and database
+     * @param {string|null} name - Checkpoint name
+     * @param {string|null} description - Checkpoint description
+     * @param {number|null} recordId - Session record_id
+     * @param {string|null} createdBy - Who created (account.collaborator_code); used for process.created_by
      */
-    async createCheckpoint(name = null, description = null, recordId = null) {
+    async createCheckpoint(name = null, description = null, recordId = null, createdBy = null) {
         const checkpointId = randomUUID();
         const timestamp = Date.now();
 
@@ -102,7 +106,7 @@ export class CheckpointManager {
 
             // Snapshot database data
             if (this.connection && this.myAiTool) {
-                await this._snapshotDatabaseData(checkpointId, name, description, recordId);
+                await this._snapshotDatabaseData(checkpointId, name, description, recordId, createdBy);
                 dbSuccess = true;
             } else {
                 console.warn('⚠️ Skipping DB snapshot: no connection or myAiTool');
@@ -223,8 +227,9 @@ export class CheckpointManager {
 
     /**
      * Rolls back to a specific checkpoint
+     * @param {string|null} rolledbackBy - Who rolled back (account.collaborator_code); used for process.rolledback_by
      */
-    async rollbackToCheckpoint(checkpointId, recordId = null) {
+    async rollbackToCheckpoint(checkpointId, recordId = null, rolledbackBy = null) {
         // Validate checkpoint exists
         const metadata = await this.getCheckpointMetadata(checkpointId);
         if (!metadata) {
@@ -261,7 +266,7 @@ export class CheckpointManager {
 
             // Rollback database data
             if (this.connection && this.myAiTool && metadata.dbSuccess) {
-                await this._rollbackDatabaseData(checkpointId, recordId);
+                await this._rollbackDatabaseData(checkpointId, recordId, rolledbackBy);
                 dbRollbackSuccess = true;
             }
 
@@ -343,8 +348,9 @@ export class CheckpointManager {
 
     /**
      * Snapshot database data to _his tables
+     * @param {string|null} createdBy - Who created (account.collaborator_code); used for process.created_by
      */
-    async _snapshotDatabaseData(checkpointId, name, description, recordId) {
+    async _snapshotDatabaseData(checkpointId, name, description, recordId, createdBy = null) {
         if (!this.connection || !this.myAiTool) {
             throw new Error('Database connection or myAiTool not available');
         }
@@ -355,18 +361,21 @@ export class CheckpointManager {
             actualRecordId = await this.getRecordId();
         }
 
-        // Insert into process table
+        const createdByValue = createdBy ?? recordId;
+
+        // Insert into process table (process_type = DRAW_SAVE for save checkpoint)
         await this.connection.execute(
-            `INSERT INTO process (code, name, description, created_by, published, record_id, my_ai_tool)
-             VALUES (?, ?, ?, ?, 1, ?, ?)
+            `INSERT INTO process (code, process_type, name, description, created_by, published, record_id, my_ai_tool)
+             VALUES (?, 'DRAW_SAVE', ?, ?, ?, 1, ?, ?)
              ON DUPLICATE KEY UPDATE
+                process_type = VALUES(process_type),
                 name = VALUES(name),
                 description = VALUES(description),
                 created_by = VALUES(created_by),
                 record_id = VALUES(record_id),
                 my_ai_tool = VALUES(my_ai_tool),
                 updated_at = CURRENT_TIMESTAMP`,
-            [checkpointId, name, description, recordId, actualRecordId, this.myAiTool]
+            [checkpointId, name, description, createdByValue, actualRecordId, this.myAiTool]
         );
 
         // Snapshot doing_item to doing_item_his
@@ -508,8 +517,9 @@ export class CheckpointManager {
 
     /**
      * Rollback database data from checkpoint
+     * @param {string|null} rolledbackBy - Who rolled back (account.collaborator_code); used for process.rolledback_by
      */
-    async _rollbackDatabaseData(checkpointId, recordId = null) {
+    async _rollbackDatabaseData(checkpointId, recordId = null, rolledbackBy = null) {
         if (!this.connection || !this.myAiTool) {
             throw new Error('Database connection or myAiTool not available');
         }
@@ -670,10 +680,11 @@ export class CheckpointManager {
         }
 
         // Mark checkpoint as rolledback
-        if (recordId) {
+        const rolledbackByValue = rolledbackBy ?? recordId;
+        if (rolledbackByValue) {
             await this.connection.execute(
                 `UPDATE process SET rolledback_by = ?, updated_at = NOW() WHERE code = ? AND my_ai_tool = ?`,
-                [recordId, checkpointId, this.myAiTool]
+                [rolledbackByValue, checkpointId, this.myAiTool]
             );
         }
 
