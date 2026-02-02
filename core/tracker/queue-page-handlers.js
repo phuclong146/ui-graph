@@ -10012,6 +10012,221 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Get paginated list of CTV sessions for admin. ADMIN only.
+     * @param {Object} params - { page, perPage, search, roles, dateFrom, dateTo }
+     * @returns {Promise<{ items: Array, total: number, page: number, perPage: number }>}
+     */
+    const getAdminSessionsListHandler = async (params) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { items: [], total: 0, page: 1, perPage: 100 };
+            }
+
+            const page = Math.max(1, parseInt(params?.page, 10) || 1);
+            const perPage = Math.min(100, Math.max(1, parseInt(params?.perPage, 10) || 100));
+            const search = typeof params?.search === 'string' ? params.search.trim() : '';
+            const allowedRoles = ['DRAW', 'VALIDATE', 'ADMIN'];
+            const roles = Array.isArray(params?.roles) && params.roles.length > 0
+                ? params.roles.filter((r) => allowedRoles.includes(r))
+                : ['DRAW'];
+            const dateFromRaw = params?.dateFrom && String(params.dateFrom).trim() ? params.dateFrom : null;
+            const dateToRaw = params?.dateTo && String(params.dateTo).trim() ? params.dateTo : null;
+            const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
+            const dateTo = dateToRaw ? new Date(dateToRaw) : null;
+
+            const pool = getDbPool();
+            const conditions = ['1=1'];
+            const queryParams = [];
+
+            if (roles.length > 0) {
+                conditions.push(`s.role IN (${roles.map(() => '?').join(',')})`);
+                queryParams.push(...roles);
+            }
+            if (search) {
+                const like = `%${search}%`;
+                conditions.push('(s.name LIKE ? OR c.name LIKE ?)');
+                queryParams.push(like, like);
+            }
+            const myAiTool = params?.my_ai_tool && String(params.my_ai_tool).trim() ? params.my_ai_tool.trim() : null;
+            if (myAiTool) {
+                conditions.push('s.my_ai_tool = ?');
+                queryParams.push(myAiTool);
+            }
+            if (dateFrom && !isNaN(dateFrom.getTime())) {
+                conditions.push('s.updated_at >= ?');
+                queryParams.push(dateFrom.toISOString().slice(0, 19).replace('T', ' '));
+            }
+            if (dateTo && !isNaN(dateTo.getTime())) {
+                conditions.push('s.updated_at <= ?');
+                queryParams.push(dateTo.toISOString().slice(0, 19).replace('T', ' '));
+            }
+
+            const whereClause = conditions.join(' AND ');
+            const countSql = `SELECT COUNT(*) as total FROM uigraph_session s
+                LEFT JOIN uigraph_collaborator c ON c.code = s.my_collaborator AND c.published = 1
+                WHERE ${whereClause}`;
+            const [countRows] = await pool.execute(countSql, queryParams);
+            const total = (countRows && countRows[0] && Number(countRows[0].total)) || 0;
+
+            const offset = (page - 1) * perPage;
+            const limitVal = Math.max(0, perPage);
+            const offsetVal = Math.max(0, offset);
+            const dataSql = `SELECT s.session_id, s.my_ai_tool, s.name as ctv_name, s.role, s.session_name,
+                DATE_FORMAT(s.created_at, '%Y-%m-%dT%H:%i:%sZ') as created_at,
+                DATE_FORMAT(s.updated_at, '%Y-%m-%dT%H:%i:%sZ') as updated_at,
+                s.active, s.my_collaborator, s.device_id, s.device_info
+                FROM uigraph_session s
+                LEFT JOIN uigraph_collaborator c ON c.code = s.my_collaborator AND c.published = 1
+                WHERE ${whereClause}
+                ORDER BY s.active DESC, s.updated_at DESC
+                LIMIT ${limitVal} OFFSET ${offsetVal}`;
+            const [rows] = await pool.execute(dataSql, queryParams);
+
+            const toolsRes = await getAiToolsListHandler();
+            const tools = toolsRes.data || [];
+            const toolMap = new Map((tools || []).map((t) => [t.code, t.toolName || t.code]));
+
+            const items = (rows || []).map((r) => {
+                return {
+                    session_id: r.session_id,
+                    my_ai_tool: r.my_ai_tool,
+                    toolName: toolMap.get(r.my_ai_tool) || r.my_ai_tool,
+                    name: r.ctv_name ?? r.my_collaborator ?? '',
+                    role: r.role,
+                    session_name: r.session_name,
+                    created_at: r.created_at || null,
+                    updated_at: r.updated_at || null,
+                    active: r.active == null ? 1 : Number(r.active),
+                    my_collaborator: r.my_collaborator,
+                    device_id: r.device_id,
+                    device_info: r.device_info
+                };
+            });
+
+            return { items, total, page, perPage };
+        } catch (err) {
+            console.error('[getAdminSessionsList] failed:', err);
+            return { items: [], total: 0, page: 1, perPage: 100 };
+        }
+    };
+
+    /**
+     * Update session active flag. ADMIN only.
+     * @param {number} sessionId - session_id (bigint)
+     * @param {number} active - 0 or 1
+     */
+    const updateSessionActiveHandler = async (sessionId, active) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { success: false, error: 'ADMIN only' };
+            }
+            const sid = sessionId == null ? null : Number(sessionId);
+            if (sid === null || isNaN(sid)) {
+                return { success: false, error: 'sessionId required' };
+            }
+            const act = active === 0 || active === '0' ? 0 : 1;
+            const pool = getDbPool();
+            await pool.execute('UPDATE uigraph_session SET active = ? WHERE session_id = ?', [act, sid]);
+            return { success: true };
+        } catch (err) {
+            console.error('[updateSessionActive] failed:', err);
+            return { success: false, error: err.message };
+        }
+    };
+
+    /**
+     * Get session device info for Details dialog. ADMIN only.
+     */
+    const getSessionDetailsHandler = async (sessionId) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return null;
+            }
+            const sid = sessionId == null ? null : Number(sessionId);
+            if (sid === null || isNaN(sid)) return null;
+            const pool = getDbPool();
+            const [rows] = await pool.execute(
+                'SELECT my_collaborator, device_id, device_info FROM uigraph_session WHERE session_id = ? LIMIT 1',
+                [sid]
+            );
+            if (!rows || rows.length === 0) return null;
+            const r = rows[0];
+            return {
+                my_collaborator: r.my_collaborator ?? '',
+                device_id: r.device_id ?? '',
+                device_info: r.device_info ?? ''
+            };
+        } catch (err) {
+            console.error('[getSessionDetails] failed:', err);
+            return null;
+        }
+    };
+
+    /**
+     * Get process history for a session (published=1, record_id=session_id). ADMIN only.
+     * @param {number} sessionId - session_id (record_id)
+     * @param {number} page
+     * @param {number} perPage
+     * @param {string} search - LIKE name, description
+     */
+    const getSessionProcessHistoryHandler = async (sessionId, page, perPage, search) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            if ((accountData?.role || '') !== 'ADMIN') {
+                return { items: [], total: 0, page: 1, perPage: 100 };
+            }
+            const sid = sessionId == null ? null : Number(sessionId);
+            if (sid === null || isNaN(sid)) return { items: [], total: 0, page: 1, perPage: 100 };
+            const p = Math.max(1, parseInt(page, 10) || 1);
+            const pp = Math.min(100, Math.max(1, parseInt(perPage, 10) || 100));
+            const searchTrim = typeof search === 'string' ? search.trim() : '';
+
+            const pool = getDbPool();
+            const baseConditions = 'published = 1 AND record_id = ?';
+            const countParams = [sid];
+            if (searchTrim) {
+                const like = `%${searchTrim}%`;
+                countParams.push(like, like);
+            }
+            const countSql = searchTrim
+                ? `SELECT COUNT(*) as total FROM process WHERE ${baseConditions} AND (name LIKE ? OR description LIKE ?)`
+                : `SELECT COUNT(*) as total FROM process WHERE ${baseConditions}`;
+            const [countRows] = await pool.execute(countSql, countParams);
+            const total = (countRows && countRows[0] && Number(countRows[0].total)) || 0;
+
+            const dataParams = [sid];
+            if (searchTrim) dataParams.push(`%${searchTrim}%`, `%${searchTrim}%`);
+            const dataWhere = searchTrim
+                ? `${baseConditions} AND (name LIKE ? OR description LIKE ?)`
+                : baseConditions;
+            const offset = (p - 1) * pp;
+            const limitVal = Math.max(0, pp);
+            const offsetVal = Math.max(0, offset);
+            const dataSql = `SELECT my_ai_tool, name, description, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') as created_at FROM process WHERE ${dataWhere} ORDER BY created_at DESC LIMIT ${limitVal} OFFSET ${offsetVal}`;
+            const [rows] = await pool.execute(dataSql, dataParams);
+
+            const items = (rows || []).map((r) => ({
+                my_ai_tool: r.my_ai_tool ?? '',
+                name: r.name ?? '',
+                description: r.description ?? '',
+                created_at: r.created_at || null
+            }));
+
+            return { items, total, page: p, perPage: pp };
+        } catch (err) {
+            console.error('[getSessionProcessHistory] failed:', err);
+            return { items: [], total: 0, page: 1, perPage: 100 };
+        }
+    };
+
     return {
         quitApp: quitAppHandler,
         saveEvents: saveEventsHandler,
@@ -10099,6 +10314,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         saveAccountInfo: saveAccountInfoHandler,
         validateAdminPassword: validateAdminPasswordHandler,
         getAiToolsList: getAiToolsListHandler,
-        adminOpenOrCreateSession: adminOpenOrCreateSessionHandler
+        adminOpenOrCreateSession: adminOpenOrCreateSessionHandler,
+        getAdminSessionsList: getAdminSessionsListHandler,
+        updateSessionActive: updateSessionActiveHandler,
+        getSessionDetails: getSessionDetailsHandler,
+        getSessionProcessHistory: getSessionProcessHistoryHandler
     };
 }
