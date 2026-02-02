@@ -1067,11 +1067,11 @@ export class PanelScreenTracker {
                 y: window.scrollY || window.pageYOffset
             }));
 
-            // Capture full-page scrolling screenshot (skipViewportRestore=true to get metadata object)
+            // Viewport-only capture: no setViewport, no scroll — keeps dropdown/menu/tooltip visible.
+            // Full-page capture would change viewport (e.g. 1920x1080) and scroll, closing overlays.
             const { captureScreenshot } = await import('../media/screenshot.js');
-            const result = await captureScreenshot(this.page, "base64", true, true);
+            const result = await captureScreenshot(this.page, "base64", false, true);
             
-            // Restore viewport immediately after capture
             if (result.restoreViewport) {
                 await result.restoreViewport();
             }
