@@ -3,6 +3,7 @@ import { MySQLExporter } from '../data/mysql-exporter.js';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { CheckpointManager } from '../data/CheckpointManager.js';
+import { logAdminValidateProcess, getRecordIdFromSessionFolder, formatBugInfoForLog, PROCESS_TYPES } from '../data/process-logger.js';
 import { calculateHash } from '../utils/utils.js';
 import { ENV } from '../config/env.js';
 import { cropBase64Image } from '../media/screenshot.js';
@@ -3773,7 +3774,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     modality_stacks_reason: trimmedReason
                 });
                 const dbUpdated = await exporter.updateItemModalityStacks(actionId, filteredCodes, trimmedReason);
-                if (dbUpdated) console.log(`✅ Updated modality_stacks for action ${actionId}`);
+                if (dbUpdated) {
+                    console.log(`✅ Updated modality_stacks for action ${actionId}`);
+                    const actionItem = await tracker.dataItemManager?.getItem(actionId);
+                    const actionName = actionItem?.name ? ` name="${actionItem.name}"` : '';
+                    const accountRes = await getAccountInfoHandler();
+                    const accountData = accountRes?.data || accountRes;
+                    const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                    await logAdminValidateProcess({
+                        processType: PROCESS_TYPES.SET_IMPORTANT_ACTION.code,
+                        name: PROCESS_TYPES.SET_IMPORTANT_ACTION.name,
+                        description: `Action item_id=${actionId}${actionName}: set modality_stacks=${JSON.stringify(filteredCodes)}, reason="${trimmedReason}". doing_item updated.`,
+                        myAiTool: aiToolCode,
+                        recordId,
+                        createdBy: accountData?.collaborator_code || accountData?.device_id
+                    });
+                }
             } finally {
                 await exporter.close();
             }
@@ -3807,7 +3823,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     modality_stacks_reason: null
                 });
                 const dbUpdated = await exporter.updateItemModalityStacks(actionId, [], null);
-                if (dbUpdated) console.log(`✅ Cleared modality_stacks for action ${actionId}`);
+                if (dbUpdated) {
+                    console.log(`✅ Cleared modality_stacks for action ${actionId}`);
+                    const actionItem = await tracker.dataItemManager?.getItem(actionId);
+                    const actionName = actionItem?.name ? ` name="${actionItem.name}"` : '';
+                    const accountRes = await getAccountInfoHandler();
+                    const accountData = accountRes?.data || accountRes;
+                    const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                    await logAdminValidateProcess({
+                        processType: PROCESS_TYPES.SET_NORMAL_ACTION.code,
+                        name: PROCESS_TYPES.SET_NORMAL_ACTION.name,
+                        description: `Action item_id=${actionId}${actionName}: cleared modality_stacks and reason. doing_item updated.`,
+                        myAiTool: tracker.myAiToolCode,
+                        recordId,
+                        createdBy: accountData?.collaborator_code || accountData?.device_id
+                    });
+                }
             } finally {
                 await exporter.close();
             }
@@ -5013,6 +5044,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 });
             }
 
+            const itemName = item?.name ? ` name="${item.name}"` : '';
+            const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+            await logAdminValidateProcess({
+                processType: PROCESS_TYPES.VALIDATE_VIEW_ACTION.code,
+                name: PROCESS_TYPES.VALIDATE_VIEW_ACTION.name,
+                description: `Action item_id=${actionItemId}${itemName} (item_code=${itemCode}): view_count+1. uigraph_validation and uigraph_validation_viewitem updated.`,
+                myAiTool: myAiToolCode,
+                recordId,
+                createdBy: collaboratorCode
+            });
+
             await exporter.close();
             await broadcastValidationTreeUpdate();
         } catch (err) {
@@ -5211,6 +5253,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 [myAiToolCode, my_session, collaborator_code]
             );
 
+            const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+            await logAdminValidateProcess({
+                processType: PROCESS_TYPES.ADMIN_ASSIGN_VALIDATOR.code,
+                name: PROCESS_TYPES.ADMIN_ASSIGN_VALIDATOR.name,
+                description: `Assign CTV ${collaborator_code} to session my_session=${my_session}. uigraph_validation_assignee updated.`,
+                myAiTool: myAiToolCode,
+                recordId,
+                createdBy: accountData?.collaborator_code || accountData?.device_id
+            });
+
             if (tracker._broadcast && tracker.panelLogManager) {
                 const data = await tracker.panelLogManager.buildValidationTreeStructure();
                 tracker._broadcast({ type: 'tree_update', data });
@@ -5258,6 +5310,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 `UPDATE uigraph_validation_assignee SET published = 0, updated_at = NOW() WHERE my_ai_tool = ? AND my_session = ?`,
                 [myAiToolCode, my_session]
             );
+
+            const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+            await logAdminValidateProcess({
+                processType: PROCESS_TYPES.ADMIN_UNASSIGN_VALIDATOR.code,
+                name: PROCESS_TYPES.ADMIN_UNASSIGN_VALIDATOR.name,
+                description: `Unassign validator from session my_session=${my_session}. uigraph_validation_assignee published=0.`,
+                myAiTool: myAiToolCode,
+                recordId,
+                createdBy: accountData?.collaborator_code || accountData?.device_id
+            });
 
             if (tracker._broadcast && tracker.panelLogManager) {
                 const data = await tracker.panelLogManager.buildValidationTreeStructure();
@@ -5322,13 +5384,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const base = Math.floor(n / k);
             const remainder = n % k;
             let sessionIdx = 0;
+            const assignments = [];
             for (let ctvIdx = 0; ctvIdx < k && sessionIdx < n; ctvIdx++) {
                 const count = base + (ctvIdx < remainder ? 1 : 0);
                 for (let j = 0; j < count && sessionIdx < n; j++) {
-                    await assignValidatorHandler(sessions[sessionIdx].my_session, collaboratorCodes[ctvIdx]);
+                    const ms = sessions[sessionIdx].my_session;
+                    await assignValidatorHandler(ms, collaboratorCodes[ctvIdx]);
+                    assignments.push(`${ms}->${collaboratorCodes[ctvIdx]}`);
                     sessionIdx++;
                 }
             }
+
+            const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+            const accountDataForLog = accountRes?.data || accountRes;
+            await logAdminValidateProcess({
+                processType: PROCESS_TYPES.ADMIN_RANDOM_ASSIGN.code,
+                name: PROCESS_TYPES.ADMIN_RANDOM_ASSIGN.name,
+                description: `Random assign ${assignments.length} sessions to ${collaboratorCodes.length} CTVs: ${assignments.join('; ')}`,
+                myAiTool: tracker.myAiToolCode,
+                recordId,
+                createdBy: accountDataForLog?.collaborator_code || accountDataForLog?.device_id
+            });
 
             if (tracker._broadcast && tracker.panelLogManager) {
                 const data = await tracker.panelLogManager.buildValidationTreeStructure();
@@ -6384,6 +6460,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await exporter.exportToMySQL();
                     await exporter.close();
                     console.log('✅ Synced myparent_panel to DB after Correct Child');
+                    const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                    const accountDataForLog = await tracker._getAccountInfo?.();
+                    const srcPanel = await tracker.dataItemManager?.getItem(sourcePanelId);
+                    const destPanel = await tracker.dataItemManager?.getItem(destinationPanelId);
+                    const actionNames = [];
+                    for (const aid of actionIds) {
+                        const a = await tracker.dataItemManager?.getItem(aid);
+                        actionNames.push(a?.name ? `"${a.name}"` : aid);
+                    }
+                    const panelNames = [];
+                    for (const pid of panelIds) {
+                        const p = await tracker.dataItemManager?.getItem(pid);
+                        panelNames.push(p?.name ? `"${p.name}"` : pid);
+                    }
+                    const srcName = srcPanel?.name ? `"${srcPanel.name}" (${sourcePanelId})` : sourcePanelId;
+                    const destName = destPanel?.name ? `"${destPanel.name}" (${destinationPanelId})` : destinationPanelId;
+                    const actionPart = actionIds.length ? `${actionIds.length} action(s): [${actionNames.join(', ')}]` : '';
+                    const panelPart = panelIds.length ? `${panelIds.length} panel(s): [${panelNames.join(', ')}]` : '';
+                    const movedPart = [actionPart, panelPart].filter(Boolean).join(' and ') || 'nothing';
+                    await logAdminValidateProcess({
+                        processType: PROCESS_TYPES.ADMIN_CORRECT_CHILD.code,
+                        name: PROCESS_TYPES.ADMIN_CORRECT_CHILD.name,
+                        description: `Moved ${movedPart} from panel ${srcName} to ${destName}. doing_item, pages, doing_step, myparent_panel, uigraph_validation synced.`,
+                        myAiTool: tracker.myAiToolCode,
+                        recordId,
+                        createdBy: accountDataForLog?.collaborator_code || accountDataForLog?.device_id
+                    });
                 } catch (dbErr) {
                     console.warn('⚠️ Failed to sync Correct Child to DB:', dbErr);
                 }
@@ -8798,14 +8901,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             try {
                 const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
                 await exporter.init();
-                
+
                 await exporter.connection.execute(
                     `UPDATE doing_item SET bug_flag = 1, bug_info = ? WHERE item_id = ? AND my_ai_tool = ?`,
                     [JSON.stringify(bugInfo), actionItemId, tracker.myAiToolCode]
                 );
-                
+
                 await exporter.close();
                 console.log(`✅ Updated bug info in DB for action ${actionItemId}`);
+                const actionName = actionItem?.name ? ` name="${actionItem.name}"` : '';
+                const bugInfoStr = formatBugInfoForLog(bugInfo);
+                const accountRes = await getAccountInfoHandler();
+                const accountData = accountRes?.data || accountRes;
+                const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                await logAdminValidateProcess({
+                    processType: PROCESS_TYPES.RAISE_BUG.code,
+                    name: PROCESS_TYPES.RAISE_BUG.name,
+                    description: `Action item_id=${actionItemId}${actionName}: raised bug. bug_info: {${bugInfoStr}}. doing_item bug_flag=1 updated.`,
+                    myAiTool: tracker.myAiToolCode,
+                    recordId,
+                    createdBy: accountData?.collaborator_code || accountData?.device_id
+                });
             } catch (dbErr) {
                 console.error('⚠️ Failed to update bug info in DB:', dbErr);
             }
@@ -8971,6 +9087,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 );
                 await exporter.close();
                 console.log(`✅ Updated resolved bug info in DB for action ${actionItemId}`);
+                const actionName = actionItem?.name ? ` name="${actionItem.name}"` : '';
+                const bugInfoStr = formatBugInfoForLog(bugInfo);
+                const accountRes = await getAccountInfoHandler();
+                const accountData = accountRes?.data || accountRes;
+                const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                await logAdminValidateProcess({
+                    processType: PROCESS_TYPES.RESOLVE_BUG.code,
+                    name: PROCESS_TYPES.RESOLVE_BUG.name,
+                    description: `Action item_id=${actionItemId}${actionName}: resolved bug. bug_info: {${bugInfoStr}}. doing_item bug_info updated.`,
+                    myAiTool: tracker.myAiToolCode,
+                    recordId,
+                    createdBy: accountData?.collaborator_code || accountData?.device_id
+                });
             } catch (dbErr) {
                 console.error('⚠️ Failed to update resolved bug info in DB:', dbErr);
             }
@@ -9073,6 +9202,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 );
                 await exporter.close();
                 console.log(`✅ Cancelled bug in DB for action ${actionItemId}`);
+                const actionName = actionItem?.name ? ` name="${actionItem.name}"` : '';
+                const oldBugInfo = actionItem.bug_info;
+                const bugInfoStr = formatBugInfoForLog(oldBugInfo);
+                const accountRes = await getAccountInfoHandler();
+                const accountData = accountRes?.data || accountRes;
+                const recordId = await getRecordIdFromSessionFolder(tracker.sessionFolder);
+                await logAdminValidateProcess({
+                    processType: PROCESS_TYPES.CANCEL_BUG.code,
+                    name: PROCESS_TYPES.CANCEL_BUG.name,
+                    description: `Action item_id=${actionItemId}${actionName}: cancelled bug. was: {${bugInfoStr}}. doing_item bug_flag=0, bug_info=NULL.`,
+                    myAiTool: tracker.myAiToolCode,
+                    recordId,
+                    createdBy: accountData?.collaborator_code || accountData?.device_id
+                });
             } catch (dbErr) {
                 console.error('⚠️ Failed to cancel bug in DB:', dbErr);
             }
@@ -10115,6 +10258,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
     /**
      * Update session active flag. ADMIN only.
+     * When setting active=1: first inactive all other active sessions of the same tool (my_ai_tool)
+     * so that only one session per tool is active.
      * @param {number} sessionId - session_id (bigint)
      * @param {number} active - 0 or 1
      */
@@ -10131,7 +10276,36 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
             const act = active === 0 || active === '0' ? 0 : 1;
             const pool = getDbPool();
+
+            if (act === 1) {
+                // Get my_ai_tool of this session
+                const [rows] = await pool.execute(
+                    'SELECT my_ai_tool FROM uigraph_session WHERE session_id = ? LIMIT 1',
+                    [sid]
+                );
+                if (rows && rows.length > 0 && rows[0].my_ai_tool) {
+                    const toolCode = rows[0].my_ai_tool;
+                    // Inactive all active sessions of the same tool first (ensure only 1 active per tool)
+                    await pool.execute(
+                        'UPDATE uigraph_session SET active = 0 WHERE my_ai_tool = ? AND active = 1',
+                        [toolCode]
+                    );
+                }
+            }
+
             await pool.execute('UPDATE uigraph_session SET active = ? WHERE session_id = ?', [act, sid]);
+            const [toolRows] = await pool.execute('SELECT my_ai_tool FROM uigraph_session WHERE session_id = ? LIMIT 1', [sid]);
+            const myAiToolForLog = toolRows?.[0]?.my_ai_tool || null;
+            if (myAiToolForLog) {
+                await logAdminValidateProcess({
+                    processType: PROCESS_TYPES.ADMIN_UPDATE_SESSION_ACTIVE.code,
+                    name: PROCESS_TYPES.ADMIN_UPDATE_SESSION_ACTIVE.name,
+                    description: `Set session_id=${sid} active=${act}. uigraph_session updated.`,
+                    myAiTool: myAiToolForLog,
+                    recordId: sid,
+                    createdBy: accountData?.collaborator_code || accountData?.device_id
+                });
+            }
             return { success: true };
         } catch (err) {
             console.error('[updateSessionActive] failed:', err);
@@ -10153,7 +10327,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (sid === null || isNaN(sid)) return null;
             const pool = getDbPool();
             const [rows] = await pool.execute(
-                'SELECT my_collaborator, device_id, device_info FROM uigraph_session WHERE session_id = ? LIMIT 1',
+                `SELECT s.my_collaborator, s.device_id, s.device_info, c.name as collaborator_name
+                 FROM uigraph_session s
+                 LEFT JOIN uigraph_collaborator c ON s.my_collaborator = c.code AND c.published = 1
+                 WHERE s.session_id = ? LIMIT 1`,
                 [sid]
             );
             if (!rows || rows.length === 0) return null;
@@ -10161,7 +10338,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             return {
                 my_collaborator: r.my_collaborator ?? '',
                 device_id: r.device_id ?? '',
-                device_info: r.device_info ?? ''
+                device_info: r.device_info ?? '',
+                collaborator_name: r.collaborator_name ?? ''
             };
         } catch (err) {
             console.error('[getSessionDetails] failed:', err);
@@ -10210,7 +10388,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const offset = (p - 1) * pp;
             const limitVal = Math.max(0, pp);
             const offsetVal = Math.max(0, offset);
-            const dataSql = `SELECT my_ai_tool, name, description, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') as created_at FROM process WHERE ${dataWhere} ORDER BY created_at DESC LIMIT ${limitVal} OFFSET ${offsetVal}`;
+            const dataSql = `SELECT my_ai_tool, name, description,
+                DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%sZ') as created_at
+             FROM process
+             WHERE ${dataWhere}
+             ORDER BY created_at DESC LIMIT ${limitVal} OFFSET ${offsetVal}`;
             const [rows] = await pool.execute(dataSql, dataParams);
 
             const items = (rows || []).map((r) => ({
