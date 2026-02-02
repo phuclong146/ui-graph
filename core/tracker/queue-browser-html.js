@@ -1328,14 +1328,26 @@ export const QUEUE_BROWSER_HTML = `
     </div>
 
     <div id="sessionDetailsDialog" style="display:none; position:fixed; z-index:20010; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
-      <div style="background:white; border-radius:12px; padding:20px; max-width:95vw; width:800px; max-height:90vh; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.3); display:flex; flex-direction:column;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #e0e0e0; padding-bottom:10px; flex-shrink:0;">
+      <div id="sessionDetailsDialogInner" style="background:white; border-radius:12px; padding:20px; width:800px; max-width:95vw; max-height:90vh; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.3); display:flex; flex-direction:column; position:relative; resize:both; min-width:500px; min-height:400px;">
+        <div id="sessionDetailsDialogHeader" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #e0e0e0; padding-bottom:10px; flex-shrink:0; cursor:move; background:#f5f5f5; margin:-20px -20px 16px -20px; padding:10px 20px;">
           <h3 style="margin:0; font-size:18px; color:#333;">Session Details</h3>
           <button id="closeSessionDetailsDialog" style="background:none; border:none; font-size:28px; cursor:pointer; color:#666; padding:0; width:30px; height:30px; line-height:1;">&times;</button>
         </div>
         <div style="margin-bottom:16px; flex-shrink:0;">
           <h4 style="margin:0 0 8px 0; font-size:14px;">DeviceInfo</h4>
-          <div id="sessionDetailsDeviceInfo" style="background:#f8f9fa; padding:12px; border-radius:6px; font-size:12px; white-space:pre-wrap;"></div>
+          <div id="sessionDetailsDeviceInfo" style="background:#f8f9fa; padding:12px; border-radius:6px; font-size:12px;">
+            <div style="display:grid; grid-template-columns: auto 1fr; gap:6px 16px; align-items:baseline;">
+              <span style="font-weight:600; color:#495057;">Mã CTV:</span>
+              <span id="sessionDetailsMaCtv"></span>
+              <span style="font-weight:600; color:#495057;">Tên CTV:</span>
+              <span id="sessionDetailsTenCtv"></span>
+              <span style="font-weight:600; color:#495057;">Device Id:</span>
+              <span id="sessionDetailsDeviceId" style="word-break:break-all;"></span>
+              <span style="font-weight:600; color:#495057;"></span>
+              <span><a id="sessionDetailsDeviceInfoMore" href="#" style="color:#007bff; font-size:12px;">Xem chi tiết device info</a></span>
+            </div>
+            <div id="sessionDetailsDeviceInfoDetails" style="display:none; margin-top:12px; padding:10px; background:#fff; border:1px solid #dee2e6; border-radius:4px; max-height:200px; overflow:auto; white-space:pre-wrap; font-size:11px;"></div>
+          </div>
         </div>
         <div style="flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0;">
           <h4 style="margin:0 0 8px 0; font-size:14px;">History</h4>
@@ -1900,6 +1912,49 @@ export const QUEUE_BROWSER_HTML = `
           }
         }
         console.log('✅ RaiseBugDialog drag initialized');
+      }
+      setupDraggable();
+    })();
+
+    // Session Details Dialog - Drag & Resize
+    (function initSessionDetailsDialogFeatures() {
+      function setupDraggable() {
+        const dialog = document.getElementById('sessionDetailsDialogInner');
+        const header = document.getElementById('sessionDetailsDialogHeader');
+        if (!dialog || !header) {
+          setTimeout(setupDraggable, 500);
+          return;
+        }
+        let isDragging = false;
+        let currentX, currentY, initialX, initialY;
+        let xOffset = 0, yOffset = 0;
+        header.addEventListener('mousedown', dragStart);
+        document.addEventListener('mouseup', dragEnd);
+        document.addEventListener('mousemove', drag);
+        function dragStart(e) {
+          if (e.target === header || header.contains(e.target)) {
+            if (e.target.tagName === 'BUTTON') return;
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+            isDragging = true;
+          }
+        }
+        function dragEnd() {
+          initialX = currentX;
+          initialY = currentY;
+          isDragging = false;
+        }
+        function drag(e) {
+          if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            xOffset = currentX;
+            yOffset = currentY;
+            dialog.style.transform = 'translate3d(' + currentX + 'px, ' + currentY + 'px, 0)';
+          }
+        }
+        console.log('✅ SessionDetailsDialog drag initialized');
       }
       setupDraggable();
     })();
@@ -5195,7 +5250,11 @@ Bạn có chắc chắn muốn rollback?\`;
       // Session Details dialog
       const sessionDetailsDialog = document.getElementById('sessionDetailsDialog');
       const closeSessionDetailsDialogBtn = document.getElementById('closeSessionDetailsDialog');
-      const sessionDetailsDeviceInfo = document.getElementById('sessionDetailsDeviceInfo');
+      const sessionDetailsMaCtv = document.getElementById('sessionDetailsMaCtv');
+      const sessionDetailsTenCtv = document.getElementById('sessionDetailsTenCtv');
+      const sessionDetailsDeviceId = document.getElementById('sessionDetailsDeviceId');
+      const sessionDetailsDeviceInfoMore = document.getElementById('sessionDetailsDeviceInfoMore');
+      const sessionDetailsDeviceInfoDetails = document.getElementById('sessionDetailsDeviceInfoDetails');
       const sessionDetailsHistoryTbody = document.getElementById('sessionDetailsHistoryTbody');
       const sessionDetailsHistorySearch = document.getElementById('sessionDetailsHistorySearch');
       const sessionDetailsHistoryPagination = document.getElementById('sessionDetailsHistoryPagination');
@@ -5222,7 +5281,7 @@ Bạn có chắc chắn muốn rollback?\`;
               tr.innerHTML = \`
                 <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.my_ai_tool || '').replace(/</g, '&lt;')}</td>
                 <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.name || '').replace(/</g, '&lt;')}</td>
-                <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.description || '').replace(/</g, '&lt;').substring(0, 200)}\${(row.description && row.description.length > 200) ? '...' : ''}</td>
+                <td style="padding:6px; border-bottom:1px solid #eee;">\${(row.description || '').replace(/</g, '&lt;')}</td>
                 <td style="padding:6px; border-bottom:1px solid #eee;">\${formatGmt7(row.created_at)}</td>
               \`;
               sessionDetailsHistoryTbody.appendChild(tr);
@@ -5254,19 +5313,31 @@ Bạn có chắc chắn muốn rollback?\`;
         sessionDetailsCurrentSessionId = sessionId;
         if (!sessionDetailsDialog) return;
         sessionDetailsDialog.style.display = 'flex';
-        sessionDetailsDeviceInfo.textContent = 'Loading...';
+        if (sessionDetailsMaCtv) sessionDetailsMaCtv.textContent = 'Loading...';
+        if (sessionDetailsTenCtv) sessionDetailsTenCtv.textContent = '';
+        if (sessionDetailsDeviceId) sessionDetailsDeviceId.textContent = '';
+        if (sessionDetailsDeviceInfoDetails) { sessionDetailsDeviceInfoDetails.style.display = 'none'; sessionDetailsDeviceInfoDetails.textContent = ''; }
+        if (sessionDetailsDeviceInfoMore) sessionDetailsDeviceInfoMore.textContent = 'Xem chi tiết device info';
         if (window.getSessionDetails) {
           const info = await window.getSessionDetails(sessionId);
           if (info) {
-            let text = 'my_collaborator: ' + (info.my_collaborator || '') + '\\n';
-            text += 'device_id: ' + (info.device_id || '') + '\\n';
-            text += 'device_info: ' + (typeof info.device_info === 'object' ? JSON.stringify(info.device_info, null, 2) : (info.device_info || ''));
-            sessionDetailsDeviceInfo.textContent = text;
+            if (sessionDetailsMaCtv) sessionDetailsMaCtv.textContent = info.my_collaborator || '-';
+            if (sessionDetailsTenCtv) sessionDetailsTenCtv.textContent = info.collaborator_name || '-';
+            if (sessionDetailsDeviceId) sessionDetailsDeviceId.textContent = info.device_id || '-';
+            const deviceInfoStr = info.device_info ? (typeof info.device_info === 'object' ? JSON.stringify(info.device_info, null, 2) : String(info.device_info)) : '';
+            if (sessionDetailsDeviceInfoDetails) sessionDetailsDeviceInfoDetails.textContent = deviceInfoStr || '-';
+            if (sessionDetailsDeviceInfoMore) {
+              sessionDetailsDeviceInfoMore.style.display = deviceInfoStr ? 'inline' : 'none';
+              sessionDetailsDeviceInfoDetails.style.display = 'none';
+              sessionDetailsDeviceInfoMore.textContent = 'Xem chi tiết device info';
+            }
           } else {
-            sessionDetailsDeviceInfo.textContent = '-';
+            if (sessionDetailsMaCtv) sessionDetailsMaCtv.textContent = '-';
+            if (sessionDetailsTenCtv) sessionDetailsTenCtv.textContent = '-';
+            if (sessionDetailsDeviceId) sessionDetailsDeviceId.textContent = '-';
           }
         } else {
-          sessionDetailsDeviceInfo.textContent = '-';
+          if (sessionDetailsMaCtv) sessionDetailsMaCtv.textContent = '-';
         }
         sessionDetailsHistoryPage = 1;
         const search = sessionDetailsHistorySearch ? sessionDetailsHistorySearch.value.trim() : '';
@@ -5279,6 +5350,16 @@ Bạn có chắc chắn muốn rollback?\`;
 
       if (closeSessionDetailsDialogBtn) closeSessionDetailsDialogBtn.addEventListener('click', closeSessionDetailsDialogFn);
       if (sessionDetailsDialog) sessionDetailsDialog.addEventListener('click', (e) => { if (e.target === sessionDetailsDialog) closeSessionDetailsDialogFn(); });
+      if (sessionDetailsDeviceInfoMore) {
+        sessionDetailsDeviceInfoMore.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (sessionDetailsDeviceInfoDetails) {
+            const isVisible = sessionDetailsDeviceInfoDetails.style.display !== 'none';
+            sessionDetailsDeviceInfoDetails.style.display = isVisible ? 'none' : 'block';
+            sessionDetailsDeviceInfoMore.textContent = isVisible ? 'Xem chi tiết device info' : 'Ẩn chi tiết device info';
+          }
+        });
+      }
       const sessionDetailsHistorySearchBtn = document.getElementById('sessionDetailsHistorySearchBtn');
       if (sessionDetailsHistorySearch) {
         const runHistorySearch = () => {
