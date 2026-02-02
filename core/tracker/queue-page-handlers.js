@@ -6311,7 +6311,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         
         // Fallback to image_base64
         if (item.image_base64) {
-            return await tracker.dataItemManager.loadBase64FromFile(item.image_base64);
+            const imageBase64 = await tracker.dataItemManager.loadBase64FromFile(item.image_base64);
+            if (imageBase64) return imageBase64;
+        }
+        
+        // Fallback to image_url (e.g. after export or when file is missing)
+        if (item.image_url) {
+            const imageBase64 = await loadImageFromUrl(item.image_url);
+            if (imageBase64) return imageBase64;
         }
         
         return null;
@@ -8736,22 +8743,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const panelBefore = await tracker.dataItemManager.getItem(panelBeforeId);
             const panelAfter = await tracker.dataItemManager.getItem(panelAfterId);
 
-            let panelBeforeImage = null;
-            if (panelBefore?.fullscreen_base64) {
-                panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.fullscreen_base64);
-            } else if (panelBefore?.image_base64) {
-                panelBeforeImage = await tracker.dataItemManager.loadBase64FromFile(panelBefore.image_base64);
-            }
-
-            let panelAfterImage = null;
-            if (panelAfter?.fullscreen_base64) {
-                panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.fullscreen_base64);
-            } else if (panelAfter?.image_base64) {
-                panelAfterImage = await tracker.dataItemManager.loadBase64FromFile(panelAfter.image_base64);
-            }
+            const panelBeforeImage = await loadPanelImage(panelBefore);
+            const panelAfterImage = await loadPanelImage(panelAfter);
 
             if (!panelBeforeImage || !panelAfterImage) {
-                throw new Error(`Panel images not found for action ${actionId}`);
+                const missing = [];
+                if (!panelBeforeImage) missing.push('panel_before');
+                if (!panelAfterImage) missing.push('panel_after');
+                throw new Error(`Panel images not found for action ${actionId} (missing: ${missing.join(', ')}). Ensure panels have fullscreen_base64, fullscreen_url, image_base64, or image_url.`);
             }
 
             const actionPos = actionItem.metadata?.global_pos || { x: 0, y: 0, w: 100, h: 100 };

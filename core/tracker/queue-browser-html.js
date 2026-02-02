@@ -5668,6 +5668,11 @@ Bạn có chắc chắn muốn rollback?\`;
         const randomlyAssignBtn = document.getElementById('randomlyAssignBtn');
         const collaboratorsBtn = document.getElementById('collaboratorsBtn');
 
+        // RaiseBug: ẩn khi role=DRAW, hiện khi role<>DRAW (viewGraph + video validation)
+        const showRaiseBug = (role !== 'DRAW');
+        if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = showRaiseBug ? 'flex' : 'none';
+        if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = showRaiseBug ? 'flex' : 'none';
+
         if (role === 'VALIDATE' || role === 'ADMIN') {
           if (drawGroup) drawGroup.style.display = 'none';
           if (adminGroup) adminGroup.style.display = 'flex';
@@ -5675,8 +5680,6 @@ Bạn có chắc chắn muốn rollback?\`;
           if (aiToolsBtn) aiToolsBtn.style.display = 'inline-block';
           if (randomlyAssignBtn) randomlyAssignBtn.style.display = (role === 'ADMIN') ? 'inline-block' : 'none';
           if (collaboratorsBtn) collaboratorsBtn.style.display = (role === 'ADMIN') ? 'inline-block' : 'none';
-          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
-          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
         } else {
           if (drawGroup) drawGroup.style.display = 'flex';
           if (adminGroup) adminGroup.style.display = 'none';
@@ -5696,8 +5699,11 @@ Bạn có chắc chắn muốn rollback?\`;
           if (aiToolsBtn) aiToolsBtn.style.display = 'none';
           if (randomlyAssignBtn) randomlyAssignBtn.style.display = 'none';
           if (collaboratorsBtn) collaboratorsBtn.style.display = 'none';
-          if (graphRaiseBugBtn) graphRaiseBugBtn.style.display = 'none';
-          if (videoValidationRaiseBugBtn) videoValidationRaiseBugBtn.style.display = 'none';
+        }
+        // Recreate Tracking Video: only show for DRAW, hide for ADMIN/VALIDATE
+        const videoValidationRecreateTrackingBtn = document.getElementById('videoValidationRecreateTrackingBtn');
+        if (videoValidationRecreateTrackingBtn) {
+          videoValidationRecreateTrackingBtn.style.display = (role === 'DRAW') ? 'inline-block' : 'none';
         }
         if (typeof updateControlsCurrentToolDisplay === 'function') updateControlsCurrentToolDisplay();
       };
