@@ -754,7 +754,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     console.warn('⚠️ Could not read record_id from info.json');
                 }
 
-                const checkpoint = await tracker.checkpointManager.createCheckpoint(null, null, recordId);
+                let createdBy = null;
+                try {
+                    const accountRes = await getAccountInfoHandler();
+                    const accountData = accountRes?.data || accountRes;
+                    createdBy = accountData?.collaborator_code || accountData?.device_id || null;
+                } catch (err) {
+                    console.warn('⚠️ Could not read account for created_by:', err?.message);
+                }
+
+                const checkpoint = await tracker.checkpointManager.createCheckpoint(null, null, recordId, createdBy);
                 
                 await tracker._broadcast({
                     type: 'show_toast',
@@ -6904,7 +6913,16 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
-            const result = await tracker.checkpointManager.rollbackToCheckpoint(checkpointId, actualRecordId);
+            let rolledbackBy = null;
+            try {
+                const accountRes = await getAccountInfoHandler();
+                const accountData = accountRes?.data || accountRes;
+                rolledbackBy = accountData?.collaborator_code || accountData?.device_id || null;
+            } catch (err) {
+                console.warn('⚠️ Could not read account for rolledback_by:', err?.message);
+            }
+
+            const result = await tracker.checkpointManager.rollbackToCheckpoint(checkpointId, actualRecordId, rolledbackBy);
 
             // Reload session after rollback
             if (tracker.reloadSessionAfterRollback) {
