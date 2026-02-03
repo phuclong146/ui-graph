@@ -194,6 +194,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const appendMyParentList = async (itemId, parentId) => {
+        if (!tracker.dataItemManager) return false;
+        const item = await tracker.dataItemManager.getItem(itemId);
+        if (!item) return false;
+        const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+        const list = Array.isArray(metadata.my_parent_list) ? metadata.my_parent_list : [];
+        if (!list.includes(parentId)) {
+            list.push(parentId);
+        }
+        await tracker.dataItemManager.updateItem(itemId, { metadata: { my_parent_list: list } });
+        return true;
+    };
+
     /**
      * Tạo quan hệ parent-child giữa các panel dựa trên step
      * Tìm step có panel_after trùng với panelId, sau đó tạo quan hệ parent (panel_before) -> child (panel_after)
@@ -213,8 +226,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
                 if (panelBeforeId !== panelAfterId) {
                     console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                    const removedFromChildActionIds = await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
+                    if (removedFromChildActionIds && removedFromChildActionIds.length > 0) {
+                        await tracker.dataItemManager.deleteItems(removedFromChildActionIds);
+                        if (tracker.stepManager) await tracker.stepManager.deleteStepsForItems(removedFromChildActionIds);
+                        if (tracker.clickManager) await tracker.clickManager.deleteClicksForActions(removedFromChildActionIds);
+                        if (tracker.validationManager) {
+                            for (const actionId of removedFromChildActionIds) {
+                                try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
+                            }
+                        }
+                        console.log(`✅ makeChild DONE: Deleted ${removedFromChildActionIds.length} duplicate actions from doing_item.jsonl`);
+                    } else {
+                        console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                    }
                     
                     // Cập nhật UI Panel Log sau khi makeChild hoàn thành
                     if (tracker.panelLogManager) {
@@ -1655,6 +1680,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             if (parentPanelId) {
                 await tracker.parentPanelManager.addChildPanel(parentPanelId, newPanelId);
+                await appendMyParentList(newPanelId, parentPanelId);
                 console.log(`  ✅ Created panel "${newPanelName}" as child of ${parentPanelId}`);
             } else {
                 console.log(`  ✅ Created panel "${newPanelName}" (root level)`);
@@ -5493,20 +5519,82 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     for (const page of panelEntry?.child_pages || []) {
                         if (page.child_actions?.length) childActionIds.push(...page.child_actions);
                     }
-                    const allItemsToDelete = [panelAfterId, ...childActionIds];
+                    const reparentedActionIds = new Set();
+                    const remainingActionIds = new Set(childActionIds);
 
-                    if (childPanelIds.length > 0) {
-                        const parentEntry = await tracker.parentPanelManager.findMyParent(panelAfterId);
-                        if (parentEntry) {
-                            const grandparentId = parentEntry.parent_panel;
-                            for (const childPanelId of childPanelIds) {
-                                await tracker.parentPanelManager.addChildPanel(grandparentId, childPanelId);
+                    for (const actionId of childActionIds) {
+                        const actionItem = await tracker.dataItemManager.getItem(actionId);
+                        const parentList = actionItem?.metadata?.my_parent_list;
+                        if (Array.isArray(parentList) && parentList.length > 0) {
+                            for (let i = parentList.length - 1; i >= 0; i -= 1) {
+                                const parentId = parentList[i];
+                                if (parentId === panelAfterId) continue;
+                                const parentItem = await tracker.dataItemManager.getItem(parentId);
+                                if (parentItem) {
+                                    await tracker.parentPanelManager.addChildAction(parentId, actionId);
+                                    reparentedActionIds.add(actionId);
+                                    remainingActionIds.delete(actionId);
+                                    break;
+                                }
                             }
-                            console.log(`[RESET ACTION] Reparent ${childPanelIds.length} child_panels từ panel_after ${panelAfterId} lên parent ${grandparentId}`);
                         }
                     }
 
-                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIds.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
+                    if (panelEntry) {
+                        if (Array.isArray(panelEntry.child_actions) && reparentedActionIds.size > 0) {
+                            panelEntry.child_actions = panelEntry.child_actions.filter(id => !reparentedActionIds.has(id));
+                        }
+                        if (Array.isArray(panelEntry.child_pages) && reparentedActionIds.size > 0) {
+                            for (const page of panelEntry.child_pages) {
+                                if (Array.isArray(page.child_actions)) {
+                                    page.child_actions = page.child_actions.filter(id => !reparentedActionIds.has(id));
+                                }
+                            }
+                        }
+                        if (reparentedActionIds.size > 0) {
+                            await tracker.parentPanelManager.updatePanelEntry(panelAfterId, panelEntry);
+                        }
+                    }
+
+                    const childActionIdsToDelete = Array.from(remainingActionIds);
+                    const allItemsToDelete = [panelAfterId, ...childActionIdsToDelete];
+
+                    if (childPanelIds.length > 0) {
+                        const processedChildPanels = new Set();
+                        for (const childPanelId of childPanelIds) {
+                            const childPanelItem = await tracker.dataItemManager.getItem(childPanelId);
+                            const parentList = childPanelItem?.metadata?.my_parent_list;
+                            let targetParentId = null;
+                            if (Array.isArray(parentList) && parentList.length > 0) {
+                                for (let i = parentList.length - 1; i >= 0; i -= 1) {
+                                    const parentId = parentList[i];
+                                    if (parentId === panelAfterId) continue;
+                                    const parentItem = await tracker.dataItemManager.getItem(parentId);
+                                    if (parentItem) {
+                                        targetParentId = parentId;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (targetParentId) {
+                                await tracker.parentPanelManager.addChildPanel(targetParentId, childPanelId);
+                                await appendMyParentList(childPanelId, targetParentId);
+                                processedChildPanels.add(childPanelId);
+                                console.log(`[RESET ACTION] Reparent child_panel ${childPanelId} về parent ${targetParentId}`);
+                            } else {
+                                processedChildPanels.add(childPanelId);
+                                console.log(`[RESET ACTION] Skip reparent child_panel ${childPanelId} (không tìm thấy parent hợp lệ trong my_parent_list)`);
+                            }
+                        }
+
+                        if (processedChildPanels.size > 0 && panelEntry?.child_panels) {
+                            panelEntry.child_panels = panelEntry.child_panels.filter(id => !processedChildPanels.has(id));
+                            await tracker.parentPanelManager.updatePanelEntry(panelAfterId, panelEntry);
+                        }
+                    }
+
+                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIdsToDelete.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
 
                     for (const itemId of allItemsToDelete) {
                         await tracker.dataItemManager.deleteItem(itemId);
@@ -5517,10 +5605,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
 
                     if (tracker.clickManager) {
-                        await tracker.clickManager.deleteClicksForActions(childActionIds);
+                        await tracker.clickManager.deleteClicksForActions(childActionIdsToDelete);
                     }
                     if (tracker.validationManager) {
-                        for (const actionId of childActionIds) {
+                        for (const actionId of childActionIdsToDelete) {
                             try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
                         }
                     }
@@ -6454,6 +6542,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             for (const panelId of panelIds) {
                 await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
                 await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+                await appendMyParentList(panelId, destinationPanelId);
             }
 
             let mode = 'log';
@@ -6732,6 +6821,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
                 if (!isUnparent) {
                     await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+                    await appendMyParentList(panelId, destinationPanelId);
                 }
             }
 
