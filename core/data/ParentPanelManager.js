@@ -411,7 +411,10 @@ export class ParentPanelManager {
         // Kiểm tra xem cặp này đã được xử lý chưa để tránh vòng lặp vô tận
         const pairKey = `${panelParentId}->${panelChildId}`;
         if (processedPairs.has(pairKey)) {
-            console.log(`⏭️ Skip makeChild: Pair already processed (${pairKey})`);
+            const infos = await this.getActionInfo([panelParentId, panelChildId]);
+            const pName = infos.find(i => i?.item_id === panelParentId)?.name ?? panelParentId;
+            const cName = infos.find(i => i?.item_id === panelChildId)?.name ?? panelChildId;
+            console.log(`⏭️ Skip makeChild: Pair already processed parent="${pName}" (${panelParentId}) -> child="${cName}" (${panelChildId})`);
             return [];
         }
         processedPairs.add(pairKey);
@@ -419,28 +422,30 @@ export class ParentPanelManager {
         //1. Load panel info
         const panelParent = await this.getPanelEntry(panelParentId);
         if (!panelParent) {
-            console.log('makeChild: Khong tim thay Panel', panelParentId);
+            console.log(`makeChild: Khong tim thay Panel parent id=${panelParentId}`);
             return [];
         }
         const panelChild = await this.getPanelEntry(panelChildId);
         if (!panelChild) {
-            console.log('makeChild: Khong tim thay Panel', panelChildId);
+            console.log(`makeChild: Khong tim thay Panel child id=${panelChildId}`);
             return [];
         }
         const panelParentInfoArray = await this.getActionInfo([panelParentId]);
         const panelChildInfoArray = await this.getActionInfo([panelChildId]);
         if (!panelChildInfoArray || panelChildInfoArray.length === 0 || !panelParentInfoArray || panelParentInfoArray.length === 0) {
-            console.log('makeChild: Khong tim thay Item ', panelParentId, panelChildId);
+            console.log(`makeChild: Khong tim thay Item trong doing_item parent=${panelParentId} child=${panelChildId}`);
             return [];
         }
         const myParent = await this.findMyParent(panelParentId);
         const panelParentInfo = panelParentInfoArray[0];
         const panelChildInfo = panelChildInfoArray[0];
-        
+        const parentName = panelParentInfo?.name ?? panelParentId;
+        const childName = panelChildInfo?.name ?? panelChildId;
+
         // Bỏ qua xử lý nếu panelChild.type là popup hoặc newtab (không phân biệt chữ hoa/thường)
         const childType = panelChildInfo.type?.toLowerCase();
         if (childType === 'popup' || childType === 'newtab') {
-            console.log(`⏭️ Skip makeChild: panelChild.type is "${panelChildInfo.type}" (${panelChildId})`);
+            console.log(`⏭️ Skip makeChild: panelChild.type is "${panelChildInfo.type}" (${panelChildId} "${childName}")`);
             return [];
         }
         
@@ -449,7 +454,7 @@ export class ParentPanelManager {
         const overlap = calcOverlapBox(parentBox, childBox);
         if (overlap === 0) {
             // Case A: Khong can loc Action, chi can set parent - child
-            console.log('makeChild: case A', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
+            console.log(`makeChild: case A parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
             if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
@@ -459,7 +464,7 @@ export class ParentPanelManager {
             return [];
         } else if (overlap >= 0.95) {
             // Case D: trung len nhau thi 2 thang deu la con cua MyParent
-            console.log('makeChild: case D', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);            
+            console.log(`makeChild: case D parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
             if (myParent && !myParent.child_panels.includes(panelChildId)) {
                 myParent.child_panels.push(panelChildId);
                 //update
@@ -471,24 +476,51 @@ export class ParentPanelManager {
             // Case BCE: co giao nhau
             const result = isBoxInside(parentBox, childBox);
             if (result === "A_in_B") {
-                console.log('makeChild: case C', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
-                // Case C: doi cho Parent va Child
+                console.log(`makeChild: case C parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
+                // 1. Gán panelParent là child của panelChild
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
-                    //update
                     await this.updatePanelEntry(myParent.parent_panel, myParent);
                     await this.appendMyParentList(panelChildId, myParent.parent_panel);
                 }
                 if (!panelChild.child_panels.includes(panelParentId)) {
                     panelChild.child_panels.push(panelParentId);
-                    //update
                     await this.updatePanelEntry(panelChildId, panelChild);
                     await this.appendMyParentList(panelParentId, panelChildId);
                 }
-                return await this.makeChild(panelChildId, panelParentId, processedPairs);
+                // 2.1 Tìm action trùng giữa panelParent và panelChild
+                const parentActionInfoC = await this.getActionInfo(panelParent.child_actions || []);
+                const childActionInfoC = await this.getActionInfo(panelChild.child_actions || []);
+                const parentActionIdsOverlap = new Set();
+                const childActionIdsToRemoveC = new Set();
+                if (parentActionInfoC && childActionInfoC) {
+                    for (const parentAct of parentActionInfoC) {
+                        const pBox = parentAct.metadata?.global_pos;
+                        if (!pBox) continue;
+                        for (const childAct of childActionInfoC) {
+                            const cBox = childAct.metadata?.global_pos;
+                            if (!cBox) continue;
+                            if (calcOverlapBox(pBox, cBox) > 0.7) {
+                                parentActionIdsOverlap.add(parentAct.item_id);
+                                childActionIdsToRemoveC.add(childAct.item_id);
+                            }
+                        }
+                    }
+                }
+                // 2.2 Thêm panelChildId vào my_parent_list (không trùng) cho các action trùng của panelParent
+                for (const actionId of parentActionIdsOverlap) {
+                    await this.appendMyParentList(actionId, panelChildId);
+                }
+                // 2.3 Xóa action trùng khỏi panelChild.child_actions
+                if (childActionIdsToRemoveC.size > 0) {
+                    panelChild.child_actions = (panelChild.child_actions || []).filter(id => !childActionIdsToRemoveC.has(id));
+                    await this.updatePanelEntry(panelChildId, panelChild);
+                    console.log(`makeChild: case C parent="${parentName}" child="${childName}" -> added my_parent_list for ${parentActionIdsOverlap.size} parent actions, removed ${childActionIdsToRemoveC.size} duplicate actions from child (caller will delete from doing_item)`);
+                }
+                return [...childActionIdsToRemoveC];
             }
             if (result === "BOTN_IN_BOTH") {
-                console.log('makeChild: case E', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                console.log(`makeChild: case E parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
@@ -498,7 +530,7 @@ export class ParentPanelManager {
                 return [];
             }
             if (result === "NO_OVERLAP") {
-                console.log('makeChild: case A', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+                console.log(`makeChild: case A (NO_OVERLAP) parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
                 if (myParent && !myParent.child_panels.includes(panelChildId)) {
                     myParent.child_panels.push(panelChildId);
                     //update
@@ -508,7 +540,7 @@ export class ParentPanelManager {
                 return [];
             }
         }
-        console.log('makeChild: case B', panelParentId, panelChildId, 'overlap=', overlap, 'parentBox=', parentBox, 'childBox=', childBox);
+        console.log(`makeChild: case B parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) overlap=${overlap} parentBox=`, parentBox, 'childBox=', childBox);
         const parentActionInfo = await this.getActionInfo(panelParent.child_actions);
         if (!parentActionInfo) {
             return [];
@@ -517,7 +549,7 @@ export class ParentPanelManager {
         if (!childActionInfo) {
             return [];
         }
-        //2. Tim action trung nhau (overlap > 0.9), xoa action trung ben child, chuyen action trung ben parent sang child
+        //2. Tim action trung nhau (overlap > 0.7, xoa action trung ben child, chuyen action trung ben parent sang child
         const parentActionIdsToMove = new Set();
         const childActionIdsToRemove = new Set();
         for (const parentAct of parentActionInfo) {
@@ -527,7 +559,7 @@ export class ParentPanelManager {
                 const cBox = childAct.metadata?.global_pos;
                 if (!cBox) continue;
                 const overlap = calcOverlapBox(pBox, cBox);
-                if (overlap > 0.9) {
+                if (overlap > 0.7) {
                     parentActionIdsToMove.add(parentAct.item_id);
                     childActionIdsToRemove.add(childAct.item_id);
                 }
@@ -548,7 +580,7 @@ export class ParentPanelManager {
 
         panelParent.child_actions = newParentActionIds;
         panelChild.child_actions = newChildActionIds;
-        console.log(`makeChild: Move ${parentActionIdsToMove.size} duplicate actions from parent to child, remove ${childActionIdsToRemove.size} duplicate actions from child`);
+        console.log(`makeChild: case B parent="${parentName}" (${panelParentId}) child="${childName}" (${panelChildId}) -> move ${parentActionIdsToMove.size} duplicate actions from parent to child, remove ${childActionIdsToRemove.size} duplicate actions from child`);
         // 3. Add panelChildId to child_panels nếu chưa có
         if (!panelParent.child_panels.includes(panelChildId)) {
             panelParent.child_panels.push(panelChildId);
