@@ -6493,7 +6493,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const itemCategory = selectedNode.item_category;
           const confirmMsg = itemCategory === 'PAGE' ? 'Xóa page này? Tất cả actions cũng sẽ bị xóa.' : 
                             itemCategory === 'ACTION' ? 'Xóa action này?' :
-                            'Xóa panel này khỏi tree? Tất cả panel con cũng sẽ bị xóa.';
+                            'Xóa panel này khỏi tree? Panel con sẽ được giữ lại.';
           
           e.preventDefault();
           if (confirm(confirmMsg)) {
@@ -7492,7 +7492,7 @@ Bạn có chắc chắn muốn rollback?\`;
           menu.remove();
           const confirmMsg = itemCategory === 'PAGE' ? 'Xóa page này? Tất cả actions cũng sẽ bị xóa.' : 
                             itemCategory === 'ACTION' ? 'Xóa action này?' :
-                            'Xóa panel này khỏi tree? Tất cả các page của panel và các panel con cũng sẽ bị xóa.';
+                            'Xóa panel này khỏi tree? Các page của panel và panel con sẽ được giữ lại.';
           if (confirm(confirmMsg)) {
             if (window.deleteEvent) {
               window.deleteEvent(panelId);
