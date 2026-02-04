@@ -5474,14 +5474,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     return lines;
                 };
 
-                // Case 2: panel_after xuất hiện ở before trong bất kỳ step nào -> hiện toast cảnh báo
+                // Case 2: panel_after xuất hiện ở before trong bất kỳ step nào -> hiện dialog cảnh báo
                 const stepsWherePanelIsBefore = await tracker.stepManager.getStepsWherePanelIsBefore(panelAfterId);
                 if (stepsWherePanelIsBefore.length > 0) {
                     const stepLines = await buildStepLines(stepsWherePanelIsBefore);
                     const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
                     const panelName = panelItem?.name || panelAfterId;
-                    const msg = 'Panel "' + panelName + '" đang sử dụng tại: ' + stepLines.join('; ');
-                    await tracker._broadcast({ type: 'show_toast', message: '⚠️ ' + msg });
+                    await tracker._broadcast({ type: 'show_reset_blocked_dialog', panelName, stepLines });
                     console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang là panel_before tại ${stepLines.length} step(s)`);
                     return;
                 }
@@ -5493,8 +5492,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const stepLines = await buildStepLines(stepsWherePanelIsAfter);
                     const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
                     const panelName = panelItem?.name || panelAfterId;
-                    const msg = 'Panel "' + panelName + '" đang sử dụng tại: ' + stepLines.join('; ');
-                    await tracker._broadcast({ type: 'show_toast', message: '⚠️ ' + msg });
+                    await tracker._broadcast({ type: 'show_reset_blocked_dialog', panelName, stepLines });
                     console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang sử dụng tại ${stepLines.length} step(s) (panel_after) - không xóa panel_after nhưng vẫn xóa step`);
                     // Không return - tiếp tục xóa step và reset action, chỉ bỏ qua xóa panel_after
                 }
