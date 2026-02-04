@@ -2515,7 +2515,7 @@ export const QUEUE_BROWSER_HTML = `
           showPanelCompletionDialog(evt.panelId);
           return;
         }
-        
+
         if (evt.type === 'hide_panel_completion_dialog') {
           hidePanelCompletionDialog();
           return;

@@ -5457,12 +5457,51 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const panelAfterId = step?.panel_after?.item_id;
             const panelBeforeId = step?.panel_before?.item_id;
             if (step && panelAfterId && panelBeforeId !== panelAfterId) {
-                // Check if panel_after is used in other steps
-                const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
-                
-                // Only delete panel_after if it appears exactly once (only in this step)
+                const buildStepLines = async (steps) => {
+                    const lines = [];
+                    for (const s of steps) {
+                        const pBeforeId = s.panel_before?.item_id;
+                        const actId = s.action?.item_id;
+                        const pAfterId = s.panel_after?.item_id;
+                        const pBeforeItem = pBeforeId ? await tracker.dataItemManager.getItem(pBeforeId) : null;
+                        const actItem = actId ? await tracker.dataItemManager.getItem(actId) : null;
+                        const pAfterItem = pAfterId ? await tracker.dataItemManager.getItem(pAfterId) : null;
+                        const pBeforeName = pBeforeItem?.name || pBeforeId || '(không có)';
+                        const actName = actItem?.name || actId || '(không có)';
+                        const pAfterName = pAfterItem?.name || pAfterId || '(không có)';
+                        lines.push(`${pBeforeName} - ${actName} - ${pAfterName}`);
+                    }
+                    return lines;
+                };
+
+                // Case 2: panel_after xuất hiện ở before trong bất kỳ step nào -> hiện toast cảnh báo
+                const stepsWherePanelIsBefore = await tracker.stepManager.getStepsWherePanelIsBefore(panelAfterId);
+                if (stepsWherePanelIsBefore.length > 0) {
+                    const stepLines = await buildStepLines(stepsWherePanelIsBefore);
+                    const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
+                    const panelName = panelItem?.name || panelAfterId;
+                    const msg = 'Panel "' + panelName + '" đang sử dụng tại: ' + stepLines.join('; ');
+                    await tracker._broadcast({ type: 'show_toast', message: '⚠️ ' + msg });
+                    console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang là panel_before tại ${stepLines.length} step(s)`);
+                    return;
+                }
+
+                // Case 1: panel_after chỉ xuất hiện ở after -> count=1 cho xóa panel_after, count>1 không xóa panel_after nhưng vẫn xóa step
+                const stepsWherePanelIsAfter = await tracker.stepManager.getStepsWherePanelIsAfter(panelAfterId);
+                const countAsAfter = stepsWherePanelIsAfter.length;
+                if (countAsAfter > 1) {
+                    const stepLines = await buildStepLines(stepsWherePanelIsAfter);
+                    const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
+                    const panelName = panelItem?.name || panelAfterId;
+                    const msg = 'Panel "' + panelName + '" đang sử dụng tại: ' + stepLines.join('; ');
+                    await tracker._broadcast({ type: 'show_toast', message: '⚠️ ' + msg });
+                    console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang sử dụng tại ${stepLines.length} step(s) (panel_after) - không xóa panel_after nhưng vẫn xóa step`);
+                    // Không return - tiếp tục xóa step và reset action, chỉ bỏ qua xóa panel_after
+                }
+
+                // countAsAfter === 1: cho phép xóa panel_after
                 // Xóa panel_after và child_actions, nhưng không xóa child_panels (reparent chúng lên parent của panel_after)
-                if (panelUsageCount === 1) {
+                if (countAsAfter === 1) {
                     const panelEntry = await tracker.parentPanelManager.getPanelEntry(panelAfterId);
                     const childPanelIds = panelEntry?.child_panels || [];
                     const childActionIds = [...(panelEntry?.child_actions || [])];
@@ -5574,8 +5613,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
                         await fsp.writeFile(clickPath, newClickContent, 'utf8');
                     }
-                } else {
-                    console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
             } else if (step && !panelAfterId) {
                 console.log(`🔄 Reset action (Mark as Done case - no panel_after to delete)`);

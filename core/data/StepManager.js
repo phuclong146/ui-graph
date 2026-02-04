@@ -209,5 +209,59 @@ export class StepManager {
             return 0;
         }
     }
+
+    /**
+     * Get all steps where a panel appears (as panel_before or panel_after)
+     * @param {string} panelId - The panel item_id to find
+     * @returns {Promise<Array<object>>} - Array of steps containing the panel
+     */
+    async getStepsUsingPanel(panelId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+
+            return entries.filter(entry =>
+                entry.panel_before?.item_id === panelId || entry.panel_after?.item_id === panelId
+            );
+        } catch (err) {
+            return [];
+        }
+    }
+
+    /**
+     * Get steps where panel appears as panel_before
+     * @param {string} panelId - The panel item_id
+     * @returns {Promise<Array<object>>} - Array of steps
+     */
+    async getStepsWherePanelIsBefore(panelId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            return entries.filter(entry => entry.panel_before?.item_id === panelId);
+        } catch (err) {
+            return [];
+        }
+    }
+
+    /**
+     * Get steps where panel appears as panel_after
+     * @param {string} panelId - The panel item_id
+     * @returns {Promise<Array<object>>} - Array of steps
+     */
+    async getStepsWherePanelIsAfter(panelId) {
+        try {
+            const content = await fsp.readFile(this.stepPath, 'utf8');
+            const entries = content.trim().split('\n')
+                .filter(line => line.trim())
+                .map(line => JSON.parse(line));
+            return entries.filter(entry => entry.panel_after?.item_id === panelId);
+        } catch (err) {
+            return [];
+        }
+    }
 }
 
