@@ -194,6 +194,35 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const appendMyParentList = async (itemId, parentId) => {
+        if (!tracker.dataItemManager) return false;
+        const item = await tracker.dataItemManager.getItem(itemId);
+        if (!item) return false;
+        const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+        const list = Array.isArray(metadata.my_parent_list) ? metadata.my_parent_list : [];
+        if (!list.includes(parentId)) {
+            list.push(parentId);
+        }
+        await tracker.dataItemManager.updateItem(itemId, { metadata: { my_parent_list: list } });
+        return true;
+    };
+
+    /** Luôn dùng global_pos - (top, left) của panel cho hiển thị (crop / không crop, 1 page / nhiều page). */
+    const getActionPosForPanelDisplay = (actionItem, panelGlobalPos, pageHeight = 1080) => {
+        const gp = actionItem?.metadata?.global_pos;
+        if (!panelGlobalPos || !gp) {
+            return actionItem?.metadata?.local_pos || gp || { x: 0, y: 0, w: 100, h: 100 };
+        }
+        const localY = gp.y - panelGlobalPos.y;
+        return {
+            x: gp.x - panelGlobalPos.x,
+            y: localY,
+            w: gp.w,
+            h: gp.h,
+            p: gp.p ?? Math.floor(localY / pageHeight) + 1
+        };
+    };
+
     /**
      * Tạo quan hệ parent-child giữa các panel dựa trên step
      * Tìm step có panel_after trùng với panelId, sau đó tạo quan hệ parent (panel_before) -> child (panel_after)
@@ -213,8 +242,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
                 if (panelBeforeId !== panelAfterId) {
                     console.log(`🔗 makeChild START: parent="${panelBeforeId}" child="${panelAfterId}"`);
-                    await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
-                    console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                    const removedFromChildActionIds = await tracker.parentPanelManager.makeChild(panelBeforeId, panelAfterId);
+                    if (removedFromChildActionIds && removedFromChildActionIds.length > 0) {
+                        await tracker.dataItemManager.deleteItems(removedFromChildActionIds);
+                        if (tracker.stepManager) await tracker.stepManager.deleteStepsForItems(removedFromChildActionIds);
+                        if (tracker.clickManager) await tracker.clickManager.deleteClicksForActions(removedFromChildActionIds);
+                        if (tracker.validationManager) {
+                            for (const actionId of removedFromChildActionIds) {
+                                try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
+                            }
+                        }
+                        console.log(`✅ makeChild DONE: Deleted ${removedFromChildActionIds.length} duplicate actions from doing_item.jsonl`);
+                    } else {
+                        console.log(`✅ makeChild DONE: Duplicate actions removed from parent panel`);
+                    }
                     
                     // Cập nhật UI Panel Log sau khi makeChild hoàn thành
                     if (tracker.panelLogManager) {
@@ -834,45 +875,24 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             const actionIds = await getActionIdsForItem(tracker.selectedPanelId, panelItem.item_category);
+            const panelTopLeft = panelItem.metadata?.global_pos || null;
             const actions = [];
             let selectedActionIndex = null;
-            
             for (let i = 0; i < actionIds.length; i++) {
                 const actionId = actionIds[i];
                 const actionItem = await tracker.dataItemManager.getItem(actionId);
                 if (actionItem) {
-                    const hasValidP = actionItem.metadata.local_pos.p != null;
-                    const globalY = actionItem.metadata.global_pos.y;
-                    const p = hasValidP ? actionItem.metadata.local_pos.p : Math.floor(globalY / 1080) + 1;
-                    const localY = hasValidP ? actionItem.metadata.local_pos.y : globalY - (p - 1) * 1080;
-                    
-                    if (!hasValidP) {
-                        await tracker.dataItemManager.updateItem(actionItem.item_id, {
-                            metadata: {
-                                local_pos: { p, x: actionItem.metadata.local_pos.x, y: localY, w: actionItem.metadata.local_pos.w, h: actionItem.metadata.local_pos.h },
-                                global_pos: actionItem.metadata.global_pos
-                            }
-                        });
-                    }
-                    
-                    // Track index if this is the action to select
                     if (actionItemIdToSelect && actionItem.item_id === actionItemIdToSelect) {
                         selectedActionIndex = i;
                     }
-                    
+                    const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
                     actions.push({
                         action_id: actionItem.item_id,
                         action_name: actionItem.name,
                         action_type: actionItem.type,
                         action_verb: actionItem.verb,
                         action_content: actionItem.content,
-                        action_pos: {
-                            p: p,
-                            x: actionItem.metadata.local_pos.x,
-                            y: localY,
-                            w: actionItem.metadata.local_pos.w,
-                            h: actionItem.metadata.local_pos.h
-                        }
+                        action_pos: actionPos
                     });
                 }
             }
@@ -1655,6 +1675,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             if (parentPanelId) {
                 await tracker.parentPanelManager.addChildPanel(parentPanelId, newPanelId);
+                await appendMyParentList(newPanelId, parentPanelId);
                 console.log(`  ✅ Created panel "${newPanelName}" as child of ${parentPanelId}`);
             } else {
                 console.log(`  ✅ Created panel "${newPanelName}" (root level)`);
@@ -1947,16 +1968,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             if (item.item_category === 'PANEL') {
                 const panelEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
-                const hasChildActions = panelEntry?.child_actions?.length > 0;
-                const hasChildPanels = panelEntry?.child_panels?.length > 0;
-                if (hasChildActions || hasChildPanels) {
-                    console.warn(`[DELETE PANEL] Skip: panel "${item.name}" (${targetItemId}) vì đang còn child_actions hoặc child_panels`, {
-                        child_actions: panelEntry?.child_actions?.length ?? 0,
-                        child_panels: panelEntry?.child_panels?.length ?? 0
+                const hasChildActions = (panelEntry?.child_actions?.length ?? 0) > 0;
+                if (hasChildActions) {
+                    console.warn(`[DELETE PANEL] Skip: panel "${item.name}" (${targetItemId}) vì đang còn child_actions`, {
+                        child_actions: panelEntry?.child_actions?.length ?? 0
                     });
                     await tracker._broadcast({
                         type: 'show_toast',
-                        message: `Không xóa được panel ${item.name} vì đang còn action và panel con`
+                        message: `Không thể xóa panel ${item.name} vì đang còn action con. Vui lòng xóa hoặc chuyển các action trước.`
                     });
                     return;
                 }
@@ -1966,10 +1985,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let itemsToDelete = [targetItemId];
 
             if (item.item_category === 'PANEL') {
-                const descendants = await tracker.parentPanelManager.getAllDescendants(targetItemId);
-                itemsToDelete.push(...descendants);
-
-                console.log(`🗑️ Deleting panel "${item.name}" and ${descendants.length} descendants`);
+                const panelEntry = await tracker.parentPanelManager.getPanelEntry(targetItemId);
+                const childPanelIds = panelEntry?.child_panels ?? [];
+                const parentEntry = await tracker.parentPanelManager.findMyParent(targetItemId);
+                // Reparent: chuyển các child_panels lên parent của panel bị xóa (không xóa child_panels)
+                if (parentEntry && childPanelIds.length > 0) {
+                    for (const childPanelId of childPanelIds) {
+                        await tracker.parentPanelManager.addChildPanel(parentEntry.parent_panel, childPanelId);
+                        await tracker.parentPanelManager.appendMyParentList(childPanelId, parentEntry.parent_panel);
+                    }
+                }
+                console.log(`🗑️ Deleting panel "${item.name}" only (giữ lại ${childPanelIds.length} panel con)`);
             } else if (item.item_category === 'PAGE') {
                 const parentPath = path.join(tracker.sessionFolder, 'myparent_panel.jsonl');
                 try {
@@ -2349,41 +2375,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
                 const displayImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
                 
-                // Get actions for the panel
+                // Get actions for the panel — luôn dùng global_pos - (top, left) panel cho hiển thị
                 const parentEntry = await tracker.parentPanelManager.getPanelEntry(tracker.selectedPanelId);
                 const actionIds = parentEntry?.child_actions || [];
+                const panelTopLeft = panelItem.metadata?.global_pos || null;
                 const actions = [];
-                
-                // Check if panel has crop
-                const panelCropArea = panelItem.metadata?.global_pos;
-                
                 for (const actionId of actionIds) {
                     const actionItem = await tracker.dataItemManager.getItem(actionId);
                     if (actionItem) {
-                        let actionPos;
-                        
-                        if (panelCropArea && actionItem.metadata?.global_pos) {
-                            // Panel has crop: always convert from global_pos to local_pos (relative to crop area)
-                            // This ensures consistency even if local_pos exists but might be incorrect
-                            const globalX = actionItem.metadata.global_pos.x;
-                            const globalY = actionItem.metadata.global_pos.y;
-                            const localX = globalX - panelCropArea.x;
-                            const localY = globalY - panelCropArea.y;
-                            
-                            console.log(`🔄 Converting action "${actionItem.name}": global(${globalX},${globalY}) -> local(${localX},${localY}) with crop(${panelCropArea.x},${panelCropArea.y})`);
-                            
-                            actionPos = {
-                                p: actionItem.metadata.global_pos?.p || actionItem.metadata?.local_pos?.p || Math.floor(localY / 1080) + 1,
-                                x: localX,
-                                y: localY,
-                                w: actionItem.metadata.global_pos.w,
-                                h: actionItem.metadata.global_pos.h
-                            };
-                        } else {
-                            // Panel has no crop: use local_pos if available, otherwise global_pos
-                            actionPos = actionItem.metadata?.local_pos || actionItem.metadata?.global_pos;
-                        }
-                        
+                        const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
                         actions.push({
                             action_id: actionItem.item_id,
                             action_name: actionItem.name,
@@ -2394,10 +2394,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         });
                     }
                 }
-                
-                // Get panelAfter global_pos for editor (crop area)
                 const panelAfterGlobalPos = panelItem.metadata?.global_pos || null;
-                
                 // Open editor with existing actions
                 await tracker.queuePage.evaluate(async (editorClass, screenshot, geminiResult, panelAfterGlobalPos) => {
                     if (window.queueEditor) {
@@ -3383,27 +3380,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const updatedPanel = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
 
             const actions = [];
-            // Get crop area for converting coordinates
-            const panelCropArea = updatedPanel?.metadata?.global_pos || null;
-            
+            const panelTopLeft = updatedPanel?.metadata?.global_pos || null;
             for (const actionId of actionIds) {
                 const actionItem = await tracker.dataItemManager.getItem(actionId);
                 if (actionItem) {
-                    // Use local_pos if available (relative to crop area), otherwise global_pos
-                    // For panel with crop, local_pos is already correct (relative to crop area)
-                    let actionPos = actionItem.metadata?.local_pos || actionItem.metadata?.global_pos;
-                    
-                    // If panel has crop but we only have global_pos, convert to local_pos
-                    if (panelCropArea && actionItem.metadata?.global_pos && !actionItem.metadata?.local_pos) {
-                        actionPos = {
-                            p: actionItem.metadata.global_pos?.p || Math.floor((actionItem.metadata.global_pos.y - panelCropArea.y) / 1080) + 1,
-                            x: actionItem.metadata.global_pos.x - panelCropArea.x,
-                            y: actionItem.metadata.global_pos.y - panelCropArea.y,
-                            w: actionItem.metadata.global_pos.w,
-                            h: actionItem.metadata.global_pos.h
-                        };
-                    }
-                    
+                    const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
                     actions.push({
                         action_id: actionItem.item_id,
                         action_name: actionItem.name,
@@ -3414,7 +3395,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     });
                 }
             }
-
             const actionList = actions.map(a => a.action_name).filter(Boolean).join(', ');
 
             await tracker._broadcast({
@@ -4668,22 +4648,18 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             if (item.item_category === 'PANEL') {
                 const parentEntry = await tracker.parentPanelManager.getPanelEntry(itemId);
                 const actionIds = parentEntry?.child_actions || [];
-
+                const panelTopLeft = item.metadata?.global_pos || null;
                 for (const actionId of actionIds) {
                     const actionItem = await tracker.dataItemManager.getItem(actionId);
                     if (actionItem) {
+                        const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
                         actions.push({
                             action_id: actionItem.item_id,
                             action_name: actionItem.name,
                             action_type: actionItem.type,
                             action_verb: actionItem.verb,
                             action_content: actionItem.content,
-                            action_pos: {
-                                x: actionItem.metadata.global_pos.x,
-                                y: actionItem.metadata.global_pos.y,
-                                w: actionItem.metadata.global_pos.w,
-                                h: actionItem.metadata.global_pos.h
-                            }
+                            action_pos: actionPos
                         });
                     }
                 }
@@ -5481,32 +5457,131 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const panelAfterId = step?.panel_after?.item_id;
             const panelBeforeId = step?.panel_before?.item_id;
             if (step && panelAfterId && panelBeforeId !== panelAfterId) {
-                // Check if panel_after is used in other steps
-                const panelUsageCount = await tracker.stepManager.countPanelUsageInSteps(panelAfterId);
-                
-                // Only delete panel_after if it appears exactly once (only in this step)
+                const buildStepLines = async (steps) => {
+                    const lines = [];
+                    for (const s of steps) {
+                        const pBeforeId = s.panel_before?.item_id;
+                        const actId = s.action?.item_id;
+                        const pAfterId = s.panel_after?.item_id;
+                        const pBeforeItem = pBeforeId ? await tracker.dataItemManager.getItem(pBeforeId) : null;
+                        const actItem = actId ? await tracker.dataItemManager.getItem(actId) : null;
+                        const pAfterItem = pAfterId ? await tracker.dataItemManager.getItem(pAfterId) : null;
+                        const pBeforeName = pBeforeItem?.name || pBeforeId || '(không có)';
+                        const actName = actItem?.name || actId || '(không có)';
+                        const pAfterName = pAfterItem?.name || pAfterId || '(không có)';
+                        lines.push(`${pBeforeName} - ${actName} - ${pAfterName}`);
+                    }
+                    return lines;
+                };
+
+                // Case 2: panel_after xuất hiện ở before trong bất kỳ step nào -> hiện dialog cảnh báo
+                const stepsWherePanelIsBefore = await tracker.stepManager.getStepsWherePanelIsBefore(panelAfterId);
+                if (stepsWherePanelIsBefore.length > 0) {
+                    const stepLines = await buildStepLines(stepsWherePanelIsBefore);
+                    const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
+                    const panelName = panelItem?.name || panelAfterId;
+                    await tracker._broadcast({ type: 'show_reset_blocked_dialog', panelName, stepLines });
+                    console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang là panel_before tại ${stepLines.length} step(s)`);
+                    return;
+                }
+
+                // Case 1: panel_after chỉ xuất hiện ở after -> count=1 cho xóa panel_after, count>1 không xóa panel_after nhưng vẫn xóa step
+                const stepsWherePanelIsAfter = await tracker.stepManager.getStepsWherePanelIsAfter(panelAfterId);
+                const countAsAfter = stepsWherePanelIsAfter.length;
+                if (countAsAfter > 1) {
+                    const stepLines = await buildStepLines(stepsWherePanelIsAfter);
+                    const panelItem = await tracker.dataItemManager.getItem(panelAfterId);
+                    const panelName = panelItem?.name || panelAfterId;
+                    await tracker._broadcast({ type: 'show_reset_blocked_dialog', panelName, stepLines });
+                    console.warn(`⚠️ [resetActionStep] Panel ${panelName} đang sử dụng tại ${stepLines.length} step(s) (panel_after) - không xóa panel_after nhưng vẫn xóa step`);
+                    // Không return - tiếp tục xóa step và reset action, chỉ bỏ qua xóa panel_after
+                }
+
+                // countAsAfter === 1: cho phép xóa panel_after
                 // Xóa panel_after và child_actions, nhưng không xóa child_panels (reparent chúng lên parent của panel_after)
-                if (panelUsageCount === 1) {
+                if (countAsAfter === 1) {
                     const panelEntry = await tracker.parentPanelManager.getPanelEntry(panelAfterId);
                     const childPanelIds = panelEntry?.child_panels || [];
                     const childActionIds = [...(panelEntry?.child_actions || [])];
                     for (const page of panelEntry?.child_pages || []) {
                         if (page.child_actions?.length) childActionIds.push(...page.child_actions);
                     }
-                    const allItemsToDelete = [panelAfterId, ...childActionIds];
+                    const reparentedActionIds = new Set();
+                    const remainingActionIds = new Set(childActionIds);
 
-                    if (childPanelIds.length > 0) {
-                        const parentEntry = await tracker.parentPanelManager.findMyParent(panelAfterId);
-                        if (parentEntry) {
-                            const grandparentId = parentEntry.parent_panel;
-                            for (const childPanelId of childPanelIds) {
-                                await tracker.parentPanelManager.addChildPanel(grandparentId, childPanelId);
+                    for (const actionId of childActionIds) {
+                        const actionItem = await tracker.dataItemManager.getItem(actionId);
+                        const parentList = actionItem?.metadata?.my_parent_list;
+                        if (Array.isArray(parentList) && parentList.length > 0) {
+                            for (let i = parentList.length - 1; i >= 0; i -= 1) {
+                                const parentId = parentList[i];
+                                if (parentId === panelAfterId) continue;
+                                const parentItem = await tracker.dataItemManager.getItem(parentId);
+                                if (parentItem) {
+                                    await tracker.parentPanelManager.addChildAction(parentId, actionId);
+                                    reparentedActionIds.add(actionId);
+                                    remainingActionIds.delete(actionId);
+                                    break;
+                                }
                             }
-                            console.log(`[RESET ACTION] Reparent ${childPanelIds.length} child_panels từ panel_after ${panelAfterId} lên parent ${grandparentId}`);
                         }
                     }
 
-                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIds.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
+                    if (panelEntry) {
+                        if (Array.isArray(panelEntry.child_actions) && reparentedActionIds.size > 0) {
+                            panelEntry.child_actions = panelEntry.child_actions.filter(id => !reparentedActionIds.has(id));
+                        }
+                        if (Array.isArray(panelEntry.child_pages) && reparentedActionIds.size > 0) {
+                            for (const page of panelEntry.child_pages) {
+                                if (Array.isArray(page.child_actions)) {
+                                    page.child_actions = page.child_actions.filter(id => !reparentedActionIds.has(id));
+                                }
+                            }
+                        }
+                        if (reparentedActionIds.size > 0) {
+                            await tracker.parentPanelManager.updatePanelEntry(panelAfterId, panelEntry);
+                        }
+                    }
+
+                    const childActionIdsToDelete = Array.from(remainingActionIds);
+                    const allItemsToDelete = [panelAfterId, ...childActionIdsToDelete];
+
+                    if (childPanelIds.length > 0) {
+                        const processedChildPanels = new Set();
+                        for (const childPanelId of childPanelIds) {
+                            const childPanelItem = await tracker.dataItemManager.getItem(childPanelId);
+                            const parentList = childPanelItem?.metadata?.my_parent_list;
+                            let targetParentId = null;
+                            if (Array.isArray(parentList) && parentList.length > 0) {
+                                for (let i = parentList.length - 1; i >= 0; i -= 1) {
+                                    const parentId = parentList[i];
+                                    if (parentId === panelAfterId) continue;
+                                    const parentItem = await tracker.dataItemManager.getItem(parentId);
+                                    if (parentItem) {
+                                        targetParentId = parentId;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (targetParentId) {
+                                await tracker.parentPanelManager.addChildPanel(targetParentId, childPanelId);
+                                await appendMyParentList(childPanelId, targetParentId);
+                                processedChildPanels.add(childPanelId);
+                                console.log(`[RESET ACTION] Reparent child_panel ${childPanelId} về parent ${targetParentId}`);
+                            } else {
+                                processedChildPanels.add(childPanelId);
+                                console.log(`[RESET ACTION] Skip reparent child_panel ${childPanelId} (không tìm thấy parent hợp lệ trong my_parent_list)`);
+                            }
+                        }
+
+                        if (processedChildPanels.size > 0 && panelEntry?.child_panels) {
+                            panelEntry.child_panels = panelEntry.child_panels.filter(id => !processedChildPanels.has(id));
+                            await tracker.parentPanelManager.updatePanelEntry(panelAfterId, panelEntry);
+                        }
+                    }
+
+                    console.log(`🗑️ Deleting panel_after ${panelAfterId} and ${childActionIdsToDelete.length} child_actions (giữ lại ${childPanelIds.length} child_panels)`);
 
                     for (const itemId of allItemsToDelete) {
                         await tracker.dataItemManager.deleteItem(itemId);
@@ -5517,10 +5592,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     await tracker.stepManager.deleteStepsForItems(allItemsToDelete);
 
                     if (tracker.clickManager) {
-                        await tracker.clickManager.deleteClicksForActions(childActionIds);
+                        await tracker.clickManager.deleteClicksForActions(childActionIdsToDelete);
                     }
                     if (tracker.validationManager) {
-                        for (const actionId of childActionIds) {
+                        for (const actionId of childActionIdsToDelete) {
                             try { await tracker.validationManager.removeValidation(actionId); } catch (_) { }
                         }
                     }
@@ -5536,8 +5611,6 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         const newClickContent = clickEntries.map(e => JSON.stringify(e)).join('\n') + (clickEntries.length > 0 ? '\n' : '');
                         await fsp.writeFile(clickPath, newClickContent, 'utf8');
                     }
-                } else {
-                    console.log(`⚠️ Skipping deletion of panel ${panelAfterId} (used ${panelUsageCount} times in steps)`);
                 }
             } else if (step && !panelAfterId) {
                 console.log(`🔄 Reset action (Mark as Done case - no panel_after to delete)`);
@@ -6454,6 +6527,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             for (const panelId of panelIds) {
                 await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
                 await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+                await appendMyParentList(panelId, destinationPanelId);
             }
 
             let mode = 'log';
@@ -6732,6 +6806,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 await tracker.parentPanelManager.removeChildPanel(sourcePanelId, panelId);
                 if (!isUnparent) {
                     await tracker.parentPanelManager.addChildPanel(destinationPanelId, panelId);
+                    await appendMyParentList(panelId, destinationPanelId);
                 }
             }
 

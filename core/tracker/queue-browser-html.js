@@ -1420,6 +1420,22 @@ export const QUEUE_BROWSER_HTML = `
       </div>
     </div>
 
+    <div id="resetBlockedModal" style="display:none; position:fixed; z-index:20006; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
+      <div style="background:white; border-radius:12px; padding:30px; max-width:700px; max-height:90vh; overflow:hidden; display:flex; flex-direction:column; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="flex-shrink:0; margin-bottom:20px;">
+          <div style="font-size:48px; margin-bottom:10px; text-align:center;">&#x26A0;&#xFE0F;</div>
+          <h3 style="margin:0 0 10px 0; font-size:20px; color:#333; text-align:center;">Không thể reset action</h3>
+          <p id="resetBlockedMessage" style="margin:0; font-size:14px; color:#666; line-height:1.6; text-align:center;"></p>
+        </div>
+        <div style="flex:1; min-height:0; overflow-y:auto; background:#f8f9fa; border-radius:8px; padding:16px; margin-bottom:20px;">
+          <div id="resetBlockedStepList" style="font-family:monospace; font-size:13px; line-height:1.8; color:#333; white-space:pre-wrap;"></div>
+        </div>
+        <div style="display:flex; justify-content:center; flex-shrink:0;">
+          <button id="resetBlockedOkBtn" style="background:linear-gradient(135deg, #007bff 0%, #0056d2 100%); color:white; border:none; border-radius:8px; padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600;">Đã hiểu</button>
+        </div>
+      </div>
+    </div>
+
     <div id="correctChildActionsModal" style="display:none; position:fixed; z-index:20004; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.7); justify-content:center; align-items:center;">
       <div style="background:white; border-radius:12px; padding:24px; max-width:720px; width:95%; max-height:90vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <h3 id="correctChildActionsModalTitle" style="margin:0 0 16px 0; font-size:18px; color:#333;">Correct Child Actions</h3>
@@ -2515,9 +2531,16 @@ export const QUEUE_BROWSER_HTML = `
           showPanelCompletionDialog(evt.panelId);
           return;
         }
-        
+
         if (evt.type === 'hide_panel_completion_dialog') {
           hidePanelCompletionDialog();
+          return;
+        }
+
+        if (evt.type === 'show_reset_blocked_dialog') {
+          if (typeof showResetBlockedDialog === 'function') {
+            showResetBlockedDialog(evt.panelName || '', evt.stepLines || []);
+          }
           return;
         }
 
@@ -5505,6 +5528,21 @@ Bạn có chắc chắn muốn rollback?\`;
       // Expose function to show conflict dialog
       window.showSessionConflictDialog = showSessionConflictDialog;
 
+      // Reset Blocked Modal (chỉ dùng khi resetActionStep bị chặn)
+      const resetBlockedModal = document.getElementById('resetBlockedModal');
+      const resetBlockedMessage = document.getElementById('resetBlockedMessage');
+      const resetBlockedStepList = document.getElementById('resetBlockedStepList');
+      const resetBlockedOkBtn = document.getElementById('resetBlockedOkBtn');
+      const showResetBlockedDialog = function(panelName, stepLines) {
+        if (!resetBlockedModal) return;
+        if (resetBlockedMessage) resetBlockedMessage.textContent = 'Panel "' + panelName + '" đang được sử dụng tại các step sau. Vui lòng reset hết các action đang sử dụng trước nếu thực sự cần thiết.';
+        if (resetBlockedStepList) resetBlockedStepList.textContent = (stepLines && stepLines.length > 0) ? stepLines.join('\\n') : '(Không có dữ liệu)';
+        resetBlockedModal.style.display = 'flex';
+      };
+      const hideResetBlockedDialog = function() { if (resetBlockedModal) resetBlockedModal.style.display = 'none'; };
+      if (resetBlockedOkBtn) resetBlockedOkBtn.addEventListener('click', hideResetBlockedDialog);
+      if (resetBlockedModal) resetBlockedModal.addEventListener('click', function(e) { if (e.target === resetBlockedModal) hideResetBlockedDialog(); });
+
       // Gemini Billing Error Modal handlers
       const geminiBillingErrorModal = document.getElementById('geminiBillingErrorModal');
       const geminiBillingErrorOkBtn = document.getElementById('geminiBillingErrorOkBtn');
@@ -6493,7 +6531,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const itemCategory = selectedNode.item_category;
           const confirmMsg = itemCategory === 'PAGE' ? 'Xóa page này? Tất cả actions cũng sẽ bị xóa.' : 
                             itemCategory === 'ACTION' ? 'Xóa action này?' :
-                            'Xóa panel này khỏi tree? Tất cả panel con cũng sẽ bị xóa.';
+                            'Xóa panel này khỏi tree? Panel con sẽ được giữ lại.';
           
           e.preventDefault();
           if (confirm(confirmMsg)) {
@@ -7492,7 +7530,7 @@ Bạn có chắc chắn muốn rollback?\`;
           menu.remove();
           const confirmMsg = itemCategory === 'PAGE' ? 'Xóa page này? Tất cả actions cũng sẽ bị xóa.' : 
                             itemCategory === 'ACTION' ? 'Xóa action này?' :
-                            'Xóa panel này khỏi tree? Tất cả các page của panel và các panel con cũng sẽ bị xóa.';
+                            'Xóa panel này khỏi tree? Các page của panel và panel con sẽ được giữ lại.';
           if (confirm(confirmMsg)) {
             if (window.deleteEvent) {
               window.deleteEvent(panelId);
