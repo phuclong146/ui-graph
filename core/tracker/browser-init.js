@@ -399,6 +399,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("getModalityStacksForCurrentTool", handlers.getModalityStacksForCurrentTool);
     await tracker.queuePage.exposeFunction("setImportantAction", handlers.setImportantAction);
     await tracker.queuePage.exposeFunction("setNormalAction", handlers.setNormalAction);
+    await tracker.queuePage.exposeFunction("validateImportantAction", handlers.validateImportantAction);
     await tracker.queuePage.exposeFunction("getAiToolsList", handlers.getAiToolsList);
     await tracker.queuePage.exposeFunction("adminOpenOrCreateSession", handlers.adminOpenOrCreateSession);
     await tracker.queuePage.exposeFunction("getAdminSessionsList", handlers.getAdminSessionsList);
@@ -406,7 +407,6 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("getSessionDetails", handlers.getSessionDetails);
     await tracker.queuePage.exposeFunction("getSessionProcessHistory", handlers.getSessionProcessHistory);
 
-    // Show RoleSelectionModal immediately when queue tracker opens
-    const accountInfo = await handlers.getAccountInfo();
-    await tracker._broadcast({ type: 'show_role_selection', accountInfo: accountInfo?.data || accountInfo });
+    // Flow: queue tracker mở → select_role_dialog hiện (do queue page tự gọi getAccountInfo + showRoleSelectionDialog)
+    // Chỉ khi user chọn role DRAW thì saveAccountInfo mới gọi initTrackingBrowser. Không dùng WebSocket để mở dialog.
 }
