@@ -2241,10 +2241,10 @@ export const QUEUE_BROWSER_HTML = `
         console.log('📨 [WS] Message received:', evt.type);
         
         if (evt.type === 'tree_update') {
-          // If we're in tree or validation mode, reload data with current mode
-          // (tree_update from server is always log mode)
+          // Reload panel log with current showMode so we don't switch mode when user clicks an action.
+          // (tree_update from server sends validation structure; we must keep log/tree/validation mode unchanged.)
           const fallbackData = evt.data || [];
-          if ((panelLogDisplayMode === 'tree' || panelLogDisplayMode === 'validation') && window.getPanelTree) {
+          if (window.getPanelTree) {
             getFilteredPanelTree(panelLogDisplayMode).then(data => {
               panelTreeData = data || [];
               renderPanelTree();
