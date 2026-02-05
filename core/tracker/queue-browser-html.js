@@ -6859,6 +6859,21 @@ Bạn có chắc chắn muốn rollback?\`;
                   html += '<div style="margin-top:10px; padding:8px; background: rgba(255,255,255,0.08); border-radius:6px; border-left:3px solid ' + (r.is_end_to_end_flow ? '#4caf50' : '#ff9800') + ';">';
                   html += '<div style="font-weight:600; margin-bottom:4px;">' + icon + ' ' + (r.modality_stack_code || '') + '</div>';
                   html += '<div style="color: #e0e0e0; font-size: 11px;">' + (r.end_to_end_flow_reason || '') + '</div>';
+                  if (r.is_end_to_end_flow && r.routes && r.routes.length > 0) {
+                    r.routes.forEach(function (route, idx) {
+                      var parts = [];
+                      (route || []).forEach(function (step, i) {
+                        var pBefore = step.panel_before_name || '';
+                        var actName = step.action_name || (step.action && step.action.name) || '';
+                        if (pBefore) parts.push(pBefore);
+                        if (actName) parts.push(actName);
+                        if (i === (route.length - 1) && (step.panel_after_name || '')) parts.push(step.panel_after_name);
+                      });
+                      if (parts.length) {
+                        html += '<div style="margin-top:6px; font-size: 11px; color: #81d4fa;">Route' + (r.routes.length > 1 ? ' ' + (idx + 1) : '') + ': ' + parts.join(' → ') + '</div>';
+                      }
+                    });
+                  }
                   html += '</div>';
                 });
                 tooltip.innerHTML = html;
