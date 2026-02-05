@@ -2148,6 +2148,8 @@ export const QUEUE_BROWSER_HTML = `
       let panelTreeData = [];
       let selectedPanelId = null;
       let expandedPanels = new Set();
+      /** @type {Object.<string, { modality_stack_routes: Array }>} Kết quả validate full flow theo actionId */
+      let validateFullFlowResultByActionId = {};
       
       // Helper functions for localStorage
       function getLocalStorage(key) {
@@ -2444,6 +2446,16 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'show_toast') {
           showToast(evt.message);
+          return;
+        }
+        
+        if (evt.type === 'validate_full_flow_result') {
+          if (evt.actionId && evt.result) {
+            validateFullFlowResultByActionId[evt.actionId] = evt.result;
+            renderPanelTree();
+            updateGraphPanelLogTreeIfOpen(panelTreeData);
+            updateVideoValidationPanelLogTreeIfOpen(panelTreeData);
+          }
           return;
         }
         
@@ -5862,6 +5874,22 @@ Bạn có chắc chắn muốn rollback?\`;
         roleSelectionModal.style.display = 'flex';
       };
 
+      // Mở queue tracker → hiện select_role_dialog ngay (không phụ thuộc WebSocket/broadcast)
+      (function tryShowRoleDialog() {
+        if (typeof window.getAccountInfo !== 'function') {
+          setTimeout(tryShowRoleDialog, 80);
+          return;
+        }
+        window.getAccountInfo().then(function (res) {
+          const accountInfo = res && (res.data !== undefined ? res.data : res);
+          if (typeof showRoleSelectionDialog === 'function' && roleSelectionModal) {
+            showRoleSelectionDialog(accountInfo);
+          }
+        }).catch(function () {
+          setTimeout(tryShowRoleDialog, 200);
+        });
+      })();
+
       const hideRoleSelectionDialog = () => {
         if (roleSelectionModal) {
           console.log('Hiding role selection dialog');
@@ -6803,6 +6831,47 @@ Bạn có chắc chắn muốn rollback?\`;
                 });
                 
                 label.appendChild(importantIcon);
+            }
+            
+            // Validate Full Flow result: dấu hiệu + tooltip lý do
+            const validateResult = node.panel_id ? validateFullFlowResultByActionId[node.panel_id] : null;
+            if (validateResult && validateResult.modality_stack_routes && validateResult.modality_stack_routes.length > 0) {
+              const allOk = validateResult.modality_stack_routes.every(function (r) { return r.is_end_to_end_flow; });
+              const validateIcon = document.createElement('span');
+              validateIcon.style.marginLeft = '6px';
+              validateIcon.style.cursor = 'help';
+              validateIcon.style.display = 'inline-block';
+              validateIcon.style.verticalAlign = 'middle';
+              validateIcon.style.fontSize = '14px';
+              validateIcon.textContent = allOk ? '✅' : '⚠️';
+              validateIcon.title = allOk ? 'Đủ luồng end-to-end' : 'Một số modality stack chưa đủ luồng';
+              validateIcon.addEventListener('mouseenter', function (e) {
+                const existing = document.getElementById('validate-full-flow-tooltip');
+                if (existing) existing.remove();
+                const tooltip = document.createElement('div');
+                tooltip.id = 'validate-full-flow-tooltip';
+                tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 12) + 'px; top: ' + (e.clientY + 12) + 'px;' +
+                  'background: rgba(0,0,0,0.92); color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 12px;' +
+                  'max-width: 420px; z-index: 10001; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
+                let html = '<div style="font-weight:600; margin-bottom:8px; color: #4fc3f7;">Kết quả Validate Full Flow</div>';
+                validateResult.modality_stack_routes.forEach(function (r) {
+                  const icon = r.is_end_to_end_flow ? '✅' : '⚠️';
+                  html += '<div style="margin-top:10px; padding:8px; background: rgba(255,255,255,0.08); border-radius:6px; border-left:3px solid ' + (r.is_end_to_end_flow ? '#4caf50' : '#ff9800') + ';">';
+                  html += '<div style="font-weight:600; margin-bottom:4px;">' + icon + ' ' + (r.modality_stack_code || '') + '</div>';
+                  html += '<div style="color: #e0e0e0; font-size: 11px;">' + (r.end_to_end_flow_reason || '') + '</div>';
+                  html += '</div>';
+                });
+                tooltip.innerHTML = html;
+                document.body.appendChild(tooltip);
+                var rect = tooltip.getBoundingClientRect();
+                if (rect.right > window.innerWidth) tooltip.style.left = (e.clientX - rect.width - 12) + 'px';
+                if (rect.bottom > window.innerHeight) tooltip.style.top = (e.clientY - rect.height - 12) + 'px';
+              });
+              validateIcon.addEventListener('mouseleave', function () {
+                const t = document.getElementById('validate-full-flow-tooltip');
+                if (t) t.remove();
+              });
+              label.appendChild(validateIcon);
             } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
                 // Add tooltip for actions with empty modality_stacks array
                 label.addEventListener('mouseenter', (e) => {
@@ -6891,7 +6960,7 @@ Bạn có chắc chắn muốn rollback?\`;
           if (currentRole === 'ADMIN' && node.type === 'session' && node.my_session != null) {
             showSessionContextMenu(e.clientX, e.clientY, node);
           } else if (node.panel_id != null) {
-            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber, node.bug_flag);
+            showContextMenu(e.clientX, e.clientY, node.panel_id, node.status, node.name, node.item_category, node.pageNumber, node.maxPageNumber, node.bug_flag, node.modality_stacks);
           }
         });
         
@@ -7256,13 +7325,14 @@ Bạn có chắc chắn muốn rollback?\`;
         modal.style.display = 'flex';
       }
       
-      function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber, hasBug) {
+      function showContextMenu(x, y, panelId, status, nodeName, itemCategory, pageNumber, maxPageNumber, hasBug, modalityStacks) {
         const existingMenu = document.getElementById('tree-context-menu');
         if (existingMenu) {
           existingMenu.remove();
         }
         
         const isRootPanel = (nodeName === 'After Login Panel');
+        const hasModalityStacks = modalityStacks && Array.isArray(modalityStacks) && modalityStacks.length > 0;
         
         // If role is ADMIN or VALIDATE: show Set Important Action / Set Normal Action (and Resolved Bug only if action has bug) for ACTION nodes
         if ((currentRole === 'ADMIN' || currentRole === 'VALIDATE') && itemCategory === 'ACTION') {
@@ -7288,6 +7358,19 @@ Bạn có chắc chắn muốn rollback?\`;
             div.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); document.removeEventListener('click', closeMenu); handler(); });
             menu.appendChild(div);
           };
+          if (hasModalityStacks) {
+            addItem('🤖 Validate Full Flow By AI', async () => {
+              if (typeof window.validateImportantAction === 'function') {
+                try {
+                  if (typeof showToast === 'function') showToast('Đang validate full flow...');
+                  await window.validateImportantAction(panelId);
+                } catch (err) {
+                  console.error('validateImportantAction error:', err);
+                  if (typeof showToast === 'function') showToast('❌ Lỗi: ' + (err.message || 'Validate thất bại'));
+                }
+              }
+            });
+          }
           addItem('⭐ Set Important Action', () => { openSetImportantActionDialog(panelId); });
           addItem('➖ Set Normal Action', async () => {
             if (window.confirm('Đặt action này thành Normal (xóa modality_stacks và lý do)?')) {

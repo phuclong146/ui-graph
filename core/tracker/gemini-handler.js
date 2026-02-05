@@ -2029,3 +2029,162 @@ LƯU Ý CUỐI CÙNG:
     }
 }
 
+const GEMINI_TIMEOUT_VALIDATE_FULL_FLOW_MS = 60000;
+
+/**
+ * Validate Full Flow By AI: call Gemini to check end-to-end flow per modality_stack.
+ * @param {Object} tracker - Tracker instance (for broadcast / ENV)
+ * @param {Object} payload - { ai_tool_info, modality_stacks_info, first_step, full_steps }
+ * @returns {Promise<{ modality_stack_routes: Array }>} Parsed result or null
+ */
+export async function validateFullFlowByAI(tracker, payload) {
+    const { ai_tool_info, modality_stacks_info, first_step, full_steps } = payload || {};
+    if (!modality_stacks_info || !Array.isArray(modality_stacks_info) || modality_stacks_info.length === 0) {
+        return { modality_stack_routes: [] };
+    }
+    const prompt = `## 1. Nhiệm vụ
+
+Bạn là trợ lý phân tích luồng UI. Nhiệm vụ: với một **important action** (first_step) và toàn bộ **full_steps** của phiên, kiểm tra với từng **modality_stack** (tính năng end-to-end) xem đã có **luồng đầy đủ từ input đến output** hay chưa.
+
+**Input:**
+- **ai_tool_info**: thông tin tool (code, company, tool_name, version, description, domain, website).
+- **modality_stacks_info**: danh sách modality stack (mỗi phần tử: code, name, description, example, main_feature_list, main_feature_reason).
+- **first_step**: step gắn với important action đang validate — format: step_id, panel_before (name, image_url), action (name, image_url, type, verb, purpose), panel_after (name, image_url).
+- **full_steps**: toàn bộ step trong phiên; mỗi step: step_id, panel_before.name, action (name, type, verb, step_purpose), panel_after.name.
+
+**Output:** JSON với key \`modality_stack_routes\`: mảng, mỗi phần tử tương ứng một modality_stack, gồm đánh giá end-to-end, lý do, và danh sách routes.
+
+## 2. Quy tắc logic (bắt buộc)
+
+Với **từng** modality_stack trong \`modality_stacks_info\`:
+
+**2.1** Chọn modality_stack hiện tại (code, name, description, example).
+
+**2.2** Tìm tất cả step **liên quan** tới modality_stack đó — **Sequence_Full_End_To_End_Flow_Steps**. Một step được coi là liên quan nếu thuộc một trong hai nhóm sau:
+
+- **Liên tiếp theo cầu nối:** step sau có \`panel_before\` trùng với \`panel_after\` của step trước (chuỗi panel_before → action → panel_after nối với nhau).
+
+- **Liên quan ngữ cảnh (cùng flow):** step có liên quan về ngữ cảnh dù không liên tiếp nhau theo cầu nối. Tức là các step cùng thuộc một luồng nghiệp vụ (cùng flow) từ input đến output cuối, ví dụ: thao tác tạo/kích hoạt rồi sang bước xem/quản lý kết quả, dù không nối trực tiếp panel_after bước trước = panel_before bước sau.
+
+  **Ví dụ:**
+  - **Step A:** Từ \`panel_video_generate\` bấm nút "generation" → ra \`panel_generation\` (xong bước generate).
+  - **Step B:** Từ \`panel_after_login\` bấm nút "asset" → ra \`panel_asset_management\` để xem kết quả generate.
+
+  Hai step này **không** có cầu nối liên tiếp (panel_after của A ≠ panel_before của B), nhưng **có liên quan ngữ cảnh**: generate video xong thì vào asset để xem kết quả — luồng từ "làm xong bước tạo nội dung" đến "xem output cuối cùng". Khi phân tích flow cho modality_stack tương ứng, step A và step B vẫn được coi là thuộc cùng một flow và có thể nằm trong cùng route/đánh giá end-to-end.
+
+Dùng cả **full_steps** và **first_step** (coi first_step là một step đặc biệt gắn important action) để xác định tập step liên quan.
+
+**2.3** Sắp xếp và tạo **routes:** từ tập step liên quan, xây dựng các **route** (đường đi) từ **điểm bắt đầu** (first_step / step đầu vào của flow) tới **điểm kết thúc** (step tạo ra output cuối của modality_stack). Mỗi route là một danh sách step theo thứ tự. Một modality_stack có thể có nhiều route.
+
+**2.4** Đánh giá **is_end_to_end_flow** cho modality_stack đó:
+- **true:** Có ít nhất một route đi được **liên tục** từ input tới output của flow đầy đủ (không thiếu bước trung gian).
+- **false:** Không có route nào đi được tới output, hoặc có tới output nhưng thiếu step trung gian.
+
+**2.5** Viết **end_to_end_flow_reason** (bằng **tiếng Việt**):
+- Nếu **is_end_to_end_flow = true:** giải thích ngắn gọn tại sao (ví dụ: có route từ panel X qua action Y tới panel Z, đủ các bước cho modality_stack).
+- Nếu **is_end_to_end_flow = false:** giải thích rõ thiếu step nào (mô tả panel_before / action / panel_after hoặc step_id) hoặc tại sao không có route tới output.
+
+## 3. Định dạng output JSON (bắt buộc)
+
+Trả về đúng cấu trúc: \`modality_stack_routes\` là mảng; mỗi phần tử có \`modality_stack_code\`, \`is_end_to_end_flow\`, \`end_to_end_flow_reason\`, \`routes\`. Mỗi route là mảng các step; mỗi step có: \`step_id\`, \`panel_before_name\`, \`action_name\`, \`action_type\`, \`action_verb\`, \`step_purpose\`, \`panel_after_name\`. Không có route thì \`routes: []\`. \`end_to_end_flow_reason\` luôn bằng tiếng Việt.
+
+## 4. Yêu cầu nhất quán
+
+- **Cùng một bộ input** thì output JSON phải **giống nhau** giữa các lần gọi (cùng số phần tử, cùng is_end_to_end_flow, cùng cấu trúc routes).
+- Chỉ dựa vào dữ liệu đã cho; không bịa step hay panel không có trong first_step / full_steps.
+
+---
+
+DỮ LIỆU INPUT (dùng để phân tích):
+
+ai_tool_info: ${JSON.stringify(ai_tool_info || {})}
+
+modality_stacks_info: ${JSON.stringify(modality_stacks_info)}
+
+first_step: ${JSON.stringify(first_step || {})}
+
+full_steps: ${JSON.stringify(full_steps || [])}`;
+
+    const responseSchema = {
+        type: 'object',
+        required: ['modality_stack_routes'],
+        properties: {
+            modality_stack_routes: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    required: ['modality_stack_code', 'is_end_to_end_flow', 'end_to_end_flow_reason', 'routes'],
+                    properties: {
+                        modality_stack_code: { type: 'string' },
+                        is_end_to_end_flow: { type: 'boolean' },
+                        end_to_end_flow_reason: { type: 'string' },
+                        routes: {
+                            type: 'array',
+                            items: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    required: ['step_id', 'panel_before_name', 'action_name', 'action_type', 'action_verb', 'step_purpose', 'panel_after_name'],
+                                    properties: {
+                                        step_id: { type: 'string' },
+                                        panel_before_name: { type: 'string' },
+                                        action_name: { type: 'string' },
+                                        action_type: { type: 'string' },
+                                        action_verb: { type: 'string' },
+                                        step_purpose: { type: 'string' },
+                                        panel_after_name: { type: 'string' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    try {
+        const { ENV } = await import('../config/env.js');
+        const requestBody = {
+            contents: [{ parts: [{ text: prompt }] }],
+            generation_config: {
+                response_mime_type: 'application/json',
+                response_schema: responseSchema
+            }
+        };
+        const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
+        const response = await fetchGeminiWithTimeout(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'x-goog-api-key': ENV.GEMINI_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            },
+            GEMINI_TIMEOUT_VALIDATE_FULL_FLOW_MS
+        );
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Gemini validateFullFlowByAI error:', errorText);
+            if (tracker && tracker._broadcast && isGeminiBillingError(response.status, errorText)) {
+                await tracker._broadcast({ type: 'show_gemini_billing_error' });
+            }
+            return null;
+        }
+        const data = await response.json();
+        let jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!jsonText) return null;
+        jsonText = jsonText.trim().replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/i, '');
+        const result = JSON.parse(jsonText);
+        return result;
+    } catch (err) {
+        console.error('validateFullFlowByAI failed:', err);
+        if (tracker && tracker._broadcast && err.message && isGeminiBillingError(0, err.message)) {
+            await tracker._broadcast({ type: 'show_gemini_billing_error' });
+        }
+        return null;
+    }
+}
+

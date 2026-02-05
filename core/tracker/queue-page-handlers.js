@@ -99,6 +99,27 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
     };
 
     /**
+     * Get ai_tool info from database by code
+     * @param {string} aiToolCode - The AI tool code
+     * @returns {Promise<Object|null>} { code, company, tool_name, version, description, domain, website } or null
+     */
+    const getAiToolInfo = async (aiToolCode) => {
+        try {
+            if (!aiToolCode) return null;
+            const pool = getDbPool();
+            const [rows] = await pool.execute(
+                `SELECT code, company, tool_name, version_code AS version, description, domain, website
+                 FROM at_tool WHERE code = ?`,
+                [aiToolCode]
+            );
+            return rows && rows[0] ? rows[0] : null;
+        } catch (err) {
+            console.error('❌ Failed to get ai_tool info:', err);
+            return null;
+        }
+    };
+
+    /**
      * Get panelBeforeBase64 from step by finding step with panel_after.item_id === panelAfterId
      * Always tries to get from step, preferring fullscreen_base64 over image_base64
      * @param {string} panelAfterId - The panel_after.item_id to search for
@@ -3840,6 +3861,113 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         } catch (err) {
             console.error('❌ setNormalAction failed:', err);
             await tracker._broadcast({ type: 'show_toast', message: '❌ Lỗi: ' + (err.message || 'Set Normal Action thất bại') });
+        }
+    };
+
+    /**
+     * Validate Full Flow By AI: build input from important action, call Gemini, broadcast result (ADMIN/VALIDATE).
+     * @param {string} actionId - item_id of the important action
+     */
+    const validateImportantActionHandler = async (actionId) => {
+        try {
+            const accountRes = await getAccountInfoHandler();
+            const accountData = accountRes?.data || accountRes;
+            const role = accountData?.role || '';
+            if (role !== 'ADMIN' && role !== 'VALIDATE') {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Chỉ ADMIN/VALIDATE mới được dùng Validate Full Flow By AI.' });
+                return;
+            }
+            if (!actionId || !tracker.dataItemManager || !tracker.stepManager) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Thiếu action hoặc chưa khởi tạo session.' });
+                return;
+            }
+            const item = await tracker.dataItemManager.getItem(actionId);
+            if (!item || item.item_category !== 'ACTION') {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Không tìm thấy action.' });
+                return;
+            }
+            const modalityStackCodes = item.modality_stacks && Array.isArray(item.modality_stacks) ? item.modality_stacks : [];
+            if (modalityStackCodes.length === 0) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Action này chưa được đánh dấu Important (chưa có modality_stacks).' });
+                return;
+            }
+            const aiToolCode = tracker.myAiToolCode;
+            if (!aiToolCode) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Chưa chọn AI tool.' });
+                return;
+            }
+
+            const ai_tool_info = await getAiToolInfo(aiToolCode);
+            const allStacks = await getAiToolModalityStacks(aiToolCode);
+            const stackMap = new Map(allStacks.map(s => [s.code, s]));
+            const modality_stacks_info = modalityStackCodes.map(code => stackMap.get(code)).filter(Boolean);
+
+            const step = await tracker.stepManager.getStepForAction(actionId);
+            if (!step) {
+                await tracker._broadcast({ type: 'show_toast', message: '❌ Action chưa có step (chưa draw panel / mark done).' });
+                return;
+            }
+            const panelBeforeItem = await tracker.dataItemManager.getItem(step.panel_before?.item_id);
+            const panelAfterId = step.panel_after?.item_id;
+            const panelAfterItem = panelAfterId ? await tracker.dataItemManager.getItem(panelAfterId) : null;
+            const first_step = {
+                step_id: step.step_id,
+                panel_before: {
+                    name: panelBeforeItem?.name || 'Unknown',
+                    image_url: panelBeforeItem?.fullscreen_url || panelBeforeItem?.image_url || null
+                },
+                action: {
+                    name: item.name || 'Unknown',
+                    image_url: item.image_url || null,
+                    type: item.type || null,
+                    verb: item.verb || null,
+                    purpose: item.purpose || null
+                },
+                panel_after: {
+                    name: panelAfterItem?.name || 'None',
+                    image_url: panelAfterItem?.fullscreen_url || panelAfterItem?.image_url || null
+                }
+            };
+
+            const allSteps = await tracker.stepManager.getAllSteps();
+            const full_steps = [];
+            for (const s of allSteps) {
+                const pb = await tracker.dataItemManager.getItem(s.panel_before?.item_id);
+                const act = await tracker.dataItemManager.getItem(s.action?.item_id);
+                const pa = s.panel_after?.item_id ? await tracker.dataItemManager.getItem(s.panel_after.item_id) : null;
+                full_steps.push({
+                    step_id: s.step_id,
+                    panel_before_name: pb?.name || null,
+                    action: {
+                        name: act?.name || null,
+                        type: act?.type || null,
+                        verb: act?.verb || null,
+                        step_purpose: s.purpose || null
+                    },
+                    panel_after_name: pa?.name || null
+                });
+            }
+
+            const { validateFullFlowByAI } = await import('./gemini-handler.js');
+            const result = await validateFullFlowByAI(tracker, {
+                ai_tool_info,
+                modality_stacks_info,
+                first_step,
+                full_steps
+            });
+            if (!result || !result.modality_stack_routes) {
+                await tracker._broadcast({ type: 'show_toast', message: '⚠️ Gemini không trả về kết quả.' });
+                return;
+            }
+            const allOk = result.modality_stack_routes.every(r => r.is_end_to_end_flow);
+            const summary = allOk
+                ? `✅ Đủ luồng end-to-end cho ${result.modality_stack_routes.length} modality stack(s).`
+                : `⚠️ Một số modality stack chưa đủ luồng. Xem chi tiết trong console.`;
+            await tracker._broadcast({ type: 'show_toast', message: summary });
+            await tracker._broadcast({ type: 'validate_full_flow_result', actionId, result });
+        } catch (err) {
+            console.error('❌ validateImportantAction failed:', err);
+            await tracker._broadcast({ type: 'show_toast', message: '❌ Lỗi: ' + (err.message || 'Validate Full Flow thất bại') });
         }
     };
 
@@ -10821,6 +10949,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         getModalityStacksForCurrentTool: getModalityStacksForCurrentToolHandler,
         setImportantAction: setImportantActionHandler,
         setNormalAction: setNormalActionHandler,
+        validateImportantAction: validateImportantActionHandler,
         renamePanel: renamePanelHandler,
         renameActionByAI: renameActionByAIHandler,
         getClickEventsForPanel: getClickEventsForPanelHandler,
