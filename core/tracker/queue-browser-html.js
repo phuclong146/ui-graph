@@ -6821,10 +6821,10 @@ Bạn có chắc chắn muốn rollback?\`;
                 label.appendChild(importantIcon);
             }
             
-            // Validate Full Flow result: đọc từ node (PanelLogManager gán từ item.metadata) hoặc node.metadata
-            const routes = (node.modality_stack_routes && node.modality_stack_routes.length > 0)
-                ? node.modality_stack_routes
-                : (node.metadata && Array.isArray(node.metadata.modality_stack_routes) ? node.metadata.modality_stack_routes : null);
+            // Validate Full Flow result: đọc từ node (PanelLogManager gán từ item.modality_stacks_routes)
+            const routes = (node.modality_stacks_routes && node.modality_stacks_routes.length > 0)
+                ? node.modality_stacks_routes
+                : (node.modality_stack_routes && node.modality_stack_routes.length > 0 ? node.modality_stack_routes : null);
             if (routes && routes.length > 0) {
               const allOk = routes.every(function (r) { return r.is_end_to_end_flow; });
               const validateIcon = document.createElement('span');

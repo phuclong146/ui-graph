@@ -68,22 +68,13 @@ export class PanelLogManager {
     }
 
     /**
-     * Get modality_stack_routes from item.metadata (supports object/string metadata and typo key modality_stacks_routes).
-     * @param {{ metadata?: object|string }} item
+     * Get modality_stack_routes from item (top-level only; không đọc từ metadata).
+     * @param {{ modality_stacks_routes?: Array, modality_stack_routes?: Array }} item
      * @returns {Array|null}
      */
     _getModalityStackRoutes(item) {
-        if (!item || !item.metadata) return null;
-        let meta = item.metadata;
-        if (typeof meta === 'string') {
-            try {
-                meta = JSON.parse(meta);
-            } catch {
-                return null;
-            }
-        }
-        if (!meta || typeof meta !== 'object') return null;
-        const routes = meta.modality_stack_routes ?? meta.modality_stacks_routes ?? null;
+        if (!item) return null;
+        const routes = item.modality_stacks_routes ?? item.modality_stack_routes ?? null;
         return Array.isArray(routes) ? routes : null;
     }
 

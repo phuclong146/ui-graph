@@ -3973,11 +3973,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 ? `✅ Đủ luồng end-to-end cho ${result.modality_stack_routes.length} modality stack(s).`
                 : `⚠️ Một số modality stack chưa đủ luồng. Xem chi tiết trong console.`;
             await tracker._broadcast({ type: 'show_toast', message: summary });
-            const currentItem = await tracker.dataItemManager.getItem(actionId);
-            const existingMeta = currentItem?.metadata || {};
             await tracker.dataItemManager.updateItem(actionId, {
-                metadata: { ...existingMeta, modality_stack_routes: result.modality_stack_routes }
+                modality_stacks_routes: result.modality_stack_routes
             });
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                await exporter.updateItemModalityStacksRoutes(actionId, result.modality_stack_routes);
+                await exporter.close();
+            } catch (dbErr) {
+                console.error('⚠️ Failed to update modality_stacks_routes in DB:', dbErr);
+            }
             await tracker._broadcast({
                 type: 'tree_update',
                 data: await tracker.panelLogManager.buildTreeStructure()
