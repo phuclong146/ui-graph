@@ -7772,11 +7772,72 @@ Bạn có chắc chắn muốn rollback?\`;
               return currentBugInfo.details.some(d => d.bug_type === type && d.bug_fixed !== true);
           };
 
-          // Helper to get missing actions description
-          const getMissingActionsDescription = () => {
-              if (!currentBugInfo || !currentBugInfo.details) return '';
-              const missingActionsBug = currentBugInfo.details.find(d => d.bug_type === 'panel.missing_actions' && d.bug_fixed !== true);
-              return missingActionsBug?.description || '';
+          // Parse bug_description (can be JSON array string or legacy string format)
+          const parseMissingActionsFromDescription = (description) => {
+              if (!description) return [];
+              if (Array.isArray(description)) {
+                  return description.filter(action => 
+                      action && typeof action === 'object' && action.mising_action_name
+                  );
+              }
+              if (typeof description === 'string') {
+                  try {
+                      const parsed = JSON.parse(description);
+                      if (Array.isArray(parsed)) {
+                          return parsed.filter(action => 
+                              action && typeof action === 'object' && action.mising_action_name
+                          );
+                      }
+                  } catch (e) {
+                      // Not JSON, try legacy string format
+                  }
+                  return description.split('\\n')
+                      .filter(line => line.trim())
+                      .map(line => {
+                          const colonIndex = line.indexOf(':');
+                          if (colonIndex === -1) {
+                              return { mising_action_name: line.trim(), mising_action_reason: '' };
+                          }
+                          return {
+                              mising_action_name: line.substring(0, colonIndex).trim(),
+                              mising_action_reason: line.substring(colonIndex + 1).trim()
+                          };
+                      });
+              }
+              return [];
+          };
+
+          // Format array to bug_description (store as JSON array string)
+          const formatMissingActionsToDescription = (actionsArray) => {
+              if (!Array.isArray(actionsArray) || actionsArray.length === 0) return null;
+              const filtered = actionsArray.filter(action => 
+                  action && action.mising_action_name && action.mising_action_name.trim()
+              );
+              if (filtered.length === 0) return null;
+              return JSON.stringify(filtered);
+          };
+
+          // Format array to display string (for tooltip)
+          const formatMissingActionsToDisplayString = (actionsArray) => {
+              if (!Array.isArray(actionsArray) || actionsArray.length === 0) return '';
+              return actionsArray
+                  .filter(action => action.mising_action_name && action.mising_action_name.trim())
+                  .map(action => {
+                      const name = action.mising_action_name.trim();
+                      const reason = (action.mising_action_reason || '').trim();
+                      return reason ? name + ': ' + reason : name;
+                  })
+                  .join('\\n');
+          };
+
+          // Get existing missing actions from bug_info
+          const getMissingActionsArray = () => {
+              if (!currentBugInfo || !currentBugInfo.details) return [];
+              const missingActionsBug = currentBugInfo.details.find(
+                  d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.bug_fixed !== true
+              );
+              if (!missingActionsBug?.description) return [];
+              return parseMissingActionsFromDescription(missingActionsBug.description);
           };
 
           // Helper to get value from action item
@@ -7881,6 +7942,15 @@ Bạn có chắc chắn muốn rollback?\`;
                                   <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
                               </label>
                           </div>
+                          <div style="margin-top: 5px; padding: 8px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+                              <div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 6px;">Actions on this panel: \${actionItem && actionItem.panel_after_actions ? actionItem.panel_after_actions.length : 0}</div>
+                              <div style="max-height: 120px; overflow-y: auto; font-size: 12px; color: #666;">
+                                  \${actionItem && actionItem.panel_after_actions && actionItem.panel_after_actions.length > 0
+                                    ? actionItem.panel_after_actions.map((a, i) => \`<div style="padding: 2px 0; border-bottom: 1px solid #eee;">\${i + 1}. \${a.name || 'Unknown'}</div>\`).join('')
+                                    : '<div style="color: #999; font-style: italic;">No actions recorded</div>'
+                                  }
+                              </div>
+                          </div>
                       </div>
                   </div>
                   
@@ -7893,13 +7963,16 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 10px;">
                           <div style="display: flex; align-items: center; gap: 10px;">
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
-                                  <input type="checkbox" name="bug_type" value="panel.missing_actions" \${isChecked('panel.missing_actions') ? 'checked' : ''}> Missing actions
+                                  <input type="checkbox" name="bug_type" value="panel_after.missing_actions" \${isChecked('panel_after.missing_actions') || isChecked('panel.missing_actions') ? 'checked' : ''}> Missing actions
                               </label>
                               <button id="detectMissingActionsBtn" type="button" style="padding: 6px 12px; border: 1px solid #007bff; background: #007bff; color: white; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">Detect Missing Actions By AI</button>
                           </div>
                           <div>
-                              <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #555;">Mô tả chi tiết các action bị thiếu:</label>
-                              <textarea id="missingActionsDescription" rows="6" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; font-size: 13px; font-family: inherit;" placeholder="Nhập mô tả chi tiết các action bị thiếu...">\${getMissingActionsDescription()}</textarea>
+                              <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #555;">Danh sách action bị thiếu:</label>
+                              <div id="missingActionsListContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;">
+                                  <!-- Actions rendered dynamically -->
+                              </div>
+                              <button id="addMissingActionBtn" type="button" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 13px;">➕ Add missing action</button>
                           </div>
                       </div>
                   </div>
@@ -7911,15 +7984,137 @@ Bạn có chắc chắn muốn rollback?\`;
               </div>
           \`;
           
+          // === Missing Actions Interactive List ===
+          let missingActionsArray = getMissingActionsArray();
+
+          const renderMissingActionsList = () => {
+              const container = content.querySelector('#missingActionsListContainer');
+              if (!container) return;
+              container.innerHTML = '';
+
+              if (missingActionsArray.length === 0) {
+                  container.innerHTML = '<div style="color: #999; font-size: 12px; text-align: center; padding: 10px;">Chưa có action nào. Nhấn "Detect Missing Actions By AI" hoặc "➕ Add Action" để thêm.</div>';
+                  return;
+              }
+
+              missingActionsArray.forEach((action, index) => {
+                  const row = document.createElement('div');
+                  row.className = 'missing-action-row';
+                  row.style.cssText = 'display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px;';
+
+                  const nameInput = document.createElement('input');
+                  nameInput.type = 'text';
+                  nameInput.value = action.mising_action_name || '';
+                  nameInput.placeholder = 'Action name';
+                  nameInput.style.cssText = 'flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;';
+                  nameInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_name = e.target.value;
+                  });
+
+                  const reasonInput = document.createElement('textarea');
+                  reasonInput.value = action.mising_action_reason || '';
+                  reasonInput.placeholder = 'Reason';
+                  reasonInput.style.cssText = 'flex: 2; padding: 6px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; min-height: 32px; font-size: 13px; font-family: inherit;';
+                  reasonInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_reason = e.target.value;
+                  });
+
+                  const deleteBtn = document.createElement('button');
+                  deleteBtn.type = 'button';
+                  deleteBtn.textContent = '🗑️';
+                  deleteBtn.style.cssText = 'padding: 6px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; flex-shrink: 0;';
+                  deleteBtn.addEventListener('click', () => {
+                      missingActionsArray.splice(index, 1);
+                      renderMissingActionsList();
+                  });
+
+                  row.appendChild(nameInput);
+                  row.appendChild(reasonInput);
+                  row.appendChild(deleteBtn);
+                  container.appendChild(row);
+              });
+          };
+
+          // Initial render
+          renderMissingActionsList();
+
+          // Add Action button
+          const addMissingActionBtn = content.querySelector('#addMissingActionBtn');
+          if (addMissingActionBtn) {
+              addMissingActionBtn.addEventListener('click', () => {
+                  missingActionsArray.push({ mising_action_name: '', mising_action_reason: '' });
+                  renderMissingActionsList();
+                  // Scroll to bottom of list
+                  const container = content.querySelector('#missingActionsListContainer');
+                  if (container) container.scrollTop = container.scrollHeight;
+              });
+          }
+
           // Setup Detect Missing Actions By AI button handler
           const detectMissingActionsBtn = content.querySelector('#detectMissingActionsBtn');
           if (detectMissingActionsBtn) {
               detectMissingActionsBtn.addEventListener('click', async () => {
-                  // TODO: Logic sẽ được cài đặt sau
-                  if (typeof showToast === 'function') {
-                      showToast('⚠️ Tính năng Detect Missing Actions By AI sẽ được cài đặt sau');
-                  } else {
-                      alert('Tính năng Detect Missing Actions By AI sẽ được cài đặt sau');
+                  if (!window.detectMissingActionsByAI) {
+                      if (typeof showToast === 'function') {
+                          showToast('⚠️ detectMissingActionsByAI is not available');
+                      } else {
+                          alert('detectMissingActionsByAI is not available');
+                      }
+                      return;
+                  }
+
+                  // Show loading state
+                  const originalText = detectMissingActionsBtn.textContent;
+                  detectMissingActionsBtn.disabled = true;
+                  detectMissingActionsBtn.textContent = '⏳ Detecting...';
+                  detectMissingActionsBtn.style.opacity = '0.7';
+                  detectMissingActionsBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      const panelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+                      if (!panelAfterId) {
+                          if (typeof showToast === 'function') {
+                              showToast('⚠️ Không tìm thấy panel_after cho action này');
+                          }
+                          return;
+                      }
+                      const result = await window.detectMissingActionsByAI(panelAfterId);
+
+                      if (result && Array.isArray(result) && result.length > 0) {
+                          // Populate the interactive list with results
+                          missingActionsArray = result.map(item => ({
+                              mising_action_name: item.mising_action_name || '',
+                              mising_action_reason: item.mising_action_reason || ''
+                          }));
+                          renderMissingActionsList();
+
+                          // Auto-check the missing_actions checkbox
+                          const missingActionsCheckbox = content.querySelector('input[name="bug_type"][value="panel_after.missing_actions"]');
+                          if (missingActionsCheckbox) {
+                              missingActionsCheckbox.checked = true;
+                          }
+
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Phát hiện ' + result.length + ' action(s) bị thiếu');
+                          }
+                      } else {
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Không phát hiện action nào bị thiếu');
+                          }
+                      }
+                  } catch (err) {
+                      console.error('Error detecting missing actions:', err);
+                      if (typeof showToast === 'function') {
+                          showToast('❌ Lỗi khi detect missing actions: ' + (err.message || err));
+                      } else {
+                          alert('Error: ' + (err.message || err));
+                      }
+                  } finally {
+                      // Restore button state
+                      detectMissingActionsBtn.disabled = false;
+                      detectMissingActionsBtn.textContent = originalText;
+                      detectMissingActionsBtn.style.opacity = '1';
+                      detectMissingActionsBtn.style.cursor = 'pointer';
                   }
               });
           }
@@ -7937,7 +8132,6 @@ Bạn có chắc chắn muốn rollback?\`;
           confirmBtn.onclick = async () => {
               const note = document.getElementById('raiseBugNote').value;
               const checkboxes = content.querySelectorAll('input[name="bug_type"]:checked');
-              const missingActionsDescription = document.getElementById('missingActionsDescription')?.value || '';
               
               const bugNameMap = {
                   "action.name": "Action Name",
@@ -7950,7 +8144,7 @@ Bạn có chắc chắn muốn rollback?\`;
                   "panel_after.image": "Panel After Image or Position",
                   "panel_after.type": "Panel After Type",
                   "panel_after.verb": "Panel After Verb",
-                  "panel.missing_actions": "Missing actions"
+                  "panel_after.missing_actions": "Missing Actions"
               };
               
               // Get active bugs from checkboxes
@@ -7960,9 +8154,14 @@ Bạn có chắc chắn muốn rollback?\`;
                       bug_name: bugNameMap[cb.value] || cb.value,
                       bug_fixed: false
                   };
-                  // Add description for missing actions
-                  if (cb.value === 'panel.missing_actions' && missingActionsDescription) {
-                      bug.description = missingActionsDescription;
+                  // Add description for missing actions (store as JSON array string)
+                  if (cb.value === 'panel_after.missing_actions') {
+                      const filteredActions = missingActionsArray.filter(a => 
+                          a && a.mising_action_name && a.mising_action_name.trim()
+                      );
+                      if (filteredActions.length > 0) {
+                          bug.description = JSON.stringify(filteredActions);
+                      }
                   }
                   return bug;
               });
@@ -8068,6 +8267,37 @@ Bạn có chắc chắn muốn rollback?\`;
                       const statusText = d.bug_fixed ? '[đã sửa]' : '[cần sửa]';
                       const resolvedAt = d.bug_fixed && d.resolved_at ? ' — ' + formatResolvedAtGmt7(d.resolved_at) : '';
                       content += \`- \${d.bug_name} \${statusText}\${resolvedAt}\n\`;
+                      
+                      // Show missing actions details in tooltip
+                      if ((d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.description) {
+                          let actionsArr = [];
+                          try {
+                              if (typeof d.description === 'string') {
+                                  const parsed = JSON.parse(d.description);
+                                  if (Array.isArray(parsed)) {
+                                      actionsArr = parsed.filter(a => a && a.mising_action_name);
+                                  }
+                              } else if (Array.isArray(d.description)) {
+                                  actionsArr = d.description.filter(a => a && a.mising_action_name);
+                              }
+                          } catch (e) {
+                              // Legacy string format fallback
+                              if (typeof d.description === 'string' && d.description.trim()) {
+                                  const lines = d.description.split('\\n').filter(l => l.trim());
+                                  actionsArr = lines.map(line => {
+                                      const ci = line.indexOf(':');
+                                      if (ci === -1) return { mising_action_name: line.trim(), mising_action_reason: '' };
+                                      return { mising_action_name: line.substring(0, ci).trim(), mising_action_reason: line.substring(ci + 1).trim() };
+                                  });
+                              }
+                          }
+                          if (actionsArr.length > 0) {
+                              actionsArr.forEach(a => {
+                                  const reason = (a.mising_action_reason || '').trim();
+                                  content += \`  · \${a.mising_action_name}\${reason ? ': ' + reason : ''}\n\`;
+                              });
+                          }
+                      }
                   });
               }
           } else if (note) {

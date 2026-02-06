@@ -320,12 +320,28 @@ export async function initBrowsers(tracker, startUrl) {
 
         const step = await tracker.stepManager.getStepForAction(actionId);
         if (step && step.panel_after && step.panel_after.item_id) {
+            actionItem.panel_after_id = step.panel_after.item_id;
             const panelAfter = await tracker.dataItemManager.getItem(step.panel_after.item_id);
             if (panelAfter) {
                 actionItem.panel_after_name = panelAfter.name;
                 actionItem.panel_after_type = panelAfter.type;
                 actionItem.panel_after_verb = panelAfter.verb;
                 actionItem.panel_after_image = panelAfter.image_url;
+            }
+            // Get child actions of panel_after for RaiseBugDialog display
+            try {
+                const parentEntry = await tracker.parentPanelManager.getPanelEntry(step.panel_after.item_id);
+                const childActionIds = parentEntry?.child_actions || [];
+                const childActions = [];
+                for (const cid of childActionIds) {
+                    const childItem = await tracker.dataItemManager.getItem(cid);
+                    if (childItem) {
+                        childActions.push({ id: cid, name: childItem.name || 'Unknown' });
+                    }
+                }
+                actionItem.panel_after_actions = childActions;
+            } catch (e) {
+                actionItem.panel_after_actions = [];
             }
         }
         return actionItem;
@@ -372,6 +388,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("showPanelInfoGraph", handlers.showPanelInfoGraph);
     await tracker.queuePage.exposeFunction("showStepInfoGraph", handlers.showStepInfoGraph);
     await tracker.queuePage.exposeFunction("validateStep", handlers.validateStep);
+    await tracker.queuePage.exposeFunction("detectMissingActionsByAI", handlers.detectMissingActionsByAI);
     await tracker.queuePage.exposeFunction("raiseBug", handlers.raiseBug);
     await tracker.queuePage.exposeFunction("resolveBug", handlers.resolveBug);
     await tracker.queuePage.exposeFunction("cancelBug", handlers.cancelBug);
