@@ -67,6 +67,26 @@ export class PanelLogManager {
         return intersections;
     }
 
+    /**
+     * Get modality_stack_routes from item.metadata (supports object/string metadata and typo key modality_stacks_routes).
+     * @param {{ metadata?: object|string }} item
+     * @returns {Array|null}
+     */
+    _getModalityStackRoutes(item) {
+        if (!item || !item.metadata) return null;
+        let meta = item.metadata;
+        if (typeof meta === 'string') {
+            try {
+                meta = JSON.parse(meta);
+            } catch {
+                return null;
+            }
+        }
+        if (!meta || typeof meta !== 'object') return null;
+        const routes = meta.modality_stack_routes ?? meta.modality_stacks_routes ?? null;
+        return Array.isArray(routes) ? routes : null;
+    }
+
     async buildTreeStructure() {
         try {
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
@@ -110,6 +130,7 @@ export class PanelLogManager {
                     bug_note: item.bug_info?.note || null,
                     modality_stacks: item.modality_stacks || null,
                     modality_stacks_reason: item.modality_stacks_reason || null,
+                    modality_stack_routes: this._getModalityStackRoutes(item) || null,
                     children: []
                 });
             });
@@ -211,6 +232,7 @@ export class PanelLogManager {
                     bug_note: item.bug_info?.note || null,
                     modality_stacks: item.modality_stacks || null,
                     modality_stacks_reason: item.modality_stacks_reason || null,
+                    modality_stack_routes: this._getModalityStackRoutes(item) || null,
                     children: []
                 });
             });
@@ -380,7 +402,8 @@ export class PanelLogManager {
                             bug_note: (item.bug_info && item.bug_info.note) ? item.bug_info.note : null,
                             modality_stacks: item.modality_stacks || null,
                             modality_stacks_reason: item.modality_stacks_reason || null,
-                            modality_stacks_info: item.modality_stacks_info || null
+                            modality_stacks_info: item.modality_stacks_info || null,
+                            modality_stack_routes: this._getModalityStackRoutes(item) || null
                         });
                     }
                 });
@@ -467,6 +490,7 @@ export class PanelLogManager {
                                     modality_stacks: info.modality_stacks || null,
                                     modality_stacks_reason: info.modality_stacks_reason || null,
                                     modality_stacks_info: info.modality_stacks_info || null,
+                                    modality_stack_routes: info.modality_stack_routes || null,
                                     children: []
                                 };
                             });

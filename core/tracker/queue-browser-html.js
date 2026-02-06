@@ -2148,8 +2148,6 @@ export const QUEUE_BROWSER_HTML = `
       let panelTreeData = [];
       let selectedPanelId = null;
       let expandedPanels = new Set();
-      /** @type {Object.<string, { modality_stack_routes: Array }>} Kết quả validate full flow theo actionId */
-      let validateFullFlowResultByActionId = {};
       
       // Helper functions for localStorage
       function getLocalStorage(key) {
@@ -2446,16 +2444,6 @@ export const QUEUE_BROWSER_HTML = `
         
         if (evt.type === 'show_toast') {
           showToast(evt.message);
-          return;
-        }
-        
-        if (evt.type === 'validate_full_flow_result') {
-          if (evt.actionId && evt.result) {
-            validateFullFlowResultByActionId[evt.actionId] = evt.result;
-            renderPanelTree();
-            updateGraphPanelLogTreeIfOpen(panelTreeData);
-            updateVideoValidationPanelLogTreeIfOpen(panelTreeData);
-          }
           return;
         }
         
@@ -6833,10 +6821,12 @@ Bạn có chắc chắn muốn rollback?\`;
                 label.appendChild(importantIcon);
             }
             
-            // Validate Full Flow result: dấu hiệu + tooltip lý do
-            const validateResult = node.panel_id ? validateFullFlowResultByActionId[node.panel_id] : null;
-            if (validateResult && validateResult.modality_stack_routes && validateResult.modality_stack_routes.length > 0) {
-              const allOk = validateResult.modality_stack_routes.every(function (r) { return r.is_end_to_end_flow; });
+            // Validate Full Flow result: đọc từ node (PanelLogManager gán từ item.metadata) hoặc node.metadata
+            const routes = (node.modality_stack_routes && node.modality_stack_routes.length > 0)
+                ? node.modality_stack_routes
+                : (node.metadata && Array.isArray(node.metadata.modality_stack_routes) ? node.metadata.modality_stack_routes : null);
+            if (routes && routes.length > 0) {
+              const allOk = routes.every(function (r) { return r.is_end_to_end_flow; });
               const validateIcon = document.createElement('span');
               validateIcon.style.marginLeft = '6px';
               validateIcon.style.cursor = 'help';
@@ -6854,13 +6844,19 @@ Bạn có chắc chắn muốn rollback?\`;
                   'background: rgba(0,0,0,0.92); color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 12px;' +
                   'max-width: 420px; z-index: 10001; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
                 let html = '<div style="font-weight:600; margin-bottom:8px; color: #4fc3f7;">Kết quả Validate Full Flow</div>';
-                validateResult.modality_stack_routes.forEach(function (r) {
+                routes.forEach(function (r) {
                   const icon = r.is_end_to_end_flow ? '✅' : '⚠️';
                   html += '<div style="margin-top:10px; padding:8px; background: rgba(255,255,255,0.08); border-radius:6px; border-left:3px solid ' + (r.is_end_to_end_flow ? '#4caf50' : '#ff9800') + ';">';
                   html += '<div style="font-weight:600; margin-bottom:4px;">' + icon + ' ' + (r.modality_stack_code || '') + '</div>';
                   html += '<div style="color: #e0e0e0; font-size: 11px;">' + (r.end_to_end_flow_reason || '') + '</div>';
-                  if (r.is_end_to_end_flow && r.routes && r.routes.length > 0) {
-                    r.routes.forEach(function (route, idx) {
+                  if (r.routes && r.routes.length > 0) {
+                    var routesToShow = r.is_end_to_end_flow
+                      ? r.routes
+                      : (function () {
+                          var longest = r.routes.reduce(function (a, b) { return (a && a.length) >= (b && b.length) ? a : b; }, null);
+                          return longest ? [longest] : [];
+                        }());
+                    routesToShow.forEach(function (route, idx) {
                       var parts = [];
                       (route || []).forEach(function (step, i) {
                         var pBefore = step.panel_before_name || '';
@@ -6870,7 +6866,10 @@ Bạn có chắc chắn muốn rollback?\`;
                         if (i === (route.length - 1) && (step.panel_after_name || '')) parts.push(step.panel_after_name);
                       });
                       if (parts.length) {
-                        html += '<div style="margin-top:6px; font-size: 11px; color: #81d4fa;">Route' + (r.routes.length > 1 ? ' ' + (idx + 1) : '') + ': ' + parts.join(' → ') + '</div>';
+                        var label = r.is_end_to_end_flow
+                          ? ('Route' + (r.routes.length > 1 ? ' ' + (idx + 1) : ''))
+                          : 'Route (dài nhất)';
+                        html += '<div style="margin-top:6px; font-size: 11px; color: #81d4fa;">' + label + ': ' + parts.join(' → ') + '</div>';
                       }
                     });
                   }
