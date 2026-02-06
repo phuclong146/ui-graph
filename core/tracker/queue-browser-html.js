@@ -1880,7 +1880,7 @@ export const QUEUE_BROWSER_HTML = `
 
     <!-- Resolved Bug Modal (ADMIN/VALIDATE) - same layout as Raise Bug -->
     <div id="resolvedBugModal" style="display:none; position:fixed; z-index:20008; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-        <div id="resolvedBugDialog" style="background:white; width:800px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+        <div id="resolvedBugDialog" style="background:white; width:1400px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:800px; min-height:500px;">
             <div style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5;">
                 <h3 style="margin:0; font-size:18px; color:#333;">Resolved Bug</h3>
                 <button id="closeResolvedBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
@@ -7722,27 +7722,26 @@ Bạn có chắc chắn muốn rollback?\`;
 
       // RaiseBug Dialog Handler
       async function showRaiseBugDialog(actionId, currentBugInfo = null, actionItem = null) {
-          // Fetch action item if not provided
-          if (!actionItem && window.getActionItem) {
+          // Always fetch fresh data to get latest bug_info and full action details
+          if (window.getActionItem) {
               try {
-                  actionItem = await window.getActionItem(actionId);
+                  const freshItem = await window.getActionItem(actionId);
+                  if (freshItem) {
+                      if (!actionItem) {
+                          actionItem = freshItem;
+                      } else {
+                          // Merge: fresh data overrides stale data
+                          actionItem = { ...actionItem, ...freshItem };
+                      }
+                      // Always use the freshest bug_info
+                      currentBugInfo = freshItem.bug_info || currentBugInfo;
+                  }
               } catch (e) {
                   console.error('Failed to fetch action item for bug dialog:', e);
               }
-          } else if (actionItem && (!actionItem.purpose && !actionItem.item_purpose) && window.getActionItem) {
-              // If we have an item but it seems incomplete (e.g. from UI event), try to fetch full data
-              try {
-                  const fullItem = await window.getActionItem(actionId);
-                  if (fullItem) {
-                      // Merge full item into actionItem
-                      actionItem = { ...actionItem, ...fullItem };
-                  }
-              } catch (e) {
-                  console.warn('Failed to fetch full action item:', e);
-              }
           }
 
-          // If currentBugInfo is null, try to get it from actionItem
+          // Fallback: if currentBugInfo is still null, try to get it from actionItem
           if (!currentBugInfo && actionItem && actionItem.bug_info) {
               currentBugInfo = actionItem.bug_info;
           }
@@ -7830,11 +7829,14 @@ Bạn có chắc chắn muốn rollback?\`;
                   .join('\\n');
           };
 
-          // Get existing missing actions from bug_info
+          // Get existing missing actions from bug_info (prefer active, fallback to resolved)
           const getMissingActionsArray = () => {
               if (!currentBugInfo || !currentBugInfo.details) return [];
+              // Prefer active (unfixed) missing actions bug
               const missingActionsBug = currentBugInfo.details.find(
                   d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.bug_fixed !== true
+              ) || currentBugInfo.details.find(
+                  d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions')
               );
               if (!missingActionsBug?.description) return [];
               return parseMissingActionsFromDescription(missingActionsBug.description);
@@ -7879,7 +7881,7 @@ Bạn có chắc chắn muốn rollback?\`;
                   <span><strong>Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>Save</strong> để báo lỗi.</span>
               </div>
               
-              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: flex-start;">
+              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: stretch;">
                   <!-- Action Info Section -->
                   <div style="flex: 1; min-width: 0; padding-right: 15px;">
                       <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
@@ -7958,18 +7960,18 @@ Bạn có chắc chắn muốn rollback?\`;
                   <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
                   
                   <!-- Panel After Actions Section -->
-                  <div style="flex: 1; min-width: 0; padding-left: 15px;">
+                  <div style="flex: 1; min-width: 0; padding-left: 15px; display: flex; flex-direction: column;">
                       <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Actions</h4>
-                      <div style="display: flex; flex-direction: column; gap: 10px;">
+                      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: hidden;">
                           <div style="display: flex; align-items: center; gap: 10px;">
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
                                   <input type="checkbox" name="bug_type" value="panel_after.missing_actions" \${isChecked('panel_after.missing_actions') || isChecked('panel.missing_actions') ? 'checked' : ''}> Missing actions
                               </label>
                               <button id="detectMissingActionsBtn" type="button" style="padding: 6px 12px; border: 1px solid #007bff; background: #007bff; color: white; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">Detect Missing Actions By AI</button>
                           </div>
-                          <div>
+                          <div style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
                               <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #555;">Danh sách action bị thiếu:</label>
-                              <div id="missingActionsListContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;">
+                              <div id="missingActionsListContainer" style="flex: 1; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;">
                                   <!-- Actions rendered dynamically -->
                               </div>
                               <button id="addMissingActionBtn" type="button" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 13px;">➕ Add missing action</button>
@@ -8367,7 +8369,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const getDetailByType = (type) => bugInfo.details.find(d => d.bug_type === type);
           const isFixed = (type) => { const d = getDetailByType(type); return d && d.bug_fixed === true; };
           const getDetailIndex = (type) => bugInfo.details.findIndex(d => d.bug_type === type);
-          const bugNameMap = { 'action.name': 'Action Name', 'action.image': 'Action Image or Position', 'action.type': 'Action Type', 'action.verb': 'Action Verb', 'action.content': 'Action Content', 'action.purpose': 'Action Purpose', 'panel_after.name': 'Panel After Name', 'panel_after.image': 'Panel After Image or Position', 'panel_after.type': 'Panel After Type', 'panel_after.verb': 'Panel After Verb' };
+          const bugNameMap = { 'action.name': 'Action Name', 'action.image': 'Action Image or Position', 'action.type': 'Action Type', 'action.verb': 'Action Verb', 'action.content': 'Action Content', 'action.purpose': 'Action Purpose', 'panel_after.name': 'Panel After Name', 'panel_after.image': 'Panel After Image or Position', 'panel_after.type': 'Panel After Type', 'panel_after.verb': 'Panel After Verb', 'panel_after.missing_actions': 'Missing Actions', 'panel.missing_actions': 'Missing Actions' };
 
           const rowHtml = (type) => {
               const detail = getDetailByType(type);
@@ -8384,42 +8386,97 @@ Bạn có chắc chắn muốn rollback?\`;
               return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;">\${valueHtml}</div>\`;
           };
 
+          // Parse missing actions description for display
+          const parseMissingActionsForDisplay = (description) => {
+              if (!description) return [];
+              if (Array.isArray(description)) return description.filter(a => a && a.mising_action_name);
+              if (typeof description === 'string') {
+                  try {
+                      const parsed = JSON.parse(description);
+                      if (Array.isArray(parsed)) return parsed.filter(a => a && a.mising_action_name);
+                  } catch (e) {}
+                  return description.split('\\n').filter(l => l.trim()).map(line => {
+                      const ci = line.indexOf(':');
+                      if (ci === -1) return { mising_action_name: line.trim(), mising_action_reason: '' };
+                      return { mising_action_name: line.substring(0, ci).trim(), mising_action_reason: line.substring(ci + 1).trim() };
+                  });
+              }
+              return [];
+          };
+          const missingActionsBugDetail = getDetailByType('panel_after.missing_actions') || getDetailByType('panel.missing_actions');
+          const missingActionsForDisplay = missingActionsBugDetail ? parseMissingActionsForDisplay(missingActionsBugDetail.description) : [];
+          const missingActionsBugType = missingActionsBugDetail ? missingActionsBugDetail.bug_type : 'panel_after.missing_actions';
+
           content.innerHTML = \`
               <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #d4edda; border: 1px solid #28a745; border-radius: 6px; line-height: 1.5;">
                   <strong>Hướng dẫn:</strong> Chọn các mục đã được sửa xong, sau đó bấm <strong>OK</strong>.
               </div>
-              <div style="margin-bottom: 15px;">
-                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
-                  <div style="display: flex; gap: 15px;">
-                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
-                          \${rowHtml('action.name')}
-                          \${rowHtml('action.type')}
-                          \${rowHtml('action.verb')}
-                          \${rowHtml('action.content')}
-                          \${rowHtml('action.purpose')}
+              
+              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: stretch;">
+                  <!-- Action Info Section -->
+                  <div style="flex: 1; min-width: 0; padding-right: 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                              \${getActionValue('action.image') ? \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${rowHtml('action.image')}
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              \${rowHtml('action.name')}
+                              \${rowHtml('action.type')}
+                              \${rowHtml('action.verb')}
+                              \${rowHtml('action.content')}
+                              \${rowHtml('action.purpose')}
+                          </div>
                       </div>
-                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
-                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
-                          \${getActionValue('action.image') ? \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
-                          \${rowHtml('action.image')}
+                  </div>
+                  
+                  <!-- Divider 1 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+                  
+                  <!-- Panel After Info Section -->
+                  <div style="flex: 1; min-width: 0; padding: 0 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                              \${getActionValue('panel_after.image') ? \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${rowHtml('panel_after.image')}
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              \${rowHtml('panel_after.name')}
+                              \${rowHtml('panel_after.type')}
+                              \${rowHtml('panel_after.verb')}
+                          </div>
+                          <div style="margin-top: 5px; padding: 8px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+                              <div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 6px;">Actions on this panel: \${actionItem && actionItem.panel_after_actions ? actionItem.panel_after_actions.length : 0}</div>
+                              <div style="max-height: 120px; overflow-y: auto; font-size: 12px; color: #666;">
+                                  \${actionItem && actionItem.panel_after_actions && actionItem.panel_after_actions.length > 0
+                                    ? actionItem.panel_after_actions.map((a, i) => \`<div style="padding: 2px 0; border-bottom: 1px solid #eee;">\${i + 1}. \${a.name || 'Unknown'}</div>\`).join('')
+                                    : '<div style="color: #999; font-style: italic;">No actions recorded</div>'
+                                  }
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <!-- Divider 2 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+                  
+                  <!-- Panel After Actions Section -->
+                  <div style="flex: 1; min-width: 0; padding-left: 15px; display: flex; flex-direction: column;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Actions</h4>
+                      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: hidden;">
+                          \${missingActionsBugDetail ? rowHtml(missingActionsBugType) : ''}
+                          \${missingActionsForDisplay.length > 0 ? \`
+                          <div style="flex: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 8px; font-size: 12px;">
+                              \${missingActionsForDisplay.map((a, i) => \`<div style="padding: 3px 0; border-bottom: 1px solid #f0f0f0;"><strong>\${a.mising_action_name}</strong>\${a.mising_action_reason ? ': ' + a.mising_action_reason : ''}</div>\`).join('')}
+                          </div>\` : ''}
                       </div>
                   </div>
               </div>
-              <div style="margin-bottom: 15px;">
-                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
-                  <div style="display: flex; gap: 15px;">
-                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
-                          \${rowHtml('panel_after.name')}
-                          \${rowHtml('panel_after.type')}
-                          \${rowHtml('panel_after.verb')}
-                      </div>
-                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
-                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                          \${getActionValue('panel_after.image') ? \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
-                          \${rowHtml('panel_after.image')}
-                      </div>
-                  </div>
-              </div>
+              
               <div>
                   <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
                   <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
