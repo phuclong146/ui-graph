@@ -1863,12 +1863,12 @@ export const QUEUE_BROWSER_HTML = `
 
     <!-- RaiseBug Modal -->
     <div id="raiseBugModal" style="display:none; position:fixed; z-index:20007; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
-        <div id="raiseBugDialog" style="background:white; width:800px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:400px; min-height:300px;">
+        <div id="raiseBugDialog" style="background:white; width:1400px; max-width:95%; max-height:90vh; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); display:flex; flex-direction:column; overflow:hidden; position:relative; resize:both; min-width:800px; min-height:500px;">
             <div id="raiseBugHeader" style="padding:15px 20px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center; background:#f5f5f5; cursor:move;">
                 <h3 style="margin:0; font-size:18px; color:#333;">Raise Bug</h3>
                 <button id="closeRaiseBugModalBtn" style="background:none; border:none; font-size:24px; cursor:pointer; color:#666;">&times;</button>
             </div>
-            <div id="raiseBugContent" style="padding:20px; overflow-y:auto; flex:1;">
+            <div id="raiseBugContent" style="padding:20px; overflow-y:auto; overflow-x:hidden; flex:1; min-height:0;">
                 <!-- Content generated dynamically -->
             </div>
             <div style="padding:15px 20px; border-top:1px solid #ddd; display:flex; justify-content:flex-end; gap:10px; background:#f5f5f5;">
@@ -7772,6 +7772,74 @@ Bạn có chắc chắn muốn rollback?\`;
               return currentBugInfo.details.some(d => d.bug_type === type && d.bug_fixed !== true);
           };
 
+          // Parse bug_description (can be JSON array string or legacy string format)
+          const parseMissingActionsFromDescription = (description) => {
+              if (!description) return [];
+              if (Array.isArray(description)) {
+                  return description.filter(action => 
+                      action && typeof action === 'object' && action.mising_action_name
+                  );
+              }
+              if (typeof description === 'string') {
+                  try {
+                      const parsed = JSON.parse(description);
+                      if (Array.isArray(parsed)) {
+                          return parsed.filter(action => 
+                              action && typeof action === 'object' && action.mising_action_name
+                          );
+                      }
+                  } catch (e) {
+                      // Not JSON, try legacy string format
+                  }
+                  return description.split('\\n')
+                      .filter(line => line.trim())
+                      .map(line => {
+                          const colonIndex = line.indexOf(':');
+                          if (colonIndex === -1) {
+                              return { mising_action_name: line.trim(), mising_action_reason: '' };
+                          }
+                          return {
+                              mising_action_name: line.substring(0, colonIndex).trim(),
+                              mising_action_reason: line.substring(colonIndex + 1).trim()
+                          };
+                      });
+              }
+              return [];
+          };
+
+          // Format array to bug_description (store as JSON array string)
+          const formatMissingActionsToDescription = (actionsArray) => {
+              if (!Array.isArray(actionsArray) || actionsArray.length === 0) return null;
+              const filtered = actionsArray.filter(action => 
+                  action && action.mising_action_name && action.mising_action_name.trim()
+              );
+              if (filtered.length === 0) return null;
+              return JSON.stringify(filtered);
+          };
+
+          // Format array to display string (for tooltip)
+          const formatMissingActionsToDisplayString = (actionsArray) => {
+              if (!Array.isArray(actionsArray) || actionsArray.length === 0) return '';
+              return actionsArray
+                  .filter(action => action.mising_action_name && action.mising_action_name.trim())
+                  .map(action => {
+                      const name = action.mising_action_name.trim();
+                      const reason = (action.mising_action_reason || '').trim();
+                      return reason ? name + ': ' + reason : name;
+                  })
+                  .join('\\n');
+          };
+
+          // Get existing missing actions from bug_info
+          const getMissingActionsArray = () => {
+              if (!currentBugInfo || !currentBugInfo.details) return [];
+              const missingActionsBug = currentBugInfo.details.find(
+                  d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.bug_fixed !== true
+              );
+              if (!missingActionsBug?.description) return [];
+              return parseMissingActionsFromDescription(missingActionsBug.description);
+          };
+
           // Helper to get value from action item
           const getActionValue = (field) => {
               if (!actionItem) return '';
@@ -7811,62 +7879,101 @@ Bạn có chắc chắn muốn rollback?\`;
                   <span><strong>Hướng dẫn:</strong> Vui lòng kiểm tra từng thông tin bên dưới. Nếu thấy thông tin <strong>không đúng</strong>, hãy <strong>tick vào checkbox</strong> tương ứng để đánh dấu, sau đó nhấn nút <strong>Save</strong> để báo lỗi.</span>
               </div>
               
-              <div style="margin-bottom: 15px;">
-                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
-                  <div style="display: flex; gap: 15px;">
-                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
-                          </label>
-                      </div>
-                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
-                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
-                          \${getActionValue('action.image') ? 
-                            \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
-                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
-                          }
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
-                              <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> Image Incorrect
-                          </label>
+              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: flex-start;">
+                  <!-- Action Info Section -->
+                  <div style="flex: 1; min-width: 0; padding-right: 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                              \${getActionValue('action.image') ? 
+                                \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                              }
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                                  <input type="checkbox" name="bug_type" value="action.image" \${isChecked('action.image') ? 'checked' : ''}> Image Incorrect
+                              </label>
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="action.name" \${isChecked('action.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('action.name'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="action.type" \${isChecked('action.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('action.type'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="action.verb" \${isChecked('action.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('action.verb'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="action.content" \${isChecked('action.content') ? 'checked' : ''}> \${formatLabel('Content', getActionValue('action.content'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="action.purpose" \${isChecked('action.purpose') ? 'checked' : ''}> \${formatLabel('Purpose', getActionValue('action.purpose'))}
+                              </label>
+                          </div>
                       </div>
                   </div>
-              </div>
-              
-              <div style="margin-bottom: 15px;">
-                  <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
-                  <div style="display: flex; gap: 15px;">
-                      <div style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 10px;">
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
-                          </label>
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                              <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
-                          </label>
+                  
+                  <!-- Divider 1 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+                  
+                  <!-- Panel After Info Section -->
+                  <div style="flex: 1; min-width: 0; padding: 0 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                              \${getActionValue('panel_after.image') ? 
+                                \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                              }
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image Incorrect
+                              </label>
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getActionValue('panel_after.name'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getActionValue('panel_after.type'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getActionValue('panel_after.verb'))}
+                              </label>
+                          </div>
+                          <div style="margin-top: 5px; padding: 8px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+                              <div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 6px;">Actions on this panel: \${actionItem && actionItem.panel_after_actions ? actionItem.panel_after_actions.length : 0}</div>
+                              <div style="max-height: 120px; overflow-y: auto; font-size: 12px; color: #666;">
+                                  \${actionItem && actionItem.panel_after_actions && actionItem.panel_after_actions.length > 0
+                                    ? actionItem.panel_after_actions.map((a, i) => \`<div style="padding: 2px 0; border-bottom: 1px solid #eee;">\${i + 1}. \${a.name || 'Unknown'}</div>\`).join('')
+                                    : '<div style="color: #999; font-style: italic;">No actions recorded</div>'
+                                  }
+                              </div>
+                          </div>
                       </div>
-                      <div style="width: 200px; flex-shrink: 0; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
-                          <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                          \${getActionValue('panel_after.image') ? 
-                            \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
-                            \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
-                          }
-                          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
-                              <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image Incorrect
-                          </label>
+                  </div>
+                  
+                  <!-- Divider 2 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+                  
+                  <!-- Panel After Actions Section -->
+                  <div style="flex: 1; min-width: 0; padding-left: 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel After Actions</h4>
+                      <div style="display: flex; flex-direction: column; gap: 10px;">
+                          <div style="display: flex; align-items: center; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.missing_actions" \${isChecked('panel_after.missing_actions') || isChecked('panel.missing_actions') ? 'checked' : ''}> Missing actions
+                              </label>
+                              <button id="detectMissingActionsBtn" type="button" style="padding: 6px 12px; border: 1px solid #007bff; background: #007bff; color: white; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">Detect Missing Actions By AI</button>
+                          </div>
+                          <div>
+                              <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #555;">Danh sách action bị thiếu:</label>
+                              <div id="missingActionsListContainer" style="max-height: 200px; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;">
+                                  <!-- Actions rendered dynamically -->
+                              </div>
+                              <button id="addMissingActionBtn" type="button" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 13px;">➕ Add missing action</button>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -7876,6 +7983,141 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
               </div>
           \`;
+          
+          // === Missing Actions Interactive List ===
+          let missingActionsArray = getMissingActionsArray();
+
+          const renderMissingActionsList = () => {
+              const container = content.querySelector('#missingActionsListContainer');
+              if (!container) return;
+              container.innerHTML = '';
+
+              if (missingActionsArray.length === 0) {
+                  container.innerHTML = '<div style="color: #999; font-size: 12px; text-align: center; padding: 10px;">Chưa có action nào. Nhấn "Detect Missing Actions By AI" hoặc "➕ Add Action" để thêm.</div>';
+                  return;
+              }
+
+              missingActionsArray.forEach((action, index) => {
+                  const row = document.createElement('div');
+                  row.className = 'missing-action-row';
+                  row.style.cssText = 'display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px;';
+
+                  const nameInput = document.createElement('input');
+                  nameInput.type = 'text';
+                  nameInput.value = action.mising_action_name || '';
+                  nameInput.placeholder = 'Action name';
+                  nameInput.style.cssText = 'flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;';
+                  nameInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_name = e.target.value;
+                  });
+
+                  const reasonInput = document.createElement('textarea');
+                  reasonInput.value = action.mising_action_reason || '';
+                  reasonInput.placeholder = 'Reason';
+                  reasonInput.style.cssText = 'flex: 2; padding: 6px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; min-height: 32px; font-size: 13px; font-family: inherit;';
+                  reasonInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_reason = e.target.value;
+                  });
+
+                  const deleteBtn = document.createElement('button');
+                  deleteBtn.type = 'button';
+                  deleteBtn.textContent = '🗑️';
+                  deleteBtn.style.cssText = 'padding: 6px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; flex-shrink: 0;';
+                  deleteBtn.addEventListener('click', () => {
+                      missingActionsArray.splice(index, 1);
+                      renderMissingActionsList();
+                  });
+
+                  row.appendChild(nameInput);
+                  row.appendChild(reasonInput);
+                  row.appendChild(deleteBtn);
+                  container.appendChild(row);
+              });
+          };
+
+          // Initial render
+          renderMissingActionsList();
+
+          // Add Action button
+          const addMissingActionBtn = content.querySelector('#addMissingActionBtn');
+          if (addMissingActionBtn) {
+              addMissingActionBtn.addEventListener('click', () => {
+                  missingActionsArray.push({ mising_action_name: '', mising_action_reason: '' });
+                  renderMissingActionsList();
+                  // Scroll to bottom of list
+                  const container = content.querySelector('#missingActionsListContainer');
+                  if (container) container.scrollTop = container.scrollHeight;
+              });
+          }
+
+          // Setup Detect Missing Actions By AI button handler
+          const detectMissingActionsBtn = content.querySelector('#detectMissingActionsBtn');
+          if (detectMissingActionsBtn) {
+              detectMissingActionsBtn.addEventListener('click', async () => {
+                  if (!window.detectMissingActionsByAI) {
+                      if (typeof showToast === 'function') {
+                          showToast('⚠️ detectMissingActionsByAI is not available');
+                      } else {
+                          alert('detectMissingActionsByAI is not available');
+                      }
+                      return;
+                  }
+
+                  // Show loading state
+                  const originalText = detectMissingActionsBtn.textContent;
+                  detectMissingActionsBtn.disabled = true;
+                  detectMissingActionsBtn.textContent = '⏳ Detecting...';
+                  detectMissingActionsBtn.style.opacity = '0.7';
+                  detectMissingActionsBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      const panelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+                      if (!panelAfterId) {
+                          if (typeof showToast === 'function') {
+                              showToast('⚠️ Không tìm thấy panel_after cho action này');
+                          }
+                          return;
+                      }
+                      const result = await window.detectMissingActionsByAI(panelAfterId);
+
+                      if (result && Array.isArray(result) && result.length > 0) {
+                          // Populate the interactive list with results
+                          missingActionsArray = result.map(item => ({
+                              mising_action_name: item.mising_action_name || '',
+                              mising_action_reason: item.mising_action_reason || ''
+                          }));
+                          renderMissingActionsList();
+
+                          // Auto-check the missing_actions checkbox
+                          const missingActionsCheckbox = content.querySelector('input[name="bug_type"][value="panel_after.missing_actions"]');
+                          if (missingActionsCheckbox) {
+                              missingActionsCheckbox.checked = true;
+                          }
+
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Phát hiện ' + result.length + ' action(s) bị thiếu');
+                          }
+                      } else {
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Không phát hiện action nào bị thiếu');
+                          }
+                      }
+                  } catch (err) {
+                      console.error('Error detecting missing actions:', err);
+                      if (typeof showToast === 'function') {
+                          showToast('❌ Lỗi khi detect missing actions: ' + (err.message || err));
+                      } else {
+                          alert('Error: ' + (err.message || err));
+                      }
+                  } finally {
+                      // Restore button state
+                      detectMissingActionsBtn.disabled = false;
+                      detectMissingActionsBtn.textContent = originalText;
+                      detectMissingActionsBtn.style.opacity = '1';
+                      detectMissingActionsBtn.style.cursor = 'pointer';
+                  }
+              });
+          }
           
           const closeHandler = () => {
               modal.style.display = 'none';
@@ -7901,15 +8143,28 @@ Bạn có chắc chắn muốn rollback?\`;
                   "panel_after.name": "Panel After Name",
                   "panel_after.image": "Panel After Image or Position",
                   "panel_after.type": "Panel After Type",
-                  "panel_after.verb": "Panel After Verb"
+                  "panel_after.verb": "Panel After Verb",
+                  "panel_after.missing_actions": "Missing Actions"
               };
               
               // Get active bugs from checkboxes
-              const activeBugs = Array.from(checkboxes).map(cb => ({
-                  bug_type: cb.value,
-                  bug_name: bugNameMap[cb.value] || cb.value,
-                  bug_fixed: false
-              }));
+              const activeBugs = Array.from(checkboxes).map(cb => {
+                  const bug = {
+                      bug_type: cb.value,
+                      bug_name: bugNameMap[cb.value] || cb.value,
+                      bug_fixed: false
+                  };
+                  // Add description for missing actions (store as JSON array string)
+                  if (cb.value === 'panel_after.missing_actions') {
+                      const filteredActions = missingActionsArray.filter(a => 
+                          a && a.mising_action_name && a.mising_action_name.trim()
+                      );
+                      if (filteredActions.length > 0) {
+                          bug.description = JSON.stringify(filteredActions);
+                      }
+                  }
+                  return bug;
+              });
               
               // Preserve existing fixed bugs
               const existingFixedBugs = (currentBugInfo && currentBugInfo.details) 
@@ -8012,6 +8267,37 @@ Bạn có chắc chắn muốn rollback?\`;
                       const statusText = d.bug_fixed ? '[đã sửa]' : '[cần sửa]';
                       const resolvedAt = d.bug_fixed && d.resolved_at ? ' — ' + formatResolvedAtGmt7(d.resolved_at) : '';
                       content += \`- \${d.bug_name} \${statusText}\${resolvedAt}\n\`;
+                      
+                      // Show missing actions details in tooltip
+                      if ((d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.description) {
+                          let actionsArr = [];
+                          try {
+                              if (typeof d.description === 'string') {
+                                  const parsed = JSON.parse(d.description);
+                                  if (Array.isArray(parsed)) {
+                                      actionsArr = parsed.filter(a => a && a.mising_action_name);
+                                  }
+                              } else if (Array.isArray(d.description)) {
+                                  actionsArr = d.description.filter(a => a && a.mising_action_name);
+                              }
+                          } catch (e) {
+                              // Legacy string format fallback
+                              if (typeof d.description === 'string' && d.description.trim()) {
+                                  const lines = d.description.split('\\n').filter(l => l.trim());
+                                  actionsArr = lines.map(line => {
+                                      const ci = line.indexOf(':');
+                                      if (ci === -1) return { mising_action_name: line.trim(), mising_action_reason: '' };
+                                      return { mising_action_name: line.substring(0, ci).trim(), mising_action_reason: line.substring(ci + 1).trim() };
+                                  });
+                              }
+                          }
+                          if (actionsArr.length > 0) {
+                              actionsArr.forEach(a => {
+                                  const reason = (a.mising_action_reason || '').trim();
+                                  content += \`  · \${a.mising_action_name}\${reason ? ': ' + reason : ''}\n\`;
+                              });
+                          }
+                      }
                   });
               }
           } else if (note) {

@@ -9390,6 +9390,95 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /**
+     * Detect missing important actions on a panel by AI (Gemini 2.5 Pro)
+     * Called from RaiseBugDialog when user clicks "Detect Missing Actions By AI"
+     * @param {string} panelAfterId - The panel_after ID from RaiseBugDialog
+     * @returns {Promise<Array<{mising_action_name: string, mising_action_reason: string}>>}
+     */
+    const detectMissingActionsByAIHandler = async (panelAfterId) => {
+        try {
+            if (!panelAfterId) {
+                console.warn('⚠️ detectMissingActionsByAIHandler: No panelAfterId provided');
+                return [];
+            }
+
+            const panelId = panelAfterId;
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem) {
+                console.warn('⚠️ detectMissingActionsByAIHandler: Could not load panel item:', panelId);
+                return [];
+            }
+
+            // Get panel image URL or base64
+            let panelImageUrl = panelItem?.image_url || panelItem?.fullscreen_url || null;
+            if (!panelImageUrl && panelItem?.image_base64) {
+                panelImageUrl = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+            }
+            if (!panelImageUrl) {
+                console.warn('⚠️ detectMissingActionsByAIHandler: Panel has no image');
+                return [];
+            }
+
+            // Collect panel info
+            const panelInfo = {
+                name: panelItem.name || '',
+                type: panelItem.type || panelItem.panel_type || '',
+                image_url: panelItem.image_url || ''
+            };
+
+            // Get all actions in panel
+            const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+            const actionIds = parentEntry?.child_actions || [];
+
+            // Collect full info for each action
+            const actionInfoOfPanel = [];
+            for (const aid of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(aid);
+                if (actionItem) {
+                    actionInfoOfPanel.push({
+                        name: actionItem.name || '',
+                        image_url: actionItem.image_url || '',
+                        type: actionItem.type || '',
+                        verb: actionItem.verb || '',
+                        purpose: actionItem.purpose || '',
+                        modality_stacks: actionItem.modality_stacks || [],
+                        modality_stacks_reason: actionItem.modality_stacks_reason || ''
+                    });
+                }
+            }
+
+            // Get modality_stacks from database
+            const aiToolModalityStacks = await getAiToolModalityStacks(tracker.myAiToolCode);
+            if (!aiToolModalityStacks || aiToolModalityStacks.length === 0) {
+                console.warn('⚠️ detectMissingActionsByAIHandler: No modality_stacks found');
+                return [];
+            }
+
+            console.log('🔍 detectMissingActionsByAIHandler: Starting detection', {
+                panelId,
+                panelName: panelInfo.name,
+                actionsCount: actionInfoOfPanel.length,
+                modalityStacksCount: aiToolModalityStacks.length
+            });
+
+            // Import and call detectMissingActionsByAI
+            const { detectMissingActionsByAI } = await import('./gemini-handler.js');
+            const result = await detectMissingActionsByAI(
+                panelImageUrl,
+                panelInfo,
+                actionInfoOfPanel,
+                aiToolModalityStacks
+            );
+
+            console.log(`✅ detectMissingActionsByAIHandler: Completed with ${result.length} missing action(s)`);
+            return result;
+        } catch (err) {
+            console.error('❌ detectMissingActionsByAIHandler: Error:', err);
+            return [];
+        }
+    };
+
     const raiseBugHandler = async (actionItemId, bugInfo) => {
         try {
             if (!actionItemId) {
@@ -11011,6 +11100,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         showPanelInfoGraph: showPanelInfoHandler,
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
+        detectMissingActionsByAI: detectMissingActionsByAIHandler,
         raiseBug: raiseBugHandler,
         resolveBug: resolveBugHandler,
         cancelBug: cancelBugHandler,

@@ -2029,6 +2029,378 @@ LƯU Ý CUỐI CÙNG:
     }
 }
 
+const GEMINI_TIMEOUT_MISSING_ACTIONS_MS = 300000; // 5 minutes for detectMissingActionsByAI
+
+/**
+ * Detect missing important actions on a panel by comparing existing actions with modality_stacks using Gemini AI
+ * @param {string} panelImageUrl - Panel image URL or base64 string
+ * @param {Object} panelInfo - { name, type, image_url }
+ * @param {Array<{name: string, image_url: string, type: string, verb: string, purpose: string, modality_stacks: Array, modality_stacks_reason: string}>} actionInfoOfPanel - existing actions info
+ * @param {Array} aiToolModalityStacks - List of modality_stacks from database
+ * @returns {Promise<Array<{mising_action_name: string, mising_action_reason: string}>>} Array of missing actions
+ */
+export async function detectMissingActionsByAI(panelImageUrl, panelInfo, actionInfoOfPanel, aiToolModalityStacks) {
+    if (!panelImageUrl) {
+        console.warn('⚠️ detectMissingActionsByAI: Missing panelImageUrl');
+        return [];
+    }
+
+    if (!aiToolModalityStacks || !Array.isArray(aiToolModalityStacks) || aiToolModalityStacks.length === 0) {
+        console.warn('⚠️ detectMissingActionsByAI: No modality_stacks provided');
+        return [];
+    }
+
+    console.log('🔍 detectMissingActionsByAI: Starting detection');
+    console.log('📊 Input data summary:', {
+        panelName: panelInfo?.name,
+        panelType: panelInfo?.type,
+        actionsCount: actionInfoOfPanel?.length || 0,
+        modalityStacksCount: aiToolModalityStacks.length,
+        panelImageUrlType: panelImageUrl.startsWith('http') ? 'URL' : 'base64'
+    });
+
+    const { ENV } = await import('../config/env.js');
+
+    // Sanitize data
+    const sanitizeForJSON = (obj) => {
+        try {
+            return JSON.parse(JSON.stringify(obj));
+        } catch (err) {
+            console.warn('⚠️ Failed to sanitize data, using original:', err);
+            return obj;
+        }
+    };
+
+    const sanitizedPanelInfo = sanitizeForJSON(panelInfo || {});
+    const sanitizedActions = sanitizeForJSON(actionInfoOfPanel || []);
+    const sanitizedModalityStacks = sanitizeForJSON(aiToolModalityStacks);
+
+    let panelInfoJsonStr, actionsJsonStr, modalityStacksJsonStr;
+    try {
+        panelInfoJsonStr = JSON.stringify(sanitizedPanelInfo, null, 2);
+        actionsJsonStr = JSON.stringify(sanitizedActions, null, 2);
+        modalityStacksJsonStr = JSON.stringify(sanitizedModalityStacks, null, 2);
+    } catch (stringifyErr) {
+        console.error('❌ Failed to stringify data for prompt:', stringifyErr);
+        panelInfoJsonStr = JSON.stringify({ name: panelInfo?.name || '', type: panelInfo?.type || '' });
+        actionsJsonStr = JSON.stringify((actionInfoOfPanel || []).map(a => ({ name: a.name || '', type: a.type || '' })));
+        modalityStacksJsonStr = JSON.stringify(aiToolModalityStacks.map(ms => ({ code: ms.code || '', name: ms.name || '', description: (ms.description || '').substring(0, 200) })));
+    }
+
+    const prompt = `Bạn nhận được:
+1. Hình ảnh panel của một trang web
+2. Thông tin panel: ${panelInfoJsonStr}
+3. Danh sách các actions ĐÃ ĐƯỢC GHI NHẬN trong hệ thống (actionInfoOfPanel): ${actionsJsonStr}
+   Mỗi action có: name, image_url (link ảnh của action), type, verb, purpose, modality_stacks (nếu có), modality_stacks_reason (nếu có)
+4. Danh sách các modality_stacks (tính năng quan trọng) của AI tool: ${modalityStacksJsonStr}
+   Mỗi modality_stack có: code, name, description, example, main_feature_reason
+
+Định nghĩa:
+- **Panel**: Là một màn hình/popup/newtab của trang web được xác định bởi name và type
+- **Action**: Là một phần tử tương tác THỰC SỰ NHÌN THẤY ĐƯỢC trên panel (button, link, input field, dropdown, tab, menu item, icon button, toggle, etc.)
+- **Modality Stack**: Là một tính năng quan trọng của AI tool được định nghĩa sẵn trong hệ thống
+- **Important Action**: Là một action quan trọng nếu nó liên quan đến ít nhất một modality_stack. Một action được coi là liên quan đến modality_stack nếu THỎA ÍT NHẤT 1/4 tiêu chí sau:
+  1. Tên action có khớp hoặc liên quan đến name/description của modality_stack
+  2. Chức năng của action có khớp với description/example của modality_stack
+  3. Ngữ cảnh của action có phù hợp với main_feature_reason của modality_stack
+  4. Example của modality_stack có mô tả action tương tự
+
+MỤC TIÊU:
+Tìm các IMPORTANT ACTIONS mà:
+- THỰC SỰ TỒN TẠI trên panel (NHÌN THẤY ĐƯỢC trong hình ảnh panel)
+- NHƯNG CHƯA ĐƯỢC GHI NHẬN trong danh sách actionInfoOfPanel
+
+QUAN TRỌNG: KHÔNG được bịa đặt hay tưởng tượng ra actions mới. CHỈ tìm actions mà bạn NHÌN THẤY RÕ RÀNG trong hình ảnh panel nhưng không có trong danh sách actionInfoOfPanel.
+
+QUY TRÌNH PHÂN TÍCH (PHẢI LÀM ĐÚNG TỪNG BƯỚC):
+
+BƯỚC 1: QUÉT TOÀN BỘ HÌNH ẢNH PANEL
+- Xem kỹ hình ảnh panel để liệt kê TẤT CẢ các phần tử tương tác (interactive elements) NHÌN THẤY ĐƯỢC trên panel
+- Bao gồm: buttons, links, input fields, dropdowns, tabs, menu items, icon buttons, toggles, checkboxes, sliders, etc.
+- Ghi nhận tên/label/text của từng phần tử và vị trí của nó trên panel
+- CHỈ liệt kê những gì bạn THỰC SỰ NHÌN THẤY trong ảnh, KHÔNG suy luận hay tưởng tượng
+
+BƯỚC 2: ĐỐI CHIẾU VỚI actionInfoOfPanel
+Với MỖI phần tử tương tác tìm thấy ở Bước 1, kiểm tra:
+  2.1. Phần tử này đã có trong danh sách actionInfoOfPanel chưa?
+      - So sánh tên/label với các name trong actionInfoOfPanel
+      - So sánh vị trí/hình ảnh với các image_url trong actionInfoOfPanel
+      - Nếu ĐÃ CÓ trong actionInfoOfPanel (trùng tên hoặc cùng chức năng) -> BỎ QUA, không cần xét tiếp
+  2.2. Nếu phần tử CHƯA CÓ trong actionInfoOfPanel -> đánh dấu là "chưa ghi nhận"
+
+BƯỚC 3: LỌC CÁC ACTIONS QUAN TRỌNG (IMPORTANT)
+Với MỖI phần tử "chưa ghi nhận" từ Bước 2, kiểm tra:
+  3.1. Phần tử này có liên quan đến ít nhất 1 modality_stack không? (theo 4 tiêu chí ở phần Định nghĩa)
+  3.2. Nếu CÓ liên quan -> đây là MISSING IMPORTANT ACTION, thêm vào kết quả
+  3.3. Nếu KHÔNG liên quan đến modality_stack nào -> BỎ QUA (action không quan trọng, không cần báo thiếu)
+
+BƯỚC 4: KIỂM TRA LẠI KẾT QUẢ
+Trước khi trả về, xác nhận lại với MỖI missing action:
+  4.1. Action này có THỰC SỰ NHÌN THẤY trong hình ảnh panel không? (KHÔNG được bịa đặt)
+  4.2. Action này CHẮC CHẮN chưa có trong actionInfoOfPanel? (kiểm tra lại lần nữa)
+  4.3. Action này có thực sự liên quan đến modality_stack nào? (nêu rõ modality_stack nào)
+  4.4. Có action nào bị trùng lặp không? (gộp lại nếu có)
+
+BƯỚC 5: TRẢ VỀ KẾT QUẢ
+- Mỗi missing action phải có:
+  - mising_action_name: Tên/label của action NHÌN THẤY trên panel (string) - dùng đúng tên/text hiển thị trên giao diện
+  - mising_action_reason: Lý do action này quan trọng (string) - viết bằng tiếng Việt, giải thích:
+    + Action này nhìn thấy ở đâu trên panel (mô tả vị trí)
+    + Action này liên quan đến modality_stack nào (nêu code và name)
+    + Tại sao action này quan trọng
+
+QUY TẮC QUAN TRỌNG:
+1. CHỈ liệt kê actions mà bạn NHÌN THẤY TRỰC TIẾP trong hình ảnh panel
+2. TUYỆT ĐỐI KHÔNG bịa đặt, suy luận, hay tưởng tượng ra actions không nhìn thấy trên giao diện
+3. CHỈ liệt kê actions CHƯA CÓ trong actionInfoOfPanel
+4. CHỈ liệt kê important actions (liên quan đến ít nhất 1 modality_stack)
+5. Nếu KHÔNG CHẮC CHẮN action có tồn tại trên panel không -> KHÔNG liệt kê
+6. Ưu tiên chính xác hơn đầy đủ (bỏ sót tốt hơn liệt kê sai)
+7. Nếu không tìm thấy missing important action nào -> trả về mảng rỗng []
+8. mising_action_name PHẢI dùng đúng tên/label hiển thị trên giao diện (không đặt tên mới)
+
+Kết quả trả về đúng định dạng JSON:
+Một mảng các object, mỗi object có:
+- mising_action_name: Tên/label của action nhìn thấy trên panel nhưng chưa được ghi nhận (string)
+- mising_action_reason: Lý do action này quan trọng, viết bằng tiếng Việt (string)
+
+LƯU Ý CUỐI CÙNG:
+- KHÔNG ĐƯỢC bịa đặt actions không nhìn thấy trên panel
+- CHỈ trả về actions THỰC SỰ CÓ trên giao diện mà chưa có trong actionInfoOfPanel
+- Nếu tất cả actions quan trọng trên panel đều đã có trong actionInfoOfPanel -> trả về mảng rỗng []`;
+
+    const responseSchema = {
+        type: "array",
+        items: {
+            type: "object",
+            required: ["mising_action_name", "mising_action_reason"],
+            properties: {
+                mising_action_name: {
+                    type: "string",
+                    description: "Tên/label của action nhìn thấy trên panel nhưng chưa được ghi nhận trong actionInfoOfPanel"
+                },
+                mising_action_reason: {
+                    type: "string",
+                    description: "Lý do action này quan trọng (liên quan modality_stack nào) - viết bằng tiếng Việt"
+                }
+            }
+        }
+    };
+
+    // Build parts with text prompt and image
+    const parts = [{ text: prompt }];
+
+    const isUrl = panelImageUrl.startsWith('http://') || panelImageUrl.startsWith('https://');
+
+    // Process image: download if URL, then crop if too large, then resize
+    let processedBase64 = null;
+    const sharp = (await import('sharp')).default;
+    const MAX_HEIGHT = 3240;
+
+    try {
+        if (isUrl) {
+            console.log('📥 detectMissingActionsByAI: Downloading image from URL...');
+            const imageResponse = await fetch(panelImageUrl);
+            if (!imageResponse.ok) {
+                throw new Error(`Failed to download image: ${imageResponse.status} ${imageResponse.statusText}`);
+            }
+            const imageBuffer = await imageResponse.arrayBuffer();
+            processedBase64 = Buffer.from(imageBuffer).toString('base64');
+            console.log('✅ Image downloaded successfully');
+        } else {
+            let base64Data = panelImageUrl;
+            if (base64Data.includes(',')) {
+                base64Data = base64Data.split(',')[1];
+            }
+            processedBase64 = base64Data;
+        }
+
+        // Get image metadata to check size
+        const imageBuffer = Buffer.from(processedBase64, 'base64');
+        const metadata = await sharp(imageBuffer).metadata();
+
+        console.log('📐 detectMissingActionsByAI: Image dimensions:', {
+            width: metadata.width,
+            height: metadata.height,
+            size: (imageBuffer.length / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+
+        // Crop if height > MAX_HEIGHT
+        if (metadata.height > MAX_HEIGHT) {
+            console.log(`✂️ Image height (${metadata.height}) exceeds max (${MAX_HEIGHT}), cropping...`);
+            try {
+                const cropPos = { x: 0, y: 0, w: metadata.width, h: MAX_HEIGHT };
+                const croppedBase64 = await cropBase64Image(processedBase64, cropPos);
+                if (croppedBase64 && croppedBase64 !== processedBase64) {
+                    processedBase64 = croppedBase64;
+                    console.log(`✅ Image cropped to height ${MAX_HEIGHT}`);
+                }
+            } catch (cropErr) {
+                console.error('❌ Failed to crop image, continuing with original:', cropErr);
+            }
+        }
+
+        // Resize image for Gemini (max width 640)
+        const resizedBase64 = await resizeBase64(processedBase64, 640);
+
+        parts.push({
+            inline_data: {
+                mime_type: 'image/png',
+                data: resizedBase64
+            }
+        });
+        console.log('✅ detectMissingActionsByAI: Image processed and added to request');
+    } catch (imageErr) {
+        console.error('❌ detectMissingActionsByAI: Failed to process image:', imageErr);
+        if (isUrl) {
+            parts.push({
+                file_data: {
+                    mime_type: 'image/jpeg',
+                    file_uri: panelImageUrl
+                }
+            });
+        } else {
+            let base64Data = panelImageUrl;
+            if (base64Data.includes(',')) {
+                base64Data = base64Data.split(',')[1];
+            }
+            const resizedBase64 = await resizeBase64(base64Data, 640);
+            parts.push({
+                inline_data: {
+                    mime_type: 'image/png',
+                    data: resizedBase64
+                }
+            });
+        }
+    }
+
+    const requestBody = {
+        contents: [{ parts: parts }],
+        generation_config: {
+            response_mime_type: 'application/json',
+            response_schema: responseSchema
+        }
+    };
+
+    try {
+        const requestBodyStr = JSON.stringify(requestBody);
+        console.log('📦 detectMissingActionsByAI: Request body size:', (requestBodyStr.length / 1024).toFixed(2) + ' KB');
+
+        const modelName = process.env.GEMINI_MODEL_IMPORTANT || 'gemini-2.5-pro';
+        console.log('🚀 detectMissingActionsByAI: Sending request to Gemini API...', { model: modelName });
+
+        // Retry logic
+        const maxRetries = 3;
+        let response = null;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                response = await fetchGeminiWithTimeout(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'x-goog-api-key': ENV.GEMINI_API_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        body: requestBodyStr
+                    },
+                    GEMINI_TIMEOUT_MISSING_ACTIONS_MS
+                );
+
+                if (response.status !== 500) break;
+                if (attempt < maxRetries) {
+                    const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                    console.warn(`⚠️ detectMissingActionsByAI: Got 500 error, retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
+                    await sleep(retryDelay);
+                    continue;
+                }
+                break;
+            } catch (fetchErr) {
+                if (attempt < maxRetries && (fetchErr.name === 'AbortError' || fetchErr.message.includes('fetch'))) {
+                    const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                    console.warn(`⚠️ detectMissingActionsByAI: Request failed, retrying in ${retryDelay}ms (attempt ${attempt}/${maxRetries})...`);
+                    await sleep(retryDelay);
+                    continue;
+                }
+                throw fetchErr;
+            }
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ detectMissingActionsByAI: Gemini API error:', {
+                status: response.status,
+                statusText: response.statusText,
+                errorPreview: errorText.substring(0, 500)
+            });
+            if (isGeminiBillingError(response.status, errorText)) {
+                console.error('❌ detectMissingActionsByAI: Billing/quota error detected');
+            }
+            return [];
+        }
+
+        const data = await response.json();
+
+        // Extract text from response
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+            console.warn('⚠️ detectMissingActionsByAI: Empty response from Gemini');
+            return [];
+        }
+
+        console.log('📝 detectMissingActionsByAI: Raw response:', text.substring(0, 500));
+
+        // Parse JSON response
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (parseErr) {
+            // Try to extract JSON from response text
+            const jsonMatch = text.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+                result = JSON.parse(jsonMatch[0]);
+            } else {
+                console.error('❌ detectMissingActionsByAI: Failed to parse response JSON:', parseErr);
+                return [];
+            }
+        }
+
+        if (!Array.isArray(result)) {
+            console.warn('⚠️ detectMissingActionsByAI: Response is not an array');
+            return [];
+        }
+
+        // Validate and filter results
+        const validResult = result.filter(item =>
+            item &&
+            typeof item === 'object' &&
+            item.mising_action_name &&
+            typeof item.mising_action_name === 'string' &&
+            item.mising_action_name.trim()
+        ).map(item => ({
+            mising_action_name: item.mising_action_name.trim(),
+            mising_action_reason: (item.mising_action_reason || '').trim()
+        }));
+
+        console.log(`✅ detectMissingActionsByAI: Found ${validResult.length} missing action(s)`);
+        if (validResult.length > 0) {
+            validResult.forEach((item, idx) => {
+                console.log(`  📋 [${idx}] ${item.mising_action_name}: ${item.mising_action_reason.substring(0, 100)}...`);
+            });
+        }
+
+        return validResult;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            console.error(`❌ detectMissingActionsByAI: Gemini API timed out`);
+        } else {
+            console.error('❌ detectMissingActionsByAI: Error:', err);
+        }
+        return [];
+    }
+}
+
 const GEMINI_TIMEOUT_VALIDATE_FULL_FLOW_MS = 60000;
 
 /**
