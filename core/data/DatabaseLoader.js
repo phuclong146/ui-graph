@@ -56,6 +56,8 @@ export class DatabaseLoader {
         delete cleaned.child_panels;
         delete cleaned.parent_dom;
         delete cleaned.modality_stacks_reason;
+        delete cleaned.modality_stacks_routes;
+        delete cleaned.modality_stack_routes;
         return cleaned;
     }
 
@@ -138,9 +140,9 @@ export class DatabaseLoader {
     }
 
     /**
-     * For role=DRAW: Update bug_flag and bug_info in existing doing_item.jsonl from database
+     * For role=DRAW: Update bug_flag, bug_info, modality_stacks, modality_stacks_reason, modality_stacks_routes in existing doing_item.jsonl from database
      */
-    async updateBugInfoInDoingItems() {
+    async updateValidationInfoInDoingItems() {
         try {
             await this.init();
 
@@ -165,10 +167,10 @@ export class DatabaseLoader {
             const items = fileContent.trim().split('\n').filter(line => line.trim()).map(line => JSON.parse(line));
             if (items.length === 0) return;
 
-            // 2. Query doing_item from DB to get latest bug info, modality_stacks, and modality_stacks_reason
-            console.log(`📊 Querying doing_item table for bug info, modality_stacks, and modality_stacks_reason (my_ai_tool='${this.myAiTool}')...`);
+            // 2. Query doing_item from DB to get latest bug info, modality_stacks, modality_stacks_reason, modality_stacks_routes
+            console.log(`📊 Querying doing_item table for bug info, modality_stacks, modality_stacks_reason, modality_stacks_routes (my_ai_tool='${this.myAiTool}')...`);
             const [dbItems] = await this.connection.execute(
-                `SELECT item_id, bug_flag, bug_info, modality_stacks, modality_stacks_reason FROM doing_item WHERE published=1 AND my_ai_tool=?`,
+                `SELECT item_id, bug_flag, bug_info, modality_stacks, modality_stacks_reason, modality_stacks_routes FROM doing_item WHERE published=1 AND my_ai_tool=?`,
                 [this.myAiTool]
             );
             console.log(`✅ Found ${dbItems.length} items in DB for bug info update`);
@@ -207,6 +209,13 @@ export class DatabaseLoader {
                     // Update modality_stacks_reason from database column
                     item.modality_stacks_reason = dbItem.modality_stacks_reason || null;
 
+                    // Parse and update modality_stacks_routes from database column
+                    let modalityStacksRoutes = dbItem.modality_stacks_routes;
+                    if (typeof modalityStacksRoutes === 'string') {
+                        modalityStacksRoutes = this.parseJsonSafely(modalityStacksRoutes);
+                    }
+                    item.modality_stacks_routes = Array.isArray(modalityStacksRoutes) ? modalityStacksRoutes : null;
+
                     updatedCount++;
                 }
             }
@@ -214,7 +223,7 @@ export class DatabaseLoader {
             // 4. Write back to file
             const newLines = items.map(item => JSON.stringify(item));
             await fsp.writeFile(filePath, newLines.join('\n') + (newLines.length > 0 ? '\n' : ''), 'utf8');
-            console.log(`✅ Updated bug info, modality_stacks, and modality_stacks_reason for ${updatedCount} items in doing_item.jsonl`);
+            console.log(`✅ Updated bug info, modality_stacks, modality_stacks_reason, modality_stacks_routes for ${updatedCount} items in doing_item.jsonl`);
 
         } catch (err) {
             console.error('❌ Failed to update bug info:', err);
@@ -255,6 +264,13 @@ export class DatabaseLoader {
                 }
             }
 
+            // Parse modality_stacks_routes if exists (JSON from database)
+            let modalityStacksRoutes = item.modality_stacks_routes;
+            if (typeof modalityStacksRoutes === 'string') {
+                modalityStacksRoutes = this.parseJsonSafely(modalityStacksRoutes);
+            }
+            if (!Array.isArray(modalityStacksRoutes)) modalityStacksRoutes = null;
+
             const jsonlItem = {
                 item_id: item.item_id,
                 item_category: item.item_category,
@@ -272,7 +288,8 @@ export class DatabaseLoader {
                 bug_flag: item.bug_flag === 1,
                 bug_info: bugInfo,
                 modality_stacks: modalityStacks,
-                modality_stacks_reason: item.modality_stacks_reason || null
+                modality_stacks_reason: item.modality_stacks_reason || null,
+                modality_stacks_routes: modalityStacksRoutes
             };
 
             lines.push(JSON.stringify(jsonlItem));

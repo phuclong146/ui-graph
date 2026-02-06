@@ -67,6 +67,17 @@ export class PanelLogManager {
         return intersections;
     }
 
+    /**
+     * Get modality_stack_routes from item (top-level only; không đọc từ metadata).
+     * @param {{ modality_stacks_routes?: Array, modality_stack_routes?: Array }} item
+     * @returns {Array|null}
+     */
+    _getModalityStackRoutes(item) {
+        if (!item) return null;
+        const routes = item.modality_stacks_routes ?? item.modality_stack_routes ?? null;
+        return Array.isArray(routes) ? routes : null;
+    }
+
     async buildTreeStructure() {
         try {
             const doingItemPath = path.join(this.sessionFolder, 'doing_item.jsonl');
@@ -110,6 +121,7 @@ export class PanelLogManager {
                     bug_note: item.bug_info?.note || null,
                     modality_stacks: item.modality_stacks || null,
                     modality_stacks_reason: item.modality_stacks_reason || null,
+                    modality_stack_routes: this._getModalityStackRoutes(item) || null,
                     children: []
                 });
             });
@@ -211,6 +223,7 @@ export class PanelLogManager {
                     bug_note: item.bug_info?.note || null,
                     modality_stacks: item.modality_stacks || null,
                     modality_stacks_reason: item.modality_stacks_reason || null,
+                    modality_stack_routes: this._getModalityStackRoutes(item) || null,
                     children: []
                 });
             });
@@ -380,7 +393,8 @@ export class PanelLogManager {
                             bug_note: (item.bug_info && item.bug_info.note) ? item.bug_info.note : null,
                             modality_stacks: item.modality_stacks || null,
                             modality_stacks_reason: item.modality_stacks_reason || null,
-                            modality_stacks_info: item.modality_stacks_info || null
+                            modality_stacks_info: item.modality_stacks_info || null,
+                            modality_stack_routes: this._getModalityStackRoutes(item) || null
                         });
                     }
                 });
@@ -467,6 +481,7 @@ export class PanelLogManager {
                                     modality_stacks: info.modality_stacks || null,
                                     modality_stacks_reason: info.modality_stacks_reason || null,
                                     modality_stacks_info: info.modality_stacks_info || null,
+                                    modality_stack_routes: info.modality_stack_routes || null,
                                     children: []
                                 };
                             });

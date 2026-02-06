@@ -248,8 +248,12 @@ export class PanelScreenTracker {
             const timestamps = info.timestamps || [];
             timestamps.push(newTimestamp);
             
-            // Preserve existing role or default to 'DRAW'
-            const role = info.role || 'DRAW';
+            // Use current account role for DB/sync (so DRAW always runs bug sync when opened by DRAW)
+            let account = null;
+            try {
+                account = await this._getAccountInfo();
+            } catch (_) { /* ignore */ }
+            const role = (account && account.role) ? account.role : (info.role || 'DRAW');
             const currentSessionId = timestamps.length > 0 ? timestamps[0] : null;
             
             // Check for active session conflict if role is DRAW
@@ -297,9 +301,9 @@ export class PanelScreenTracker {
             
             // Upsert session to DB
             try {
-                const account = await this._getAccountInfo();
+                const accountForDb = account || await this._getAccountInfo();
                 const { upsertSessionToDb } = await import('../data/session-db.js');
-                await upsertSessionToDb(updatedInfo, account);
+                await upsertSessionToDb(updatedInfo, accountForDb);
             } catch (err) {
                 console.error('Failed to upsert session to DB in loadSession:', err);
             }
@@ -309,7 +313,7 @@ export class PanelScreenTracker {
                 try {
                      const { DatabaseLoader } = await import('../data/DatabaseLoader.js');
                      const loader = new DatabaseLoader(this.sessionFolder, info.toolCode);
-                     await loader.updateBugInfoInDoingItems();
+                     await loader.updateValidationInfoInDoingItems();
                      // Load only uigraph_validation in upsert mode
                      await loader.loadFromDatabase('DRAW');
                      console.log(`✅ Loaded uigraph_validation from database for DRAW role`);

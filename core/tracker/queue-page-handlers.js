@@ -3949,12 +3949,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
 
             const { validateFullFlowByAI } = await import('./gemini-handler.js');
-            const result = await validateFullFlowByAI(tracker, {
-                ai_tool_info,
-                modality_stacks_info,
-                first_step,
-                full_steps
+            await tracker._broadcast({
+                type: 'show_loading',
+                message: 'Đang kiểm tra luồng end-to-end với AI, vui lòng chờ giây lát!'
             });
+            let result;
+            try {
+                result = await validateFullFlowByAI(tracker, {
+                    ai_tool_info,
+                    modality_stacks_info,
+                    first_step,
+                    full_steps
+                });
+            } finally {
+                await tracker._broadcast({ type: 'hide_loading' });
+            }
             if (!result || !result.modality_stack_routes) {
                 await tracker._broadcast({ type: 'show_toast', message: '⚠️ Gemini không trả về kết quả.' });
                 return;
@@ -3964,7 +3973,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 ? `✅ Đủ luồng end-to-end cho ${result.modality_stack_routes.length} modality stack(s).`
                 : `⚠️ Một số modality stack chưa đủ luồng. Xem chi tiết trong console.`;
             await tracker._broadcast({ type: 'show_toast', message: summary });
-            await tracker._broadcast({ type: 'validate_full_flow_result', actionId, result });
+            await tracker.dataItemManager.updateItem(actionId, {
+                modality_stacks_routes: result.modality_stack_routes
+            });
+            try {
+                const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, tracker.myAiToolCode);
+                await exporter.init();
+                await exporter.updateItemModalityStacksRoutes(actionId, result.modality_stack_routes);
+                await exporter.close();
+            } catch (dbErr) {
+                console.error('⚠️ Failed to update modality_stacks_routes in DB:', dbErr);
+            }
+            await tracker._broadcast({
+                type: 'tree_update',
+                data: await tracker.panelLogManager.buildTreeStructure()
+            });
         } catch (err) {
             console.error('❌ validateImportantAction failed:', err);
             await tracker._broadcast({ type: 'show_toast', message: '❌ Lỗi: ' + (err.message || 'Validate Full Flow thất bại') });

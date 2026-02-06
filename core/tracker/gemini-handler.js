@@ -2074,8 +2074,8 @@ Với **từng** modality_stack trong \`modality_stacks_info\`:
 
 Dùng cả **full_steps** và **first_step** (coi first_step là một step đặc biệt gắn important action) để xác định tập step liên quan.
 
-**2.3** Sắp xếp và tạo **routes:** từ tập step liên quan, xây dựng các **route** (đường đi) từ **điểm bắt đầu** (first_step / step đầu vào của flow) tới **điểm kết thúc** (step tạo ra output cuối của modality_stack). Mỗi route là một danh sách step theo thứ tự. Một modality_stack có thể có nhiều route.
-
+**2.3** Sắp xếp và tạo **routes:** từ tập step trong Sequence_Full_End_To_End_Flow_Steps, xây dựng các **route** (đường đi) từ **điểm bắt đầu** (first_step / step đầu vào của flow) tới **điểm kết thúc** (step tạo ra output cuối của modality_stack). Nếu không có **điểm kết thúc** thì **route** từ **điểm bắt đầu** (first_step / step đầu vào của flow) tới step liên quan cuối cùng. Mỗi route là một danh sách step theo thứ tự. Nếu modality_stack có nhiều **route** thì BẮT BUỘC tạo đủ tất cả các route.
+Định nghĩa **điểm kết thúc** là step tại đó tạo ra output cuối hoặc xem, tải được output cuối của modality_stack.
 **2.4** Đánh giá **is_end_to_end_flow** cho modality_stack đó:
 - **true:** Có ít nhất một route đi được **liên tục** từ input tới output của flow đầy đủ (không thiếu bước trung gian).
 - **false:** Không có route nào đi được tới output, hoặc có tới output nhưng thiếu step trung gian.
@@ -2086,7 +2086,7 @@ Dùng cả **full_steps** và **first_step** (coi first_step là một step đ�
 
 ## 3. Định dạng output JSON (bắt buộc)
 
-Trả về đúng cấu trúc: \`modality_stack_routes\` là mảng; mỗi phần tử có \`modality_stack_code\`, \`is_end_to_end_flow\`, \`end_to_end_flow_reason\`, \`routes\`. Mỗi route là mảng các step; mỗi step có: \`step_id\`, \`panel_before_name\`, \`action_name\`, \`action_type\`, \`action_verb\`, \`step_purpose\`, \`panel_after_name\`. Không có route thì \`routes: []\`. \`end_to_end_flow_reason\` luôn bằng tiếng Việt.
+Trả về đúng cấu trúc: \`modality_stack_routes\` là mảng; mỗi phần tử có \`modality_stack_code\`, \`is_end_to_end_flow\`, \`end_to_end_flow_reason\`, \`routes\`. Mỗi route là mảng các step; mỗi step có: \`step_id\`, \`panel_before_name\`, \`action_name\`, \`action_type\`, \`action_verb\`, \`step_purpose\`, \`panel_after_name\`. \`end_to_end_flow_reason\` luôn bằng tiếng Việt.
 
 ## 4. Yêu cầu nhất quán
 
@@ -2152,7 +2152,7 @@ full_steps: ${JSON.stringify(full_steps || [])}`;
                 response_schema: responseSchema
             }
         };
-        const modelName = ENV.GEMINI_MODEL_REST || 'gemini-2.5-flash';
+        const modelName = process.env.GEMINI_MODEL_IMPORTANT || 'gemini-2.5-pro';
         const response = await fetchGeminiWithTimeout(
             `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
             {

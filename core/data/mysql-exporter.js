@@ -547,12 +547,18 @@ export class MySQLExporter {
                 
                 // Handle modality_stacks_reason - update if present
                 const modalityStacksReasonUpdateClause = item.modality_stacks_reason !== undefined ? ', modality_stacks_reason = VALUES(modality_stacks_reason)' : '';
+                // Handle modality_stacks_routes (JSON)
+                let modalityStacksRoutesJson = null;
+                if (item.modality_stacks_routes && Array.isArray(item.modality_stacks_routes) && item.modality_stacks_routes.length > 0) {
+                    modalityStacksRoutesJson = JSON.stringify(item.modality_stacks_routes);
+                }
+                const modalityStacksRoutesUpdateClause = modalityStacksRoutesJson ? ', modality_stacks_routes = VALUES(modality_stacks_routes)' : '';
                 
                 await this.connection.execute(
                     `INSERT INTO doing_item 
                      (code, my_ai_tool, my_item, type, name, image_url, fullscreen_url,
-                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason, item_id, status, modality_stacks, modality_stacks_reason)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      item_category, verb, content, published, session_id, coordinate, metadata, record_id, purpose, reason, item_id, status, modality_stacks, modality_stacks_reason, modality_stacks_routes)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE 
                         type = VALUES(type),                     
                         name = VALUES(name),
@@ -566,7 +572,7 @@ export class MySQLExporter {
                         record_id = VALUES(record_id),
                         published = VALUES(published)${purposeUpdateClause}${reasonUpdateClause},
                         item_id = VALUES(item_id),
-                        status = VALUES(status)${modalityStacksUpdateClause}${modalityStacksReasonUpdateClause},
+                        status = VALUES(status)${modalityStacksUpdateClause}${modalityStacksReasonUpdateClause}${modalityStacksRoutesUpdateClause},
                         updated_at = CURRENT_TIMESTAMP`,
                     [
                         code ?? null,
@@ -589,7 +595,8 @@ export class MySQLExporter {
                         item.item_id ?? null,
                         item.status ?? null,
                         modalityStacksJson,
-                        item.modality_stacks_reason ?? null
+                        item.modality_stacks_reason ?? null,
+                        modalityStacksRoutesJson
                     ]
                 );
                 
@@ -1108,6 +1115,35 @@ export class MySQLExporter {
             return true;
         } catch (err) {
             console.error(`❌ Failed to update modality_stacks for item ${itemId}:`, err);
+            return false;
+        }
+    }
+
+    /**
+     * Update only modality_stacks_routes for a specific item (e.g. after Validate Full Flow By AI).
+     * @param {string} itemId - The item_id to update
+     * @param {Array} modalityStacksRoutes - Array of modality stack route results
+     * @returns {Promise<boolean>} - True if updated successfully
+     */
+    async updateItemModalityStacksRoutes(itemId, modalityStacksRoutes) {
+        try {
+            if (!this.connection) {
+                await this.init();
+            }
+            const routesJson = (modalityStacksRoutes && Array.isArray(modalityStacksRoutes))
+                ? JSON.stringify(modalityStacksRoutes)
+                : null;
+            await this.connection.execute(
+                `UPDATE doing_item 
+                 SET modality_stacks_routes = ?,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE item_id = ? AND my_ai_tool = ? AND published = 1`,
+                [routesJson, itemId, this.myAiTool]
+            );
+            console.log(`✅ Updated modality_stacks_routes for item ${itemId}`);
+            return true;
+        } catch (err) {
+            console.error(`❌ Failed to update modality_stacks_routes for item ${itemId}:`, err);
             return false;
         }
     }
