@@ -4098,7 +4098,7 @@ export const QUEUE_BROWSER_HTML = `
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -4125,7 +4125,7 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
             bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -4150,7 +4150,7 @@ export const QUEUE_BROWSER_HTML = `
                     
                     const tooltip = document.createElement('div');
                     tooltip.id = 'graph-modality-stacks-tooltip';
-                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; max-height: 280px; overflow-y: auto; z-index: 10000; pointer-events: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
                     if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
                     if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
@@ -4162,8 +4162,11 @@ export const QUEUE_BROWSER_HTML = `
                     }
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'graph-modality-stacks-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
-                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('graph-modality-stacks-tooltip'); if (t) t.remove(); });
+                importantIcon.addEventListener('mouseleave', () => { var id = 'graph-modality-stacks-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300); });
                 label.appendChild(importantIcon);
             }
         }
@@ -4588,7 +4591,7 @@ export const QUEUE_BROWSER_HTML = `
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -4615,7 +4618,7 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
             bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -4640,7 +4643,7 @@ export const QUEUE_BROWSER_HTML = `
                     
                     const tooltip = document.createElement('div');
                     tooltip.id = 'video-validation-modality-tooltip';
-                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; max-height: 280px; overflow-y: auto; z-index: 10000; pointer-events: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
                     if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
                     if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
@@ -4652,8 +4655,11 @@ export const QUEUE_BROWSER_HTML = `
                     }
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'video-validation-modality-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
-                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('video-validation-modality-tooltip'); if (t) t.remove(); });
+                importantIcon.addEventListener('mouseleave', () => { var id = 'video-validation-modality-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300); });
                 label.appendChild(importantIcon);
             }
         }
@@ -6708,7 +6714,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -6743,7 +6749,7 @@ Bạn có chắc chắn muốn rollback?\`;
                 </svg>\`;
             }
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, node.bug_note, node.bug_info); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -6781,8 +6787,10 @@ Bạn có chắc chắn muốn rollback?\`;
                         'border-radius: 6px;' +
                         'font-size: 12px;' +
                         'max-width: 400px;' +
+                        'max-height: 280px;' +
+                        'overflow-y: auto;' +
                         'z-index: 10000;' +
-                        'pointer-events: none;' +
+                        'pointer-events: auto;' +
                         'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
@@ -6809,13 +6817,13 @@ Bạn có chắc chắn muốn rollback?\`;
                     
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'modality-stacks-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
                 
                 importantIcon.addEventListener('mouseleave', () => {
-                    const tooltip = document.getElementById('modality-stacks-tooltip');
-                    if (tooltip) {
-                        tooltip.remove();
-                    }
+                    var id = 'modality-stacks-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
                 });
                 
                 label.appendChild(importantIcon);
@@ -6842,7 +6850,7 @@ Bạn có chắc chắn muốn rollback?\`;
                 tooltip.id = 'validate-full-flow-tooltip';
                 tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 12) + 'px; top: ' + (e.clientY + 12) + 'px;' +
                   'background: rgba(0,0,0,0.92); color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 12px;' +
-                  'max-width: 420px; z-index: 10001; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
+                  'max-width: 420px; max-height: 280px; overflow-y: auto; z-index: 10001; pointer-events: auto; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
                 let html = '<div style="font-weight:600; margin-bottom:8px; color: #4fc3f7;">Kết quả Validate Full Flow</div>';
                 routes.forEach(function (r) {
                   const icon = r.is_end_to_end_flow ? '✅' : '⚠️';
@@ -6880,10 +6888,12 @@ Bạn có chắc chắn muốn rollback?\`;
                 var rect = tooltip.getBoundingClientRect();
                 if (rect.right > window.innerWidth) tooltip.style.left = (e.clientX - rect.width - 12) + 'px';
                 if (rect.bottom > window.innerHeight) tooltip.style.top = (e.clientY - rect.height - 12) + 'px';
+                var tid = 'validate-full-flow-tooltip';
+                tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
               });
               validateIcon.addEventListener('mouseleave', function () {
-                const t = document.getElementById('validate-full-flow-tooltip');
-                if (t) t.remove();
+                var id = 'validate-full-flow-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
               });
               label.appendChild(validateIcon);
             } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
@@ -6899,18 +6909,20 @@ Bạn có chắc chắn muốn rollback?\`;
                         'padding: 8px 12px;' +
                         'border-radius: 6px;' +
                         'font-size: 12px;' +
+                        'max-height: 280px;' +
+                        'overflow-y: auto;' +
                         'z-index: 10000;' +
-                        'pointer-events: none;' +
+                        'pointer-events: auto;' +
                         'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
                     document.body.appendChild(tooltip);
+                    var tid = 'action-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
                 
                 label.addEventListener('mouseleave', () => {
-                    const tooltip = document.getElementById('action-tooltip');
-                    if (tooltip) {
-                        tooltip.remove();
-                    }
+                    var id = 'action-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
                 });
             }
         }
@@ -6960,7 +6972,7 @@ Bạn có chắc chắn muốn rollback?\`;
         );
         if (showAssigneeTooltip) {
           contentDiv.addEventListener('mouseenter', (ev) => { showSessionAssigneeTooltip(ev, node.my_session); });
-          contentDiv.addEventListener('mouseleave', hideSessionAssigneeTooltip);
+          contentDiv.addEventListener('mouseleave', function() { if (window._sessionAssigneeTooltipHideT) clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = setTimeout(hideSessionAssigneeTooltip, 300); });
         }
         
         contentDiv.addEventListener('click', () => {
@@ -8731,7 +8743,9 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 320px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               white-space: pre-wrap;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
@@ -8788,9 +8802,13 @@ Bạn có chắc chắn muốn rollback?\`;
           
           bugTooltip.innerHTML = content;
           document.body.appendChild(bugTooltip);
+          if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT);
+          bugTooltip.addEventListener('mouseenter', function() { if (window._bugTooltipHideT) { clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = null; } });
+          bugTooltip.addEventListener('mouseleave', function() { hideBugTooltip(); });
       }
       
       function hideBugTooltip() {
+          if (window._bugTooltipHideT) { clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = null; }
           if (bugTooltip) {
               bugTooltip.remove();
               bugTooltip = null;
@@ -9214,10 +9232,15 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 280px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
           viewersTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
+          if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT);
+          viewersTooltip.addEventListener('mouseenter', function() { if (window._viewersTooltipHideT) { clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = null; } });
+          viewersTooltip.addEventListener('mouseleave', function() { hideViewersTooltip(); });
           document.body.appendChild(viewersTooltip);
           try {
               const viewers = await getViewers(actionItemId);
@@ -9242,6 +9265,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
       }
       function hideViewersTooltip() {
+          if (window._viewersTooltipHideT) { clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = null; }
           if (viewersTooltip) {
               viewersTooltip.remove();
               viewersTooltip = null;
@@ -9267,11 +9291,16 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 280px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
           sessionAssigneeTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
           document.body.appendChild(sessionAssigneeTooltip);
+          if (window._sessionAssigneeTooltipHideT) clearTimeout(window._sessionAssigneeTooltipHideT);
+          sessionAssigneeTooltip.addEventListener('mouseenter', function() { if (window._sessionAssigneeTooltipHideT) { clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = null; } });
+          sessionAssigneeTooltip.addEventListener('mouseleave', function() { hideSessionAssigneeTooltip(); });
           try {
               const info = await getInfo(mySession);
               if (!info) {
@@ -9301,6 +9330,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
       }
       function hideSessionAssigneeTooltip() {
+          if (window._sessionAssigneeTooltipHideT) { clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = null; }
           if (sessionAssigneeTooltip) {
               sessionAssigneeTooltip.remove();
               sessionAssigneeTooltip = null;

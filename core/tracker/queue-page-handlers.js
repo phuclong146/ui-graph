@@ -7979,6 +7979,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 };
 
                 const network = new vis.Network(graphContainer, data, options);
+                let graphEdgeTooltipHideTimeout = null;
 
                 network.on("hoverEdge", function (params) {
                     const edgeId = params.edge;
@@ -8011,8 +8012,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             'border-radius: 6px;' +
                             'font-size: 12px;' +
                             'max-width: 400px;' +
+                            'max-height: 280px;' +
+                            'overflow-y: auto;' +
                             'z-index: 10000;' +
-                            'pointer-events: none;' +
+                            'pointer-events: auto;' +
                             'box-shadow: 0 4px 12px rgba(0,0,0,0.3);' +
                             'border: 2px solid #ffc107;';
                         
@@ -8021,6 +8024,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         
                         tooltip.innerHTML = tooltipContent;
                         document.body.appendChild(tooltip);
+                        tooltip.addEventListener('mouseenter', function () { if (graphEdgeTooltipHideTimeout) { clearTimeout(graphEdgeTooltipHideTimeout); graphEdgeTooltipHideTimeout = null; } });
+                        tooltip.addEventListener('mouseleave', function () { tooltip.remove(); });
                     } else if (!edge.data.actionBugFlag && 
                                Array.isArray(edge.data.actionModalityStacks) && 
                                edge.data.actionModalityStacks.length === 0) {
@@ -8041,11 +8046,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             'padding: 8px 12px;' +
                             'border-radius: 6px;' +
                             'font-size: 12px;' +
+                            'max-height: 280px;' +
+                            'overflow-y: auto;' +
                             'z-index: 10000;' +
-                            'pointer-events: none;' +
+                            'pointer-events: auto;' +
                             'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                         tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
                         document.body.appendChild(tooltip);
+                        tooltip.addEventListener('mouseenter', function () { if (graphEdgeTooltipHideTimeout) { clearTimeout(graphEdgeTooltipHideTimeout); graphEdgeTooltipHideTimeout = null; } });
+                        tooltip.addEventListener('mouseleave', function () { tooltip.remove(); });
                     }
                 });
                 
@@ -8053,16 +8062,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                      if (typeof window.hideBugTooltip === 'function') {
                          window.hideBugTooltip();
                      }
-                     // Remove modality_stacks tooltip
-                     const modalityTooltip = document.getElementById('graph-modality-stacks-tooltip');
-                     if (modalityTooltip) {
-                         modalityTooltip.remove();
-                     }
-                     // Remove action tooltip
-                     const actionTooltip = document.getElementById('graph-action-tooltip');
-                     if (actionTooltip) {
-                         actionTooltip.remove();
-                     }
+                     if (graphEdgeTooltipHideTimeout) clearTimeout(graphEdgeTooltipHideTimeout);
+                     graphEdgeTooltipHideTimeout = setTimeout(function () {
+                         const modalityTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                         if (modalityTooltip) modalityTooltip.remove();
+                         const actionTooltip = document.getElementById('graph-action-tooltip');
+                         if (actionTooltip) actionTooltip.remove();
+                         graphEdgeTooltipHideTimeout = null;
+                     }, 300);
                 });
 
                 // Store network reference globally for fit to screen
