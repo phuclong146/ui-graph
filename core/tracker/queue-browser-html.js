@@ -7473,6 +7473,48 @@ Bạn có chắc chắn muốn rollback?\`;
               }
               if (window.detectImportantActionsForPanel) await window.detectImportantActionsForPanel(panelId);
             });
+            addItem('🐞 RaiseBug', async () => {
+              let panelItemData = null;
+              let currentBugInfo = null;
+              if (window.getPanelItemForBug) {
+                try {
+                  panelItemData = await window.getPanelItemForBug(panelId);
+                  if (panelItemData) {
+                    currentBugInfo = panelItemData.bug_info || null;
+                  }
+                } catch (err) {
+                  console.error('getPanelItemForBug error:', err);
+                }
+              }
+              showRaiseBugDialogForPanel(panelId, currentBugInfo, panelItemData);
+            });
+            if (hasBug) {
+              addItem('✅ Resolved Bug', async () => {
+                if (typeof window.getPanelItemForBug !== 'function') { showToast('Không thể tải panel.'); return; }
+                const item = await window.getPanelItemForBug(panelId);
+                if (!item || !item.bug_flag || !item.bug_info || !item.bug_info.details || item.bug_info.details.length === 0) {
+                  if (typeof showToast === 'function') showToast('Panel này chưa có bug hoặc chưa có chi tiết bug.');
+                  else alert('Panel này chưa có bug hoặc chưa có chi tiết bug.');
+                  return;
+                }
+                openResolvedBugDialogForPanel(panelId, item.bug_info, item);
+              });
+              addItem('❌ Cancel bug', async () => {
+                if (!window.confirm('Bỏ đánh dấu bug của panel này?')) return;
+                if (typeof window.cancelBug !== 'function') { showToast('Cancel bug không khả dụng.'); return; }
+                try {
+                  await window.cancelBug(panelId);
+                  if (window.getPanelTree) {
+                    const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                    panelTreeData = data || []; renderPanelTree();
+                  }
+                  if (typeof showToast === 'function') showToast('✅ Đã bỏ đánh dấu bug.');
+                } catch (err) {
+                  console.error('cancelBug error:', err);
+                  if (typeof showToast === 'function') showToast('❌ Không thể bỏ đánh dấu bug.');
+                }
+              });
+            }
           }
           document.body.appendChild(menu);
           const menuRect = menu.getBoundingClientRect();
@@ -8221,6 +8263,442 @@ Bạn có chắc chắn muốn rollback?\`;
           };
       }
 
+      // RaiseBug Dialog for Panel (afterLoginPanel) - no action info, panel info = panel itself
+      async function showRaiseBugDialogForPanel(panelId, currentBugInfo = null, panelItem = null) {
+          // Fetch fresh panel data
+          if (window.getPanelItemForBug) {
+              try {
+                  const freshItem = await window.getPanelItemForBug(panelId);
+                  if (freshItem) {
+                      if (!panelItem) {
+                          panelItem = freshItem;
+                      } else {
+                          panelItem = { ...panelItem, ...freshItem };
+                      }
+                      currentBugInfo = freshItem.bug_info || currentBugInfo;
+                  }
+              } catch (e) {
+                  console.error('Failed to fetch panel item for bug dialog:', e);
+              }
+          }
+
+          if (!currentBugInfo && panelItem && panelItem.bug_info) {
+              currentBugInfo = panelItem.bug_info;
+          }
+
+          const modal = document.getElementById('raiseBugModal');
+          const content = document.getElementById('raiseBugContent');
+          const closeBtn = document.getElementById('closeRaiseBugModalBtn');
+          const cancelBtn = document.getElementById('cancelRaiseBugBtn');
+          const confirmBtn = document.getElementById('confirmRaiseBugBtn');
+
+          if (!modal || !content) return;
+
+          modal.style.display = 'flex';
+
+          // Reset button state
+          if (confirmBtn) {
+              confirmBtn.disabled = false;
+              confirmBtn.textContent = 'Save';
+              confirmBtn.style.opacity = '1';
+              confirmBtn.style.cursor = 'pointer';
+          }
+
+          // Helper to check if a specific bug type is checked
+          const isChecked = (type) => {
+              if (!currentBugInfo || !currentBugInfo.details) return false;
+              return currentBugInfo.details.some(d => d.bug_type === type && d.bug_fixed !== true);
+          };
+
+          // Parse missing actions from description
+          const parseMissingActionsFromDescription = (description) => {
+              if (!description) return [];
+              if (Array.isArray(description)) {
+                  return description.filter(action =>
+                      action && typeof action === 'object' && action.mising_action_name
+                  );
+              }
+              if (typeof description === 'string') {
+                  try {
+                      const parsed = JSON.parse(description);
+                      if (Array.isArray(parsed)) {
+                          return parsed.filter(action =>
+                              action && typeof action === 'object' && action.mising_action_name
+                          );
+                      }
+                  } catch (e) {}
+                  return description.split('\\n')
+                      .filter(line => line.trim())
+                      .map(line => {
+                          const colonIndex = line.indexOf(':');
+                          if (colonIndex === -1) {
+                              return { mising_action_name: line.trim(), mising_action_reason: '' };
+                          }
+                          return {
+                              mising_action_name: line.substring(0, colonIndex).trim(),
+                              mising_action_reason: line.substring(colonIndex + 1).trim()
+                          };
+                      });
+              }
+              return [];
+          };
+
+          // Get existing missing actions from bug_info
+          const getMissingActionsArray = () => {
+              if (!currentBugInfo || !currentBugInfo.details) return [];
+              const missingActionsBug = currentBugInfo.details.find(
+                  d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions') && d.bug_fixed !== true
+              ) || currentBugInfo.details.find(
+                  d => (d.bug_type === 'panel_after.missing_actions' || d.bug_type === 'panel.missing_actions')
+              );
+              if (!missingActionsBug?.description) return [];
+              return parseMissingActionsFromDescription(missingActionsBug.description);
+          };
+
+          // Helper to get panel value (panel's own fields)
+          const getPanelValue = (field) => {
+              if (!panelItem) return '';
+              switch(field) {
+                  case 'panel_after.name': return panelItem.name || '';
+                  case 'panel_after.type': return panelItem.type || '';
+                  case 'panel_after.verb': return panelItem.verb || '';
+                  case 'panel_after.image': return panelItem.image_url || '';
+                  default: return '';
+              }
+          };
+
+          const formatLabel = (label, value) => {
+              if (value === undefined || value === null || value === '') {
+                   return \`<span>\${label}: <span style="font-weight:normal; color:#999;">N/A</span></span>\`;
+              }
+              if (typeof value === 'string' && value.match(/^https?:.*\\.(jpg|jpeg|png|gif|webp|svg)/i)) {
+                   return \`<span>\${label}: <img src="\${value}" style="max-height: 40px; vertical-align: middle; margin-left: 5px; border: 1px solid #ddd; border-radius: 4px;" alt="Image" /></span>\`;
+              }
+              const displayValue = String(value).length > 100 ? String(value).substring(0, 100) + '...' : value;
+              return \`<span>\${label}: <span style="font-weight:normal; color:#555;">\${displayValue}</span></span>\`;
+          };
+
+          content.innerHTML = \`
+              <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; line-height: 1.5; display: flex; align-items: start; gap: 8px;">
+                  <span style="font-size: 16px;">📋</span>
+                  <span><strong>Hướng dẫn:</strong> Đây là RaiseBug cho <strong>Panel</strong> (không phải Action). Phần Action Info bị vô hiệu hóa. Vui lòng kiểm tra thông tin Panel bên dưới, tick checkbox nếu sai, sau đó nhấn <strong>Save</strong>.</span>
+              </div>
+
+              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: stretch;">
+                  <!-- Action Info Section (DISABLED - no action) -->
+                  <div style="flex: 1; min-width: 0; padding-right: 15px; opacity: 0.35; pointer-events: none; user-select: none;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info <span style="font-size: 11px; color: #999; font-weight: normal;">(N/A - Panel mode)</span></h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                              <div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(Panel mode)</div>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed; margin-top: 8px; font-size: 12px;">
+                                  <input type="checkbox" disabled> Image Incorrect
+                              </label>
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed;">
+                                  <input type="checkbox" disabled> <span>Name: <span style="font-weight:normal; color:#999;">N/A</span></span>
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed;">
+                                  <input type="checkbox" disabled> <span>Type: <span style="font-weight:normal; color:#999;">N/A</span></span>
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed;">
+                                  <input type="checkbox" disabled> <span>Verb: <span style="font-weight:normal; color:#999;">N/A</span></span>
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed;">
+                                  <input type="checkbox" disabled> <span>Content: <span style="font-weight:normal; color:#999;">N/A</span></span>
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: not-allowed;">
+                                  <input type="checkbox" disabled> <span>Purpose: <span style="font-weight:normal; color:#999;">N/A</span></span>
+                              </label>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Divider 1 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+
+                  <!-- Panel Info Section (= afterLoginPanel itself) -->
+                  <div style="flex: 1; min-width: 0; padding: 0 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                              \${getPanelValue('panel_after.image') ?
+                                \`<img src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` :
+                                \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
+                              }
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.image" \${isChecked('panel_after.image') ? 'checked' : ''}> Image Incorrect
+                              </label>
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.name" \${isChecked('panel_after.name') ? 'checked' : ''}> \${formatLabel('Name', getPanelValue('panel_after.name'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.type" \${isChecked('panel_after.type') ? 'checked' : ''}> \${formatLabel('Type', getPanelValue('panel_after.type'))}
+                              </label>
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.verb" \${isChecked('panel_after.verb') ? 'checked' : ''}> \${formatLabel('Verb', getPanelValue('panel_after.verb'))}
+                              </label>
+                          </div>
+                          <div style="margin-top: 5px; padding: 8px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+                              <div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 6px;">Actions on this panel: \${panelItem && panelItem.child_actions ? panelItem.child_actions.length : 0}</div>
+                              <div style="max-height: 120px; overflow-y: auto; font-size: 12px; color: #666;">
+                                  \${panelItem && panelItem.child_actions && panelItem.child_actions.length > 0
+                                    ? panelItem.child_actions.map((a, i) => \`<div style="padding: 2px 0; border-bottom: 1px solid #eee;">\${i + 1}. \${a.name || 'Unknown'}</div>\`).join('')
+                                    : '<div style="color: #999; font-style: italic;">No actions recorded</div>'
+                                  }
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Divider 2 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+
+                  <!-- Panel Actions Section (Missing Actions) -->
+                  <div style="flex: 1; min-width: 0; padding-left: 15px; display: flex; flex-direction: column;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel Actions</h4>
+                      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: hidden;">
+                          <div style="display: flex; align-items: center; gap: 10px;">
+                              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; flex: 1;">
+                                  <input type="checkbox" name="bug_type" value="panel_after.missing_actions" \${isChecked('panel_after.missing_actions') || isChecked('panel.missing_actions') ? 'checked' : ''}> Missing actions
+                              </label>
+                              <button id="detectMissingActionsBtn" type="button" style="padding: 6px 12px; border: 1px solid #007bff; background: #007bff; color: white; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap;">Detect Missing Actions By AI</button>
+                          </div>
+                          <div style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+                              <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #555;">Danh sách action bị thiếu:</label>
+                              <div id="missingActionsListContainer" style="flex: 1; overflow-y: auto; border: 1px solid #ccc; border-radius: 4px; padding: 8px;">
+                                  <!-- Actions rendered dynamically -->
+                              </div>
+                              <button id="addMissingActionBtn" type="button" style="padding: 6px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; font-size: 13px;">➕ Add missing action</button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <div>
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
+                  <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
+              </div>
+          \`;
+
+          // === Missing Actions Interactive List ===
+          let missingActionsArray = getMissingActionsArray();
+
+          const renderMissingActionsList = () => {
+              const container = content.querySelector('#missingActionsListContainer');
+              if (!container) return;
+              container.innerHTML = '';
+
+              if (missingActionsArray.length === 0) {
+                  container.innerHTML = '<div style="color: #999; font-size: 12px; text-align: center; padding: 10px;">Chưa có action nào. Nhấn "Detect Missing Actions By AI" hoặc "➕ Add Action" để thêm.</div>';
+                  return;
+              }
+
+              missingActionsArray.forEach((action, index) => {
+                  const row = document.createElement('div');
+                  row.className = 'missing-action-row';
+                  row.style.cssText = 'display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px;';
+
+                  const nameInput = document.createElement('input');
+                  nameInput.type = 'text';
+                  nameInput.value = action.mising_action_name || '';
+                  nameInput.placeholder = 'Action name';
+                  nameInput.style.cssText = 'flex: 1; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;';
+                  nameInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_name = e.target.value;
+                  });
+
+                  const reasonInput = document.createElement('textarea');
+                  reasonInput.value = action.mising_action_reason || '';
+                  reasonInput.placeholder = 'Reason';
+                  reasonInput.style.cssText = 'flex: 2; padding: 6px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; min-height: 32px; font-size: 13px; font-family: inherit;';
+                  reasonInput.addEventListener('input', (e) => {
+                      missingActionsArray[index].mising_action_reason = e.target.value;
+                  });
+
+                  const deleteBtn = document.createElement('button');
+                  deleteBtn.type = 'button';
+                  deleteBtn.textContent = '🗑️';
+                  deleteBtn.style.cssText = 'padding: 6px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; flex-shrink: 0;';
+                  deleteBtn.addEventListener('click', () => {
+                      missingActionsArray.splice(index, 1);
+                      renderMissingActionsList();
+                  });
+
+                  row.appendChild(nameInput);
+                  row.appendChild(reasonInput);
+                  row.appendChild(deleteBtn);
+                  container.appendChild(row);
+              });
+          };
+
+          // Initial render
+          renderMissingActionsList();
+
+          // Add Action button
+          const addMissingActionBtn = content.querySelector('#addMissingActionBtn');
+          if (addMissingActionBtn) {
+              addMissingActionBtn.addEventListener('click', () => {
+                  missingActionsArray.push({ mising_action_name: '', mising_action_reason: '' });
+                  renderMissingActionsList();
+                  const container = content.querySelector('#missingActionsListContainer');
+                  if (container) container.scrollTop = container.scrollHeight;
+              });
+          }
+
+          // Setup Detect Missing Actions By AI button handler
+          const detectMissingActionsBtn = content.querySelector('#detectMissingActionsBtn');
+          if (detectMissingActionsBtn) {
+              detectMissingActionsBtn.addEventListener('click', async () => {
+                  if (!window.detectMissingActionsByAI) {
+                      if (typeof showToast === 'function') {
+                          showToast('⚠️ detectMissingActionsByAI is not available');
+                      } else {
+                          alert('detectMissingActionsByAI is not available');
+                      }
+                      return;
+                  }
+
+                  const originalText = detectMissingActionsBtn.textContent;
+                  detectMissingActionsBtn.disabled = true;
+                  detectMissingActionsBtn.textContent = '⏳ Detecting...';
+                  detectMissingActionsBtn.style.opacity = '0.7';
+                  detectMissingActionsBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      // For panel mode, the panelId IS the panel itself (no panel_after indirection)
+                      const result = await window.detectMissingActionsByAI(panelId);
+
+                      if (result && Array.isArray(result) && result.length > 0) {
+                          missingActionsArray = result.map(item => ({
+                              mising_action_name: item.mising_action_name || '',
+                              mising_action_reason: item.mising_action_reason || ''
+                          }));
+                          renderMissingActionsList();
+
+                          const missingActionsCheckbox = content.querySelector('input[name="bug_type"][value="panel_after.missing_actions"]');
+                          if (missingActionsCheckbox) {
+                              missingActionsCheckbox.checked = true;
+                          }
+
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Phát hiện ' + result.length + ' action(s) bị thiếu');
+                          }
+                      } else {
+                          if (typeof showToast === 'function') {
+                              showToast('✅ Không phát hiện action nào bị thiếu');
+                          }
+                      }
+                  } catch (err) {
+                      console.error('Error detecting missing actions:', err);
+                      if (typeof showToast === 'function') {
+                          showToast('❌ Lỗi khi detect missing actions: ' + (err.message || err));
+                      } else {
+                          alert('Error: ' + (err.message || err));
+                      }
+                  } finally {
+                      detectMissingActionsBtn.disabled = false;
+                      detectMissingActionsBtn.textContent = originalText;
+                      detectMissingActionsBtn.style.opacity = '1';
+                      detectMissingActionsBtn.style.cursor = 'pointer';
+                  }
+              });
+          }
+
+          const closeHandler = () => {
+              modal.style.display = 'none';
+              closeBtn.removeEventListener('click', closeHandler);
+              cancelBtn.removeEventListener('click', closeHandler);
+              confirmBtn.replaceWith(confirmBtn.cloneNode(true));
+          };
+
+          closeBtn.addEventListener('click', closeHandler);
+          cancelBtn.addEventListener('click', closeHandler);
+
+          confirmBtn.onclick = async () => {
+              const note = document.getElementById('raiseBugNote').value;
+              const checkboxes = content.querySelectorAll('input[name="bug_type"]:checked');
+
+              const bugNameMap = {
+                  "panel_after.name": "Panel Name",
+                  "panel_after.image": "Panel Image or Position",
+                  "panel_after.type": "Panel Type",
+                  "panel_after.verb": "Panel Verb",
+                  "panel_after.missing_actions": "Missing Actions"
+              };
+
+              const activeBugs = Array.from(checkboxes).map(cb => {
+                  const bug = {
+                      bug_type: cb.value,
+                      bug_name: bugNameMap[cb.value] || cb.value,
+                      bug_fixed: false
+                  };
+                  if (cb.value === 'panel_after.missing_actions') {
+                      const filteredActions = missingActionsArray.filter(a =>
+                          a && a.mising_action_name && a.mising_action_name.trim()
+                      );
+                      if (filteredActions.length > 0) {
+                          bug.description = JSON.stringify(filteredActions);
+                      }
+                  }
+                  return bug;
+              });
+
+              // Preserve existing fixed bugs
+              const existingFixedBugs = (currentBugInfo && currentBugInfo.details)
+                  ? currentBugInfo.details.filter(d => d.bug_fixed === true)
+                  : [];
+
+              const activeTypes = new Set(activeBugs.map(b => b.bug_type));
+              const keptFixedBugs = existingFixedBugs.filter(d => !activeTypes.has(d.bug_type));
+
+              const details = [...activeBugs, ...keptFixedBugs];
+
+              const bugInfo = {
+                  note: note,
+                  details: details
+              };
+
+              if (window.raiseBug) {
+                  confirmBtn.disabled = true;
+                  const originalText = confirmBtn.textContent;
+                  confirmBtn.textContent = 'Saving...';
+                  confirmBtn.style.opacity = '0.7';
+                  confirmBtn.style.cursor = 'not-allowed';
+
+                  try {
+                      await window.raiseBug(panelId, bugInfo);
+
+                      if (typeof refreshPanelTree === 'function') {
+                          refreshPanelTree();
+                      }
+
+                      if (typeof showToast === 'function') {
+                          showToast('✅ Bug reported successfully for panel');
+                      } else {
+                          alert('Bug reported successfully for panel');
+                      }
+                      closeHandler();
+                  } catch (error) {
+                      console.error('Error raising bug for panel:', error);
+                      alert('Failed to raise bug: ' + (error.message || error));
+                      confirmBtn.disabled = false;
+                      confirmBtn.textContent = originalText;
+                      confirmBtn.style.opacity = '1';
+                      confirmBtn.style.cursor = 'pointer';
+                  }
+              } else {
+                  console.warn('window.raiseBug is not defined');
+                  alert('RaiseBug feature is not available (function missing).');
+              }
+          };
+      }
+
       // Bug Tooltip + helpers for bug state
       function formatResolvedAtGmt7(iso) {
           if (!iso) return '';
@@ -8508,6 +8986,200 @@ Bạn có chắc chắn muốn rollback?\`;
                           panelTreeData = data || []; renderPanelTree();
                       }
                       if (typeof showToast === 'function') showToast('✅ Đã cập nhật bug resolved.');
+                      closeHandler();
+                  } catch (err) {
+                      console.error('resolveBug error:', err);
+                      if (typeof showToast === 'function') showToast('❌ Cập nhật thất bại.');
+                      else alert('Cập nhật thất bại: ' + (err.message || err));
+                  }
+              } else {
+                  if (typeof showToast === 'function') showToast('ResolveBug không khả dụng.');
+                  else alert('ResolveBug không khả dụng.');
+              }
+          };
+      }
+
+      // Resolved Bug Dialog for Panel (afterLoginPanel) - Action Info disabled, Panel Info = panel itself
+      async function openResolvedBugDialogForPanel(panelId, bugInfo, panelItem = null) {
+          if (!bugInfo || !Array.isArray(bugInfo.details) || bugInfo.details.length === 0) {
+              if (typeof showToast === 'function') showToast('Panel này chưa có chi tiết bug.');
+              else alert('Panel này chưa có chi tiết bug.');
+              return;
+          }
+          if (!panelItem && typeof window.getPanelItemForBug === 'function') {
+              try { panelItem = await window.getPanelItemForBug(panelId); } catch (e) { console.warn('getPanelItemForBug failed:', e); }
+          }
+          resolvedBugCurrentActionId = panelId;
+          const modal = document.getElementById('resolvedBugModal');
+          const content = document.getElementById('resolvedBugContent');
+          const closeBtn = document.getElementById('closeResolvedBugModalBtn');
+          const cancelBtn = document.getElementById('cancelResolvedBugBtn');
+          const confirmBtn = document.getElementById('confirmResolvedBugBtn');
+          if (!modal || !content) return;
+          modal.style.display = 'flex';
+
+          // Helper to get panel value (panel's own fields mapped to panel_after.* bug types)
+          const getPanelValue = (field) => {
+              if (!panelItem) return '';
+              switch (field) {
+                  case 'panel_after.name': return panelItem.name || '';
+                  case 'panel_after.type': return panelItem.type || '';
+                  case 'panel_after.verb': return panelItem.verb || '';
+                  case 'panel_after.image': return panelItem.image_url || '';
+                  default: return '';
+              }
+          };
+          const formatLabel = (label, value) => {
+              if (value === undefined || value === null || value === '') return \`<span>\${label}: <span style="font-weight:normal; color:#999;">N/A</span></span>\`;
+              if (typeof value === 'string' && value.match(/^https?:.*\\.(jpg|jpeg|png|gif|webp|svg)/i)) return \`<span>\${label}: <img src="\${value}" style="max-height: 40px; vertical-align: middle; margin-left: 5px; border: 1px solid #ddd; border-radius: 4px;" alt="Image" /></span>\`;
+              const displayValue = String(value).length > 100 ? String(value).substring(0, 100) + '...' : value;
+              return \`<span>\${label}: <span style="font-weight:normal; color:#555;">\${displayValue}</span></span>\`;
+          };
+          const formatResolvedAt = (iso) => {
+              if (!iso) return '';
+              try { const d = new Date(iso); return d.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short', timeStyle: 'short' }) + ' (GMT+7)'; } catch (e) { return iso; }
+          };
+          const getDetailByType = (type) => bugInfo.details.find(d => d.bug_type === type);
+          const getDetailIndex = (type) => bugInfo.details.findIndex(d => d.bug_type === type);
+          const bugNameMap = { 'panel_after.name': 'Panel Name', 'panel_after.image': 'Panel Image or Position', 'panel_after.type': 'Panel Type', 'panel_after.verb': 'Panel Verb', 'panel_after.missing_actions': 'Missing Actions', 'panel.missing_actions': 'Missing Actions' };
+
+          const rowHtml = (type) => {
+              const detail = getDetailByType(type);
+              const idx = getDetailIndex(type);
+              const name = bugNameMap[type] || type;
+              const isImageType = type === 'panel_after.image';
+              const valueHtml = isImageType ? name : formatLabel(name, getPanelValue(type));
+              if (detail && detail.bug_fixed === true) {
+                  return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span style="color:#28a745;">✓</span> \${valueHtml} <span style="color:#28a745; font-size:12px;">[đã sửa] \${formatResolvedAt(detail.resolved_at)}</span></div>\`;
+              }
+              if (detail) {
+                  return \`<label style="display: flex; align-items: center; gap: 8px; cursor: pointer;"><input type="checkbox" name="resolved_bug" data-index="\${idx}"> \${valueHtml}</label>\`;
+              }
+              return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;">\${valueHtml}</div>\`;
+          };
+
+          // Parse missing actions description for display
+          const parseMissingActionsForDisplay = (description) => {
+              if (!description) return [];
+              if (Array.isArray(description)) return description.filter(a => a && a.mising_action_name);
+              if (typeof description === 'string') {
+                  try {
+                      const parsed = JSON.parse(description);
+                      if (Array.isArray(parsed)) return parsed.filter(a => a && a.mising_action_name);
+                  } catch (e) {}
+                  return description.split('\\n').filter(l => l.trim()).map(line => {
+                      const ci = line.indexOf(':');
+                      if (ci === -1) return { mising_action_name: line.trim(), mising_action_reason: '' };
+                      return { mising_action_name: line.substring(0, ci).trim(), mising_action_reason: line.substring(ci + 1).trim() };
+                  });
+              }
+              return [];
+          };
+          const missingActionsBugDetail = getDetailByType('panel_after.missing_actions') || getDetailByType('panel.missing_actions');
+          const missingActionsForDisplay = missingActionsBugDetail ? parseMissingActionsForDisplay(missingActionsBugDetail.description) : [];
+          const missingActionsBugType = missingActionsBugDetail ? missingActionsBugDetail.bug_type : 'panel_after.missing_actions';
+
+          content.innerHTML = \`
+              <div style="font-size: 13px; color: #666; margin-bottom: 15px; padding: 10px; background: #d4edda; border: 1px solid #28a745; border-radius: 6px; line-height: 1.5;">
+                  <strong>Hướng dẫn:</strong> Đây là Resolved Bug cho <strong>Panel</strong> (không phải Action). Phần Action Info bị vô hiệu hóa. Chọn các mục đã được sửa xong, sau đó bấm <strong>OK</strong>.
+              </div>
+
+              <div style="display: flex; gap: 0; margin-bottom: 15px; align-items: stretch;">
+                  <!-- Action Info Section (DISABLED - no action) -->
+                  <div style="flex: 1; min-width: 0; padding-right: 15px; opacity: 0.35; pointer-events: none; user-select: none;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Action Info <span style="font-size: 11px; color: #999; font-weight: normal;">(N/A - Panel mode)</span></h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
+                              <div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(Panel mode)</div>
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Image or Position: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Name: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Type: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Verb: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Content: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span>Action Purpose: <span style="font-weight:normal; color:#999;">N/A</span></span></div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Divider 1 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+
+                  <!-- Panel Info Section (= afterLoginPanel itself) -->
+                  <div style="flex: 1; min-width: 0; padding: 0 15px;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel Info</h4>
+                      <div style="display: flex; flex-direction: column; gap: 15px;">
+                          <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
+                              <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
+                              \${getPanelValue('panel_after.image') ? \`<img src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${rowHtml('panel_after.image')}
+                          </div>
+                          <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                              \${rowHtml('panel_after.name')}
+                              \${rowHtml('panel_after.type')}
+                              \${rowHtml('panel_after.verb')}
+                          </div>
+                          <div style="margin-top: 5px; padding: 8px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+                              <div style="font-weight: bold; font-size: 12px; color: #555; margin-bottom: 6px;">Actions on this panel: \${panelItem && panelItem.child_actions ? panelItem.child_actions.length : 0}</div>
+                              <div style="max-height: 120px; overflow-y: auto; font-size: 12px; color: #666;">
+                                  \${panelItem && panelItem.child_actions && panelItem.child_actions.length > 0
+                                    ? panelItem.child_actions.map((a, i) => \`<div style="padding: 2px 0; border-bottom: 1px solid #eee;">\${i + 1}. \${a.name || 'Unknown'}</div>\`).join('')
+                                    : '<div style="color: #999; font-style: italic;">No actions recorded</div>'
+                                  }
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Divider 2 -->
+                  <div style="width: 1px; background-color: #ddd; align-self: stretch; margin: 0 15px;"></div>
+
+                  <!-- Panel Actions Section -->
+                  <div style="flex: 1; min-width: 0; padding-left: 15px; display: flex; flex-direction: column;">
+                      <h4 style="margin: 0 0 10px 0; font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Panel Actions</h4>
+                      <div style="display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: hidden;">
+                          \${missingActionsBugDetail ? rowHtml(missingActionsBugType) : ''}
+                          \${missingActionsForDisplay.length > 0 ? \`
+                          <div style="flex: 1; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 8px; font-size: 12px;">
+                              \${missingActionsForDisplay.map((a, i) => \`<div style="padding: 3px 0; border-bottom: 1px solid #f0f0f0;"><strong>\${a.mising_action_name}</strong>\${a.mising_action_reason ? ': ' + a.mising_action_reason : ''}</div>\`).join('')}
+                          </div>\` : ''}
+                      </div>
+                  </div>
+              </div>
+
+              <div>
+                  <h4 style="margin: 0 0 10px 0; font-size: 15px;">Note</h4>
+                  <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
+              </div>
+          \`;
+
+          const closeHandler = () => {
+              modal.style.display = 'none';
+              resolvedBugCurrentActionId = null;
+              if (closeBtn) closeBtn.removeEventListener('click', closeHandler);
+              if (cancelBtn) cancelBtn.removeEventListener('click', closeHandler);
+          };
+          closeBtn.onclick = closeHandler;
+          cancelBtn.onclick = closeHandler;
+          confirmBtn.onclick = async () => {
+              const checkboxes = content.querySelectorAll('input[name="resolved_bug"]:checked');
+              const indicesToMark = new Set(Array.from(checkboxes).map(cb => parseInt(cb.dataset.index, 10)));
+              const updatedDetails = bugInfo.details.map((d, i) => {
+                  if (indicesToMark.has(i)) return { ...d, bug_fixed: true, resolved_at: new Date().toISOString() };
+                  return d;
+              });
+              const updatedBugInfo = { ...bugInfo, details: updatedDetails };
+              if (typeof window.resolveBug === 'function') {
+                  try {
+                      await window.resolveBug(resolvedBugCurrentActionId, updatedBugInfo);
+                      if (typeof refreshPanelTree === 'function') refreshPanelTree();
+                      if (window.getPanelTree) {
+                          const data = await (typeof getFilteredPanelTree === 'function' ? getFilteredPanelTree(panelLogDisplayMode) : window.getPanelTree(panelLogDisplayMode));
+                          panelTreeData = data || []; renderPanelTree();
+                      }
+                      if (typeof showToast === 'function') showToast('✅ Đã cập nhật bug resolved cho panel.');
                       closeHandler();
                   } catch (err) {
                       console.error('resolveBug error:', err);
