@@ -1160,6 +1160,7 @@ export const QUEUE_BROWSER_HTML = `
         flex-direction: column;
         padding: 10px;
         background: rgba(255, 255, 255, 0.05);
+        border: 2px solid #3b82f6;
         border-radius: 8px;
       }
     </style>
@@ -10829,8 +10830,13 @@ Bạn có chắc chắn muốn rollback?\`;
             console.log('✅ Action image loaded successfully');
           };
           actionImg.addEventListener('click', async () => {
-            if (typeof window.openPanelEditorForActionViewOnly === 'function' && evt.panel_id) {
+            if (actionImg.dataset.opening === '1') return;
+            if (typeof window.openPanelEditorForActionViewOnly !== 'function' || !evt.panel_id) return;
+            actionImg.dataset.opening = '1';
+            try {
               await window.openPanelEditorForActionViewOnly(evt.panel_id);
+            } finally {
+              actionImg.dataset.opening = '';
             }
           });
           actionImageContainer.appendChild(actionImg);

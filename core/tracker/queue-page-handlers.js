@@ -10441,7 +10441,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                         ${panelBeforeHtml}
                     </div>
-                    <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                    <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border:2px solid #3b82f6; border-radius:8px;">
                         ${actionInfoHtml}
                     </div>
                     <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
@@ -10477,7 +10477,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         }
                         
                         if (actionPos) {
-                            ctx.strokeStyle = '#ff0000';
+                            ctx.strokeStyle = '#3b82f6';
                             ctx.lineWidth = 2;
                             ctx.strokeRect(actionPos.x * scaleX, actionPos.y * scaleY, actionPos.w * scaleX, actionPos.h * scaleY);
                         }
@@ -10882,7 +10882,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                     ${panelBeforeHtml}
                 </div>
-                <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border:2px solid #3b82f6; border-radius:8px;">
                     ${actionInfoHtml}
                 </div>
                 <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
@@ -10924,7 +10924,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 }
                                 
                                 if (actPos) {
-                                    ctx.strokeStyle = '#ff0000';
+                                    ctx.strokeStyle = '#3b82f6';
                                     ctx.lineWidth = 2;
                                     ctx.strokeRect(actPos.x * scaleX, actPos.y * scaleY, actPos.w * scaleX, actPos.h * scaleY);
                                 }
