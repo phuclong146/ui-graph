@@ -10043,15 +10043,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
         }
 
-        // Get positions
+        // Get positions and panel info (name, type, verb) for display
         const panelBeforeNode = panelBeforeId ? nodesData.find(n => n.id === panelBeforeId) : null;
         const panelBeforePos = panelBeforeNode?.data?.metadata?.global_pos;
         const panelAfterNode = step?.panel_after?.item_id ? nodesData.find(n => n.id === step.panel_after.item_id) : null;
         const panelAfterPos = panelAfterNode?.data?.metadata?.global_pos;
         const actionPos = actionItem.metadata?.global_pos;
+        const panelBeforeData = panelBeforeNode?.data || (panelBeforeId && tracker.dataItemManager ? await tracker.dataItemManager.getItem(panelBeforeId) : null);
+        const panelAfterData = panelAfterNode?.data || (step?.panel_after?.item_id && tracker.dataItemManager ? await tracker.dataItemManager.getItem(step.panel_after.item_id) : null);
+        const panelBeforeInfo = panelBeforeData ? { name: panelBeforeData.name || 'N/A', type: panelBeforeData.type || 'N/A', verb: panelBeforeData.verb || 'N/A' } : { name: 'N/A', type: 'N/A', verb: 'N/A' };
+        const panelAfterInfo = panelAfterData ? { name: panelAfterData.name || 'N/A', type: panelAfterData.type || 'N/A', verb: panelAfterData.verb || 'N/A' } : { name: 'N/A', type: 'N/A', verb: 'N/A' };
 
         // Show info in browser context
-        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos) => {
+        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos, panelBeforeInfo, panelAfterInfo) => {
             const infoPanel = document.getElementById('graphInfoPanel');
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
@@ -10076,9 +10080,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let actionInfoHtml = '';
 
             // Panel Before - always show frame, even if no data
+            const panelBeforeInfoHtml = '<p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Name:</strong> ' + (panelBeforeInfo.name || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Type:</strong> ' + (panelBeforeInfo.type || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Verb:</strong> ' + (panelBeforeInfo.verb || 'N/A') + '</p>';
             if (panelBeforeImage) {
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
+                    <div style="margin-bottom:8px;">${panelBeforeInfoHtml}</div>
                     <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
                         <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
                         <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
@@ -10087,6 +10093,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             } else {
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
+                    <div style="margin-bottom:8px;">${panelBeforeInfoHtml}</div>
                     <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
                         <p style="color:#888; margin:0; text-align:center;">No information available</p>
                     </div>
@@ -10103,10 +10110,12 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             `;
 
             // Panel After - always show frame, even if no data
+            const panelAfterInfoHtml = '<p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Name:</strong> ' + (panelAfterInfo.name || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Type:</strong> ' + (panelAfterInfo.type || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Verb:</strong> ' + (panelAfterInfo.verb || 'N/A') + '</p>';
             if (panelAfterImage) {
                 if (panelAfterPos) {
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
+                        <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
                         <div id="panelAfterImageContainer" style="position:relative; display:inline-block;">
                             <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
                             <canvas id="panelAfterImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
@@ -10114,11 +10123,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 } else {
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
+                        <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
                         <img src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
                 }
             } else {
                 panelAfterHtml = `
                     <h4 style="color:#fff;">Panel After</h4>
+                    <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
                     <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
                         <p style="color:#888; margin:0; text-align:center;">No information available</p>
                     </div>
@@ -10243,7 +10254,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
             }
-        }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos);
+        }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos, panelBeforeInfo, panelAfterInfo);
     };
 
     const showStepInfo = async (actionItem, step, itemMap) => {
