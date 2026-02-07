@@ -8915,8 +8915,30 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
         const globalPos = panelData.metadata?.global_pos;
 
+        // Get actions of this panel for Panel Info: total count, names, and positions for drawing
+        let actionList = [];
+        const panelId = panelData.itemId;
+        const itemCategory = panelData.itemCategory || 'PANEL';
+        if (panelId && tracker.dataItemManager && tracker.parentPanelManager) {
+            try {
+                const actionIds = await getActionIdsForItem(panelId, itemCategory);
+                const panelTopLeft = globalPos || null;
+                for (const actionId of actionIds) {
+                    const actionItem = await tracker.dataItemManager.getItem(actionId);
+                    if (!actionItem) continue;
+                    const gp = actionItem.metadata?.global_pos;
+                    actionList.push({
+                        name: actionItem.name || 'Action',
+                        global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
+                    });
+                }
+            } catch (e) {
+                console.warn('showPanelInfoHandler: failed to get action list', e);
+            }
+        }
+
         // Show info in browser context
-        await tracker.queuePage.evaluate((panelData, imageBase64, globalPos) => {
+        await tracker.queuePage.evaluate((panelData, imageBase64, globalPos, actionList) => {
             const infoPanel = document.getElementById('graphInfoPanel');
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
@@ -8936,12 +8958,21 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 headerTitle.textContent = 'Panel info';
             }
 
+            const actionCount = actionList ? actionList.length : 0;
+            const actionNamesHtml = actionCount === 0
+                ? '<p style="color:#999; font-size:13px; margin:0;"><em>Không có action</em></p>'
+                : '<ul style="margin:0; padding-left:18px; color:#ccc; font-size:13px;">' +
+                    (actionList.map(a => '<li>' + (a.name || 'N/A') + '</li>').join('')) + '</ul>';
+
             let imageHtml = '';
+            const hasBorders = (globalPos || (actionList && actionList.some(a => a.global_pos)));
+            const panelDisplayName = panelData.name || 'Panel';
             if (imageBase64) {
-                if (globalPos) {
+                if (hasBorders) {
                     imageHtml = `<div id="panelImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
                         <img id="panelImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                         <canvas id="panelImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                        <div id="panelImageFrameTooltip" style="display:none; position:fixed; z-index:20015; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>
                     </div>`;
                 } else {
                     imageHtml = `<div id="panelImageContainer" style="display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
@@ -8954,17 +8985,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 <p><strong>Name:</strong> ${panelData.name || 'N/A'}</p>
                 <p><strong>Type:</strong> ${panelData.type || 'N/A'}</p>
                 <p><strong>Verb:</strong> ${panelData.verb || 'N/A'}</p>
+                <p style="margin-top:12px;"><strong>Tổng số action:</strong> ${actionCount}</p>
+                <p style="margin:4px 0 8px 0;"><strong>Danh sách action:</strong></p>
+                ${actionNamesHtml}
                 <div style="margin-top:15px;">
                     ${imageHtml}
                 </div>
             `;
 
-            // Draw border after HTML is set
-            if (imageBase64 && globalPos) {
+            // Draw borders: panel = green, actions = blue (nhất quán xanh lá panel, xanh dương action)
+            const panelStrokeColor = '#22c55e';
+            const actionStrokeColor = '#3b82f6';
+            if (imageBase64 && hasBorders) {
                 const img = document.getElementById('panelImage');
                 const canvas = document.getElementById('panelImageCanvas');
                 if (img && canvas) {
-                    const drawBorder = () => {
+                    const drawBorders = () => {
                         const rect = img.getBoundingClientRect();
                         canvas.width = rect.width;
                         canvas.height = rect.height;
@@ -8974,21 +9010,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
-                        ctx.strokeStyle = '#ff0000';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
+                        if (globalPos) {
+                            ctx.strokeStyle = panelStrokeColor;
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
+                        }
+                        if (actionList && actionList.length > 0) {
+                            actionList.forEach(function(a) {
+                                const ap = a.global_pos;
+                                if (ap) {
+                                    ctx.strokeStyle = actionStrokeColor;
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeRect(ap.x * scaleX, ap.y * scaleY, ap.w * scaleX, ap.h * scaleY);
+                                }
+                            });
+                        }
                     };
                     
                     if (img.complete) {
-                        drawBorder();
+                        drawBorders();
                     } else {
-                        img.onload = drawBorder;
+                        img.onload = drawBorders;
                     }
                     
-                    // Use ResizeObserver to redraw border when image size changes
+                    // Use ResizeObserver to redraw borders when image size changes
                     const resizeObserver = new ResizeObserver(() => {
                         if (img.complete) {
-                            drawBorder();
+                            drawBorders();
                         }
                     });
                     resizeObserver.observe(img);
@@ -8997,10 +9045,55 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     if (infoPanel) {
                         const panelResizeObserver = new ResizeObserver(() => {
                             if (img.complete) {
-                                drawBorder();
+                                drawBorders();
                             }
                         });
                         panelResizeObserver.observe(infoPanel);
+                    }
+
+                    // Hover tooltip: trỏ chuột vào khung thì hiện tên (panel/action)
+                    const container = document.getElementById('panelImageContainer');
+                    const tooltipEl = document.getElementById('panelImageFrameTooltip');
+                    if (container && tooltipEl && img) {
+                        function hitTestFrame(px, py) {
+                            const scaleX = img.naturalWidth / (img.getBoundingClientRect().width || 1);
+                            const scaleY = img.naturalHeight / (img.getBoundingClientRect().height || 1);
+                            const nx = px * scaleX;
+                            const ny = py * scaleY;
+                            if (actionList && actionList.length > 0) {
+                                for (let i = actionList.length - 1; i >= 0; i--) {
+                                    const ap = actionList[i].global_pos;
+                                    if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                        return { name: actionList[i].name || 'Action', type: 'action' };
+                                    }
+                                }
+                            }
+                            if (globalPos && nx >= globalPos.x && nx <= globalPos.x + globalPos.w && ny >= globalPos.y && ny <= globalPos.y + globalPos.h) {
+                                return { name: panelDisplayName, type: 'panel' };
+                            }
+                            return null;
+                        }
+                        container.addEventListener('mousemove', function(e) {
+                            const rect = img.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                tooltipEl.style.display = 'none';
+                                return;
+                            }
+                            const hit = hitTestFrame(localX, localY);
+                            if (hit) {
+                                tooltipEl.textContent = hit.name;
+                                tooltipEl.style.display = 'block';
+                                tooltipEl.style.left = (e.clientX + 14) + 'px';
+                                tooltipEl.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                tooltipEl.style.display = 'none';
+                            }
+                        });
+                        container.addEventListener('mouseleave', function() {
+                            tooltipEl.style.display = 'none';
+                        });
                     }
                 }
             }
@@ -9012,7 +9105,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     overlay = document.createElement('div');
                     overlay.id = 'stepInfoImageOverlay';
                     overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
-                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div>';
+                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
                     document.body.appendChild(overlay);
                 }
                 if (!overlay.dataset.stepInfoViewerReady) {
@@ -9022,10 +9115,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
                     const overlayInner = document.getElementById('stepInfoImageOverlayInner');
                     const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+                    const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
                     if (!overlayImg || !overlayWrap || !overlayInner) return;
                     let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
                     let currentBorderData = null;
                     const minScale = 0.25, maxScale = 8;
+                    const panelStrokeColorOverlay = '#22c55e';
+                    const actionStrokeColorOverlay = '#3b82f6';
+
+                    function hitTestOverlayFrame(nx, ny) {
+                        if (!currentBorderData) return null;
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+                            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+                                const ap = currentBorderData.actionPosList[i];
+                                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                    return currentBorderData.actionNames[i] || 'Action';
+                                }
+                            }
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+                        }
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+                        }
+                        return null;
+                    }
 
                     function applyTransform() {
                         overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')';
@@ -9042,13 +9158,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
                         if (currentBorderData.panelPos) {
                             const p = currentBorderData.panelPos;
-                            ctx.strokeStyle = '#00ff00';
+                            ctx.strokeStyle = panelStrokeColorOverlay;
                             ctx.lineWidth = Math.max(2, 4 / scale);
                             ctx.strokeRect(p.x, p.y, p.w, p.h);
                         }
-                        if (currentBorderData.actionPos) {
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            currentBorderData.actionPosList.forEach(function(a) {
+                                if (a) ctx.strokeRect(a.x, a.y, a.w, a.h);
+                            });
+                        } else if (currentBorderData.actionPos) {
                             const a = currentBorderData.actionPos;
-                            ctx.strokeStyle = '#ff0000';
+                            ctx.strokeStyle = actionStrokeColorOverlay;
                             ctx.lineWidth = Math.max(2, 4 / scale);
                             ctx.strokeRect(a.x, a.y, a.w, a.h);
                         }
@@ -9083,6 +9205,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     function closeViewer() {
                         overlay.style.display = 'none';
                         overlay.style.cursor = 'grab';
+                        if (overlayTooltip) overlayTooltip.style.display = 'none';
                     }
 
                     overlayInner.addEventListener('wheel', function(e) {
@@ -9118,6 +9241,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         overlay.style.cursor = 'grab';
                     });
 
+                    if (overlayTooltip) {
+                        overlayInner.addEventListener('mousemove', function(e) {
+                            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                            const rect = overlayImg.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                overlayTooltip.style.display = 'none';
+                                return;
+                            }
+                            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+                            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+                            const name = hitTestOverlayFrame(nx, ny);
+                            if (name) {
+                                overlayTooltip.textContent = name;
+                                overlayTooltip.style.display = 'block';
+                                overlayTooltip.style.left = (e.clientX + 14) + 'px';
+                                overlayTooltip.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                overlayTooltip.style.display = 'none';
+                            }
+                        });
+                        overlayInner.addEventListener('mouseleave', function() {
+                            overlayTooltip.style.display = 'none';
+                        });
+                    }
+
                     closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
                     overlay.addEventListener('click', function(e) {
                         if (e.target === overlay) closeViewer();
@@ -9129,13 +9279,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
                 const panelEl = document.getElementById('panelImageContainer');
                 if (panelEl && window._openStepInfoImageViewer) {
+                    const actionPosList = actionList && actionList.length > 0
+                        ? actionList.map(function(a) { return a.global_pos || null; }).filter(Boolean)
+                        : [];
+                    const actionNamesForOverlay = actionList && actionList.length > 0
+                        ? actionList.map(function(a) { return a.name || 'Action'; })
+                        : [];
                     panelEl.addEventListener('click', function() {
                         const img = panelEl.querySelector('img');
-                        if (img && img.src) window._openStepInfoImageViewer(img.src, { panelPos: globalPos || null });
+                        if (img && img.src) {
+                            const borderData = { panelPos: globalPos || null, panelName: panelDisplayName };
+                            if (actionPosList.length > 0) {
+                                borderData.actionPosList = actionPosList;
+                                borderData.actionNames = actionNamesForOverlay;
+                            }
+                            window._openStepInfoImageViewer(img.src, borderData);
+                        }
                     });
                 }
             })();
-        }, panelData, imageBase64, globalPos);
+        }, panelData, imageBase64, globalPos, actionList);
     };
 
     // Helper function to find panel containing an action
@@ -10390,14 +10553,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
-            // Step Info image viewer: zoom + pan when clicking panel before/after (khung xanh/đỏ đi kèm ảnh, dùng chung overlay)
+            // Step Info image viewer: zoom + pan when clicking panel before/after (khung xanh lá panel, xanh dương action, dùng chung overlay)
             (function initStepInfoImageViewer() {
                 let overlay = document.getElementById('stepInfoImageOverlay');
                 if (!overlay) {
                     overlay = document.createElement('div');
                     overlay.id = 'stepInfoImageOverlay';
                     overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
-                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div>';
+                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
                     document.body.appendChild(overlay);
                 }
                 if (!overlay.dataset.stepInfoViewerReady) {
@@ -10407,10 +10570,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
                     const overlayInner = document.getElementById('stepInfoImageOverlayInner');
                     const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+                    const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
                     if (!overlayImg || !overlayWrap || !overlayInner) return;
                     let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
                     let currentBorderData = null;
                     const minScale = 0.25, maxScale = 8;
+                    const panelStrokeColorOverlay = '#22c55e';
+                    const actionStrokeColorOverlay = '#3b82f6';
+
+                    function hitTestOverlayFrame(nx, ny) {
+                        if (!currentBorderData) return null;
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+                            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+                                const ap = currentBorderData.actionPosList[i];
+                                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                    return currentBorderData.actionNames[i] || 'Action';
+                                }
+                            }
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+                        }
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+                        }
+                        return null;
+                    }
 
                     function applyTransform() {
                         overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')';
@@ -10427,13 +10613,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
                         if (currentBorderData.panelPos) {
                             const p = currentBorderData.panelPos;
-                            ctx.strokeStyle = '#00ff00';
+                            ctx.strokeStyle = panelStrokeColorOverlay;
                             ctx.lineWidth = Math.max(2, 4 / scale);
                             ctx.strokeRect(p.x, p.y, p.w, p.h);
                         }
-                        if (currentBorderData.actionPos) {
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            currentBorderData.actionPosList.forEach(function(a) {
+                                if (a) ctx.strokeRect(a.x, a.y, a.w, a.h);
+                            });
+                        } else if (currentBorderData.actionPos) {
                             const a = currentBorderData.actionPos;
-                            ctx.strokeStyle = '#ff0000';
+                            ctx.strokeStyle = actionStrokeColorOverlay;
                             ctx.lineWidth = Math.max(2, 4 / scale);
                             ctx.strokeRect(a.x, a.y, a.w, a.h);
                         }
@@ -10468,6 +10660,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     function closeViewer() {
                         overlay.style.display = 'none';
                         overlay.style.cursor = 'grab';
+                        if (overlayTooltip) overlayTooltip.style.display = 'none';
                     }
 
                     overlayInner.addEventListener('wheel', function(e) {
@@ -10502,6 +10695,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         isDragging = false;
                         overlay.style.cursor = 'grab';
                     });
+
+                    if (overlayTooltip) {
+                        overlayInner.addEventListener('mousemove', function(e) {
+                            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                            const rect = overlayImg.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                overlayTooltip.style.display = 'none';
+                                return;
+                            }
+                            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+                            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+                            const name = hitTestOverlayFrame(nx, ny);
+                            if (name) {
+                                overlayTooltip.textContent = name;
+                                overlayTooltip.style.display = 'block';
+                                overlayTooltip.style.left = (e.clientX + 14) + 'px';
+                                overlayTooltip.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                overlayTooltip.style.display = 'none';
+                            }
+                        });
+                        overlayInner.addEventListener('mouseleave', function() {
+                            overlayTooltip.style.display = 'none';
+                        });
+                    }
 
                     closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
                     overlay.addEventListener('click', function(e) {
