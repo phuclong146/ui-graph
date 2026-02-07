@@ -4842,13 +4842,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const actionItem = await tracker.dataItemManager.getItem(actionId);
                     if (actionItem) {
                         const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
+                        const gp = actionItem.metadata?.global_pos;
                         actions.push({
                             action_id: actionItem.item_id,
                             action_name: actionItem.name,
                             action_type: actionItem.type,
                             action_verb: actionItem.verb,
                             action_content: actionItem.content,
-                            action_pos: actionPos
+                            action_pos: actionPos,
+                            global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
                         });
                     }
                 }

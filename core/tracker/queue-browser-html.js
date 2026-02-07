@@ -3853,6 +3853,158 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
 
+      // Step Info Image Overlay: ensure exists for validate_panel_info zoom (and View Graph Panel Info)
+      function ensureStepInfoOverlayReady() {
+        if (window._openStepInfoImageViewer) return;
+        let overlay = document.getElementById('stepInfoImageOverlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'stepInfoImageOverlay';
+          overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
+          overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
+          document.body.appendChild(overlay);
+        }
+        const overlayImg = document.getElementById('stepInfoImageOverlayImg');
+        const overlayCanvas = document.getElementById('stepInfoImageOverlayCanvas');
+        const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
+        const overlayInner = document.getElementById('stepInfoImageOverlayInner');
+        const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+        const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
+        if (!overlayImg || !overlayWrap || !overlayInner) return;
+        let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+        let currentBorderData = null;
+        const minScale = 0.25, maxScale = 8;
+        const panelStrokeColorOverlay = '#22c55e';
+        const actionStrokeColorOverlay = '#3b82f6';
+        function hitTestOverlayFrame(nx, ny) {
+          if (!currentBorderData) return null;
+          if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+              const ap = currentBorderData.actionPosList[i];
+              if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) return currentBorderData.actionNames[i] || 'Action';
+            }
+          } else if (currentBorderData.actionPos) {
+            const a = currentBorderData.actionPos;
+            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+          }
+          if (currentBorderData.panelPos) {
+            const p = currentBorderData.panelPos;
+            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+          }
+          return null;
+        }
+        function applyTransform() { overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')'; }
+        function drawOverlayBorders() {
+          if (!overlayCanvas || !currentBorderData || !overlayImg.naturalWidth) return;
+          const img = overlayImg;
+          overlayCanvas.width = img.naturalWidth;
+          overlayCanvas.height = img.naturalHeight;
+          overlayCanvas.style.width = img.naturalWidth + 'px';
+          overlayCanvas.style.height = img.naturalHeight + 'px';
+          const ctx = overlayCanvas.getContext('2d');
+          ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          if (currentBorderData.panelPos) {
+            const p = currentBorderData.panelPos;
+            ctx.strokeStyle = panelStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            ctx.strokeRect(p.x, p.y, p.w, p.h);
+          }
+          if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+            ctx.strokeStyle = actionStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            currentBorderData.actionPosList.forEach(function(a) { if (a) ctx.strokeRect(a.x, a.y, a.w, a.h); });
+          } else if (currentBorderData.actionPos) {
+            const a = currentBorderData.actionPos;
+            ctx.strokeStyle = actionStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            ctx.strokeRect(a.x, a.y, a.w, a.h);
+          }
+        }
+        function applyFitScale() {
+          if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+          const rect = overlayInner.getBoundingClientRect();
+          const fitScale = Math.min(rect.width / overlayImg.naturalWidth, rect.height / overlayImg.naturalHeight);
+          scale = Math.min(1, fitScale);
+          translateX = 0;
+          translateY = 0;
+          applyTransform();
+          drawOverlayBorders();
+        }
+        window._openStepInfoImageViewer = function(src, borderData) {
+          currentBorderData = borderData || null;
+          overlayImg.src = src || '';
+          if (overlayCanvas) overlayCanvas.style.display = currentBorderData ? 'block' : 'none';
+          scale = 1;
+          translateX = 0;
+          translateY = 0;
+          applyTransform();
+          overlay.style.display = 'flex';
+          overlay.style.cursor = 'grab';
+          function onReady() { applyFitScale(); }
+          if (overlayImg.complete) onReady();
+          else overlayImg.onload = onReady;
+        };
+        function closeViewer() {
+          overlay.style.display = 'none';
+          overlay.style.cursor = 'grab';
+          if (overlayTooltip) overlayTooltip.style.display = 'none';
+        }
+        overlayInner.addEventListener('wheel', function(e) {
+          e.preventDefault();
+          const rect = overlayInner.getBoundingClientRect();
+          const cx = e.clientX - rect.left - rect.width / 2;
+          const cy = e.clientY - rect.top - rect.height / 2;
+          const oldScale = scale;
+          scale = e.deltaY > 0 ? Math.max(minScale, scale * 0.9) : Math.min(maxScale, scale * 1.1);
+          translateX = cx + (translateX - cx) * scale / oldScale;
+          translateY = cy + (translateY - cy) * scale / oldScale;
+          applyTransform();
+          drawOverlayBorders();
+        }, { passive: false });
+        overlayInner.addEventListener('mousedown', function(e) {
+          if (e.button !== 0) return;
+          isDragging = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          startTx = translateX;
+          startTy = translateY;
+          overlay.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', function(e) {
+          if (!isDragging) return;
+          translateX = startTx + (e.clientX - startX);
+          translateY = startTy + (e.clientY - startY);
+          applyTransform();
+        });
+        document.addEventListener('mouseup', function() {
+          isDragging = false;
+          overlay.style.cursor = 'grab';
+        });
+        if (overlayTooltip) {
+          overlayInner.addEventListener('mousemove', function(e) {
+            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+            const rect = overlayImg.getBoundingClientRect();
+            const localX = e.clientX - rect.left;
+            const localY = e.clientY - rect.top;
+            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) { overlayTooltip.style.display = 'none'; return; }
+            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+            const name = hitTestOverlayFrame(nx, ny);
+            if (name) {
+              overlayTooltip.textContent = name;
+              overlayTooltip.style.display = 'block';
+              overlayTooltip.style.left = (e.clientX + 14) + 'px';
+              overlayTooltip.style.top = (e.clientY + 14) + 'px';
+            } else overlayTooltip.style.display = 'none';
+          });
+          overlayInner.addEventListener('mouseleave', function() { overlayTooltip.style.display = 'none'; });
+        }
+        closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeViewer(); });
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && overlay.style.display === 'flex') closeViewer(); });
+      }
+      window.ensureStepInfoOverlayReady = ensureStepInfoOverlayReady;
+
       // Graph Panel Log Tree functions
       // Display mode for Graph Panel Log: 'log', 'tree', or 'validation'
       let graphPanelLogDisplayMode = getLocalStorage('graph-panel-log-display-mode') || 'log';
@@ -10357,6 +10509,8 @@ Bạn có chắc chắn muốn rollback?\`;
         if (!evt.panel_id) return;
 
         const coord = evt.coordinate || evt.metadata?.global_pos || null;
+        const actionsWithPos = (evt.actions && Array.isArray(evt.actions)) ? evt.actions : [];
+        const panelDisplayName = evt.item_name || 'Panel';
         const panelInfoDiv = document.createElement('div');
         panelInfoDiv.className = 'event';
         panelInfoDiv.setAttribute('data-event-type', 'validate_panel_info');
@@ -10364,7 +10518,8 @@ Bạn có chắc chắn muốn rollback?\`;
         panelInfoDiv.style.cssText = 'position: relative;';
 
         const imageWrapper = document.createElement('div');
-        imageWrapper.style.cssText = 'position: relative; display: inline-block; max-width: 100%; margin-bottom: 16px;';
+        imageWrapper.style.cssText = 'position: relative; display: inline-block; max-width: 100%; margin-bottom: 16px; cursor: pointer;';
+        imageWrapper.title = 'Bấm để xem phóng to (zoom, di chuyển)';
 
         let imageSrc = evt.fullscreen_url || null;
         if (!imageSrc && evt.screenshot) {
@@ -10373,25 +10528,103 @@ Bạn có chắc chắn muốn rollback?\`;
         if (imageSrc) {
           const img = document.createElement('img');
           img.src = imageSrc;
-          img.style.cssText = 'max-width: 100%; display: block; border: 1px solid #ddd; border-radius: 6px;';
+          img.style.cssText = 'max-width: 100%; display: block; border: 1px solid #ddd; border-radius: 6px; pointer-events: none;';
           img.alt = 'Panel fullscreen';
           img.onerror = function() { this.style.display = 'none'; };
-          img.onload = function() {
-            if (coord && coord.x != null && coord.y != null && coord.w != null && coord.h != null && cropOverlay && img.parentNode) {
-              const scale = img.offsetWidth / img.naturalWidth;
-              cropOverlay.style.left = (coord.x * scale) + 'px';
-              cropOverlay.style.top = (coord.y * scale) + 'px';
-              cropOverlay.style.width = (coord.w * scale) + 'px';
-              cropOverlay.style.height = (coord.h * scale) + 'px';
-              cropOverlay.style.display = 'block';
-            }
-          };
           imageWrapper.appendChild(img);
 
-          const cropOverlay = document.createElement('div');
-          cropOverlay.setAttribute('data-crop-overlay', '1');
-          cropOverlay.style.cssText = 'position: absolute; border: 2px solid #00aaff; box-sizing: border-box; pointer-events: none; display: none;';
-          imageWrapper.appendChild(cropOverlay);
+          const hasBorders = (coord && coord.x != null && coord.w != null) || actionsWithPos.some(function(a) { return a.global_pos; });
+          if (hasBorders) {
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = 'position: absolute; top: 0; left: 0; pointer-events: none;';
+            imageWrapper.appendChild(canvas);
+
+            const tooltipEl = document.createElement('div');
+            tooltipEl.setAttribute('data-validate-panel-tooltip', '1');
+            tooltipEl.style.cssText = 'display:none; position:fixed; z-index:20015; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+            imageWrapper.appendChild(tooltipEl);
+
+            const panelStrokeColor = '#22c55e';
+            const actionStrokeColor = '#3b82f6';
+            function drawBorders() {
+              if (!img.naturalWidth || !canvas || !img.parentNode) return;
+              const rect = img.getBoundingClientRect();
+              canvas.width = rect.width;
+              canvas.height = rect.height;
+              canvas.style.width = rect.width + 'px';
+              canvas.style.height = rect.height + 'px';
+              const ctx = canvas.getContext('2d');
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              const scaleX = rect.width / img.naturalWidth;
+              const scaleY = rect.height / img.naturalHeight;
+              if (coord && coord.x != null && coord.w != null) {
+                ctx.strokeStyle = panelStrokeColor;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(coord.x * scaleX, coord.y * scaleY, coord.w * scaleX, coord.h * scaleY);
+              }
+              actionsWithPos.forEach(function(a) {
+                const ap = a.global_pos;
+                if (ap) {
+                  ctx.strokeStyle = actionStrokeColor;
+                  ctx.lineWidth = 2;
+                  ctx.strokeRect(ap.x * scaleX, ap.y * scaleY, ap.w * scaleX, ap.h * scaleY);
+                }
+              });
+            }
+            function hitTestFrame(px, py) {
+              const scaleX = img.naturalWidth / (img.getBoundingClientRect().width || 1);
+              const scaleY = img.naturalHeight / (img.getBoundingClientRect().height || 1);
+              const nx = px * scaleX;
+              const ny = py * scaleY;
+              for (var i = actionsWithPos.length - 1; i >= 0; i--) {
+                var ap = actionsWithPos[i].global_pos;
+                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                  return actionsWithPos[i].action_name || 'Action';
+                }
+              }
+              if (coord && nx >= coord.x && nx <= coord.x + coord.w && ny >= coord.y && ny <= coord.y + coord.h) {
+                return panelDisplayName;
+              }
+              return null;
+            }
+            img.onload = function() { drawBorders(); };
+            if (img.complete) drawBorders();
+            var ro = new ResizeObserver(function() { if (img.complete) drawBorders(); });
+            ro.observe(img);
+            imageWrapper.addEventListener('mousemove', function(e) {
+              var r = img.getBoundingClientRect();
+              var localX = e.clientX - r.left;
+              var localY = e.clientY - r.top;
+              if (localX < 0 || localY < 0 || localX > r.width || localY > r.height) {
+                tooltipEl.style.display = 'none';
+                return;
+              }
+              var name = hitTestFrame(localX, localY);
+              if (name) {
+                tooltipEl.textContent = name;
+                tooltipEl.style.display = 'block';
+                tooltipEl.style.left = (e.clientX + 14) + 'px';
+                tooltipEl.style.top = (e.clientY + 14) + 'px';
+              } else {
+                tooltipEl.style.display = 'none';
+              }
+            });
+            imageWrapper.addEventListener('mouseleave', function() { tooltipEl.style.display = 'none'; });
+
+            imageWrapper.addEventListener('click', function() {
+              if (!img.src) return;
+              var borderData = { panelPos: coord || null, panelName: panelDisplayName };
+              var actionPosList = actionsWithPos.map(function(a) { return a.global_pos || null; }).filter(Boolean);
+              if (actionPosList.length > 0) {
+                borderData.actionPosList = actionPosList;
+                borderData.actionNames = actionsWithPos.map(function(a) { return a.action_name || 'Action'; });
+              }
+              if (typeof window.ensureStepInfoOverlayReady === 'function') window.ensureStepInfoOverlayReady();
+              if (typeof window._openStepInfoImageViewer === 'function') {
+                window._openStepInfoImageViewer(img.src, borderData);
+              }
+            });
+          }
         }
 
         panelInfoDiv.appendChild(imageWrapper);
