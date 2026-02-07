@@ -9479,6 +9479,34 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    const getPanelItemForBugHandler = async (panelId) => {
+        try {
+            const panelItem = await tracker.dataItemManager.getItem(panelId);
+            if (!panelItem) return null;
+
+            // Get child actions of this panel
+            try {
+                const parentEntry = await tracker.parentPanelManager.getPanelEntry(panelId);
+                const childActionIds = parentEntry?.child_actions || [];
+                const childActions = [];
+                for (const cid of childActionIds) {
+                    const childItem = await tracker.dataItemManager.getItem(cid);
+                    if (childItem) {
+                        childActions.push({ id: cid, name: childItem.name || 'Unknown' });
+                    }
+                }
+                panelItem.child_actions = childActions;
+            } catch (e) {
+                panelItem.child_actions = [];
+            }
+
+            return panelItem;
+        } catch (e) {
+            console.error('getPanelItemForBug error:', e);
+            return null;
+        }
+    };
+
     const raiseBugHandler = async (actionItemId, bugInfo) => {
         try {
             if (!actionItemId) {
@@ -11101,6 +11129,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
         detectMissingActionsByAI: detectMissingActionsByAIHandler,
+        getPanelItemForBug: getPanelItemForBugHandler,
         raiseBug: raiseBugHandler,
         resolveBug: resolveBugHandler,
         cancelBug: cancelBugHandler,
