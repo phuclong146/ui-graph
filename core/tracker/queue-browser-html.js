@@ -8854,7 +8854,8 @@ Bạn có chắc chắn muốn rollback?\`;
               const idx = getDetailIndex(type);
               const name = bugNameMap[type] || type;
               const isImageType = type === 'action.image' || type === 'panel_after.image';
-              const valueHtml = isImageType ? name : formatLabel(name, getActionValue(type));
+              const isMissingActionsType = type === 'panel_after.missing_actions' || type === 'panel.missing_actions';
+              const valueHtml = (isImageType || isMissingActionsType) ? name : formatLabel(name, getActionValue(type));
               if (detail && detail.bug_fixed === true) {
                   return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span style="color:#28a745;">✓</span> \${valueHtml} <span style="color:#28a745; font-size:12px;">[đã sửa] \${formatResolvedAt(detail.resolved_at)}</span></div>\`;
               }
@@ -9048,7 +9049,8 @@ Bạn có chắc chắn muốn rollback?\`;
               const idx = getDetailIndex(type);
               const name = bugNameMap[type] || type;
               const isImageType = type === 'panel_after.image';
-              const valueHtml = isImageType ? name : formatLabel(name, getPanelValue(type));
+              const isMissingActionsType = type === 'panel_after.missing_actions' || type === 'panel.missing_actions';
+              const valueHtml = (isImageType || isMissingActionsType) ? name : formatLabel(name, getPanelValue(type));
               if (detail && detail.bug_fixed === true) {
                   return \`<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0;"><span style="color:#28a745;">✓</span> \${valueHtml} <span style="color:#28a745; font-size:12px;">[đã sửa] \${formatResolvedAt(detail.resolved_at)}</span></div>\`;
               }
