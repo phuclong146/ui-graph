@@ -875,23 +875,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const openPanelEditorHandler = async (actionItemIdToSelect = null) => {
+    const openPanelEditorHandler = async (actionItemIdToSelect = null, options = {}) => {
         try {
             if (!tracker.selectedPanelId || !tracker.dataItemManager || !tracker.parentPanelManager) {
                 console.error('No panel selected or managers not initialized');
                 return;
             }
+            const panelActionMode = options.panelActionMode || null;
 
             console.log(`Opening editor for panel: ${tracker.selectedPanelId}`);
 
             const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
             if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) {
                 console.error('Selected item is not a PANEL or PAGE');
-                return;
-            }
-
-            if (!panelItem.image_base64) {
-                console.error(`Panel has no image. Status: ${panelItem.status}`);
                 return;
             }
 
@@ -923,7 +919,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 actions: actions
             }];
 
-            const editorImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+            // Load panel image: file (fullscreen_base64/image_base64) or URL (fullscreen_url/image_url) for VALIDATE/ADMIN from DB
+            let editorImage = null;
+            const panelImageRef = panelItem.image_base64;
+            if (panelImageRef) {
+                editorImage = await tracker.dataItemManager.loadBase64FromFile(panelImageRef);
+            }
+            if (!editorImage && panelItem.image_url) {
+                const imageUrl = panelItem.image_url;
+                try {
+                    const response = await fetch(imageUrl);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        editorImage = buffer.toString('base64');
+                    }
+                } catch (err) {
+                    console.warn('Failed to fetch panel image from URL:', err?.message);
+                }
+            }
+            if (!editorImage) {
+                console.error(`Panel has no image (image_base64, fullscreen_base64, image_url, or fullscreen_url). Status: ${panelItem.status}`);
+                return;
+            }
 
             // Get panelBefore image from step
             const panelBeforeBase64 = await getPanelBeforeBase64FromStep(tracker.selectedPanelId);
@@ -938,11 +956,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.queuePage.evaluate(async (data) => {
                 eval(data.panelEditorClassCode);
 
-                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos);
+                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos, data.panelActionMode);
                 await editor.init();
                 
-                // Auto-select action if specified
-                if (data.selectedActionIndex !== null && data.selectedActionIndex !== undefined) {
+                // Auto-select action if specified (skip in only-view to avoid edit UX)
+                if (data.panelActionMode !== 'only-view' && data.selectedActionIndex !== null && data.selectedActionIndex !== undefined) {
                     const actionId = '0-' + data.selectedActionIndex;
                     console.log('🎯 Auto-selecting action:', actionId, 'at index:', data.selectedActionIndex);
                     
@@ -1077,7 +1095,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panelId: tracker.selectedPanelId,
                 panelBeforeBase64: panelBeforeBase64,
                 panelAfterGlobalPos: panelAfterGlobalPos,
-                selectedActionIndex: selectedActionIndex
+                selectedActionIndex: selectedActionIndex,
+                panelActionMode: panelActionMode
             });
 
         } catch (err) {
@@ -1106,6 +1125,25 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await openPanelEditorHandler(actionItemId);
         } catch (err) {
             console.error('Failed to open panel editor for action:', err);
+        }
+    };
+
+    /** ADMIN/VALIDATE: open panel-edit-action in only-view mode (no edit/delete/reorder). */
+    const openPanelEditorForActionViewOnlyHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.dataItemManager || !tracker.parentPanelManager) {
+                console.error('No action ID provided or managers not initialized');
+                return;
+            }
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (!parentPanelId) {
+                console.error('Could not find parent panel for action:', actionItemId);
+                return;
+            }
+            tracker.selectedPanelId = parentPanelId;
+            await openPanelEditorHandler(actionItemId, { panelActionMode: 'only-view' });
+        } catch (err) {
+            console.error('Failed to open panel editor for action (view only):', err);
         }
     };
 
@@ -11060,6 +11098,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         resizeQueueBrowser: resizeQueueBrowserHandler,
         openPanelEditor: openPanelEditorHandler,
         openPanelEditorForAction: openPanelEditorForActionHandler,
+        openPanelEditorForActionViewOnly: openPanelEditorForActionViewOnlyHandler,
         savePanelEdits: savePanelEditsHandler,
         drawPanel: drawPanelHandler,
         saveCroppedPanel: saveCroppedPanelHandler,

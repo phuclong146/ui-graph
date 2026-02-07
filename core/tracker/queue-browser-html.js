@@ -10585,8 +10585,9 @@ Bạn có chắc chắn muốn rollback?\`;
         if (hasImage && imageSrc) {
           const actionImg = document.createElement('img');
           actionImg.src = imageSrc;
-          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block;';
+          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block; cursor: pointer;';
           actionImg.alt = 'Action image';
+          actionImg.title = 'Click to open panel-edit-action (view only)';
           actionImg.onerror = function() {
             console.error('Failed to load action image:', imageSrc);
             this.style.display = 'none';
@@ -10594,6 +10595,11 @@ Bạn có chắc chắn muốn rollback?\`;
           actionImg.onload = function() {
             console.log('✅ Action image loaded successfully');
           };
+          actionImg.addEventListener('click', async () => {
+            if (typeof window.openPanelEditorForActionViewOnly === 'function' && evt.panel_id) {
+              await window.openPanelEditorForActionViewOnly(evt.panel_id);
+            }
+          });
           actionImageContainer.appendChild(actionImg);
           step1Div.appendChild(actionImageContainer);
         } else {
