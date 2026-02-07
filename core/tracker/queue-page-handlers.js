@@ -10085,8 +10085,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
                     <div style="margin-bottom:8px;">${panelBeforeInfoHtml}</div>
-                    <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
-                        <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                    <div id="panelBeforeImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                        <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                         <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                     </div>
                 `;
@@ -10116,15 +10116,17 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
                         <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
-                        <div id="panelAfterImageContainer" style="position:relative; display:inline-block;">
-                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                        <div id="panelAfterImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                             <canvas id="panelAfterImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                         </div>`;
                 } else {
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
                         <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
-                        <img src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                        <div id="panelAfterImageContainer" style="display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
+                        </div>`;
                 }
             } else {
                 panelAfterHtml = `
@@ -10254,6 +10256,146 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
             }
+
+            // Step Info image viewer: zoom + pan when clicking panel before/after (khung xanh/đỏ đi kèm ảnh)
+            (function initStepInfoImageViewer() {
+                let overlay = document.getElementById('stepInfoImageOverlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'stepInfoImageOverlay';
+                    overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
+                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div>';
+                    document.body.appendChild(overlay);
+                }
+                const overlayImg = document.getElementById('stepInfoImageOverlayImg');
+                const overlayCanvas = document.getElementById('stepInfoImageOverlayCanvas');
+                const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
+                const overlayInner = document.getElementById('stepInfoImageOverlayInner');
+                const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+                if (!overlayImg || !overlayWrap || !overlayInner) return;
+
+                let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+                let currentBorderData = null; // { panelPos: {x,y,w,h}, actionPos: {x,y,w,h} }
+                const minScale = 0.25, maxScale = 8;
+
+                function applyTransform() {
+                    overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')';
+                }
+
+                function drawOverlayBorders() {
+                    if (!overlayCanvas || !currentBorderData || !overlayImg.naturalWidth) return;
+                    const img = overlayImg;
+                    overlayCanvas.width = img.naturalWidth;
+                    overlayCanvas.height = img.naturalHeight;
+                    overlayCanvas.style.width = img.naturalWidth + 'px';
+                    overlayCanvas.style.height = img.naturalHeight + 'px';
+                    const ctx = overlayCanvas.getContext('2d');
+                    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                    if (currentBorderData.panelPos) {
+                        const p = currentBorderData.panelPos;
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = Math.max(2, 4 / scale);
+                        ctx.strokeRect(p.x, p.y, p.w, p.h);
+                    }
+                    if (currentBorderData.actionPos) {
+                        const a = currentBorderData.actionPos;
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = Math.max(2, 4 / scale);
+                        ctx.strokeRect(a.x, a.y, a.w, a.h);
+                    }
+                }
+
+                function applyFitScale() {
+                    if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                    const rect = overlayInner.getBoundingClientRect();
+                    const fitScale = Math.min(rect.width / overlayImg.naturalWidth, rect.height / overlayImg.naturalHeight);
+                    scale = Math.min(1, fitScale);
+                    translateX = 0;
+                    translateY = 0;
+                    applyTransform();
+                    drawOverlayBorders();
+                }
+
+                function openViewer(src, borderData) {
+                    currentBorderData = borderData || null;
+                    overlayImg.src = src || '';
+                    if (overlayCanvas) overlayCanvas.style.display = currentBorderData ? 'block' : 'none';
+                    scale = 1;
+                    translateX = 0;
+                    translateY = 0;
+                    applyTransform();
+                    overlay.style.display = 'flex';
+                    overlay.style.cursor = 'grab';
+                    function onReady() {
+                        applyFitScale();
+                    }
+                    if (overlayImg.complete) onReady();
+                    else overlayImg.onload = onReady;
+                }
+
+                function closeViewer() {
+                    overlay.style.display = 'none';
+                    overlay.style.cursor = 'grab';
+                }
+
+                overlayInner.addEventListener('wheel', function(e) {
+                    e.preventDefault();
+                    const rect = overlayInner.getBoundingClientRect();
+                    const cx = e.clientX - rect.left - rect.width / 2;
+                    const cy = e.clientY - rect.top - rect.height / 2;
+                    const oldScale = scale;
+                    scale = e.deltaY > 0 ? Math.max(minScale, scale * 0.9) : Math.min(maxScale, scale * 1.1);
+                    translateX = cx + (translateX - cx) * scale / oldScale;
+                    translateY = cy + (translateY - cy) * scale / oldScale;
+                    applyTransform();
+                    drawOverlayBorders();
+                }, { passive: false });
+
+                overlayInner.addEventListener('mousedown', function(e) {
+                    if (e.button !== 0) return;
+                    isDragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    startTx = translateX;
+                    startTy = translateY;
+                    overlay.style.cursor = 'grabbing';
+                });
+                document.addEventListener('mousemove', function(e) {
+                    if (!isDragging) return;
+                    translateX = startTx + (e.clientX - startX);
+                    translateY = startTy + (e.clientY - startY);
+                    applyTransform();
+                });
+                document.addEventListener('mouseup', function() {
+                    isDragging = false;
+                    overlay.style.cursor = 'grab';
+                });
+
+                closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) closeViewer();
+                });
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape' && overlay.style.display === 'flex') closeViewer();
+                });
+
+                const openViewerFromContainer = function(containerId, borderData) {
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+                    const img = container.querySelector('img');
+                    if (img && img.src) {
+                        openViewer(img.src, borderData);
+                    }
+                };
+                const beforeEl = document.getElementById('panelBeforeImageContainer');
+                const afterEl = document.getElementById('panelAfterImageContainer');
+                if (beforeEl) beforeEl.addEventListener('click', function() {
+                    openViewerFromContainer('panelBeforeImageContainer', { panelPos: panelBeforePos || null, actionPos: actionPos || null });
+                });
+                if (afterEl) afterEl.addEventListener('click', function() {
+                    openViewerFromContainer('panelAfterImageContainer', { panelPos: panelAfterPos || null });
+                });
+            })();
         }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos, panelBeforeInfo, panelAfterInfo);
     };
 
