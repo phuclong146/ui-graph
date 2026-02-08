@@ -8096,7 +8096,7 @@ Bạn có chắc chắn muốn rollback?\`;
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
                               \${getActionValue('action.image') ? 
-                                \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<img id="raiseBugActionImage" src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Click to open panel-edit-action (view only)" />\` : 
                                 \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
                               }
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
@@ -8192,6 +8192,22 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
               </div>
           \`;
+          
+          // Click on Action Image: hide RaiseBug dialog, open panel-edit-action (only-view); show dialog again when panel editor closes (keeps state/data)
+          const raiseBugActionImg = content.querySelector('#raiseBugActionImage');
+          if (raiseBugActionImg && typeof window.openPanelEditorForActionViewOnly === 'function' && actionId) {
+            raiseBugActionImg.addEventListener('click', async () => {
+              if (raiseBugActionImg.dataset.opening === '1') return;
+              raiseBugActionImg.dataset.opening = '1';
+              try {
+                window.__raiseBugDialogHiddenForPanelView = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelEditorForActionViewOnly(actionId);
+              } finally {
+                raiseBugActionImg.dataset.opening = '';
+              }
+            });
+          }
           
           // === Missing Actions Interactive List ===
           let missingActionsArray = getMissingActionsArray();
