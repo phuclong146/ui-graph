@@ -3949,6 +3949,11 @@ export const QUEUE_BROWSER_HTML = `
           overlay.style.display = 'none';
           overlay.style.cursor = 'grab';
           if (overlayTooltip) overlayTooltip.style.display = 'none';
+          if (window.__raiseBugDialogHiddenForPanelViewer) {
+            window.__raiseBugDialogHiddenForPanelViewer = false;
+            const m = document.getElementById('raiseBugModal');
+            if (m) m.style.display = 'flex';
+          }
         }
         overlayInner.addEventListener('wheel', function(e) {
           e.preventDefault();
@@ -8133,7 +8138,7 @@ Bạn có chắc chắn muốn rollback?\`;
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
                               \${getActionValue('panel_after.image') ? 
-                                \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<img id="raiseBugPanelImage" src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển, khung panel & action)" />\` : 
                                 \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
                               }
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
@@ -8205,6 +8210,23 @@ Bạn có chắc chắn muốn rollback?\`;
                 await window.openPanelEditorForActionViewOnly(actionId);
               } finally {
                 raiseBugActionImg.dataset.opening = '';
+              }
+            });
+          }
+          
+          // Click on Panel (After) Image: hide RaiseBug dialog, open panel viewer (zoom, move, panel/action frames); show dialog again when viewer closes (keeps state/data)
+          const panelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+          const raiseBugPanelImg = content.querySelector('#raiseBugPanelImage');
+          if (raiseBugPanelImg && typeof window.openPanelViewer === 'function' && panelAfterId) {
+            raiseBugPanelImg.addEventListener('click', async () => {
+              if (raiseBugPanelImg.dataset.opening === '1') return;
+              raiseBugPanelImg.dataset.opening = '1';
+              try {
+                window.__raiseBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(panelAfterId);
+              } finally {
+                raiseBugPanelImg.dataset.opening = '';
               }
             });
           }

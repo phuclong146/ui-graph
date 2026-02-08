@@ -8911,6 +8911,45 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /** Open panel viewer (stepInfoImageOverlay) for a panel by ID: zoom, move, view panel frame and action frames. Same as validate_panel_info image click. Used from RaiseBug dialog. */
+    const openPanelViewerHandler = async (panelId) => {
+        if (!panelId || !tracker.dataItemManager) return;
+        const panelItem = await tracker.dataItemManager.getItem(panelId);
+        if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) return;
+        const imageBase64 = await loadPanelImage(panelItem);
+        if (!imageBase64) return;
+        const globalPos = panelItem.metadata?.global_pos || null;
+        let actionList = [];
+        try {
+            const actionIds = await getActionIdsForItem(panelId, panelItem.item_category || 'PANEL');
+            for (const actionId of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                if (!actionItem) continue;
+                const gp = actionItem.metadata?.global_pos;
+                actionList.push({
+                    name: actionItem.name || 'Action',
+                    global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
+                });
+            }
+        } catch (e) {
+            console.warn('openPanelViewerHandler: failed to get action list', e);
+        }
+        const panelName = panelItem.name || 'Panel';
+        const actionPosList = actionList.map(a => a.global_pos || null).filter(Boolean);
+        const actionNames = actionList.map(a => a.name || 'Action');
+        await tracker.queuePage.evaluate((imageBase64, globalPos, actionPosList, actionNames, panelName) => {
+            if (typeof window.ensureStepInfoOverlayReady === 'function') window.ensureStepInfoOverlayReady();
+            const borderData = { panelPos: globalPos, panelName };
+            if (actionPosList && actionPosList.length > 0) {
+                borderData.actionPosList = actionPosList;
+                borderData.actionNames = actionNames;
+            }
+            if (typeof window._openStepInfoImageViewer === 'function') {
+                window._openStepInfoImageViewer('data:image/png;base64,' + imageBase64, borderData);
+            }
+        }, imageBase64, globalPos, actionPosList, actionNames, panelName);
+    };
+
     const showPanelInfoHandler = async (panelData) => {
         // Load image in Node.js context
         const imageBase64 = await loadPanelImage(panelData);
@@ -11679,6 +11718,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         handleSaveReminderResponse: handleSaveReminderResponse,
         viewGraph: viewGraphHandler,
         showPanelInfoGraph: showPanelInfoHandler,
+        openPanelViewer: openPanelViewerHandler,
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
         detectMissingActionsByAI: detectMissingActionsByAIHandler,
