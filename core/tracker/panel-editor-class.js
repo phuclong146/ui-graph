@@ -1,10 +1,11 @@
 export function getPanelEditorClassCode() {
     return `
 window.PanelEditor = class PanelEditor {
-    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, panelBeforeBase64 = null, panelAfterGlobalPos = null) {
+    constructor(imageBase64, geminiResultOrActionId, mode = 'full', panelId = null, panelBeforeBase64 = null, panelAfterGlobalPos = null, panelActionMode = null) {
         this.imageBase64 = imageBase64;
         this.panelBeforeBase64 = panelBeforeBase64;
         this.panelAfterGlobalPos = panelAfterGlobalPos;
+        this.panelActionMode = panelActionMode || null;
         console.log(\`🎨 PanelEditor constructor: panelBeforeBase64 = \${panelBeforeBase64 ? 'EXISTS (' + panelBeforeBase64.length + ' chars)' : 'NULL'}\`);
         console.log(\`🎨 PanelEditor constructor: panelAfterGlobalPos = \${panelAfterGlobalPos ? JSON.stringify(panelAfterGlobalPos) : 'NULL'}\`);
         
@@ -135,6 +136,11 @@ window.PanelEditor = class PanelEditor {
         } else if (this.mode === 'cropOnly') {
             toolbarHTML += '<button id="editorCropBtn" class="editor-btn crop-btn">✂️ Crop (OFF)</button>';
             toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">❌ Cancel</button>';
+        } else if (this.panelActionMode === 'only-view') {
+            // panel-action-mode=only-view: only Close button (no edit/delete/save/reorder)
+            toolbarHTML += '<div id="editor-common-group" style="display: flex; flex-direction: column; gap: 10px;">';
+            toolbarHTML += '<button id="editorCancelBtn" class="editor-btn cancel-btn">Close</button>';
+            toolbarHTML += '</div>';
         } else {
             // Group 2: Edit Action - only visible when action is selected
             toolbarHTML += '<div id="editor-edit-action-group" style="display: none; flex-direction: column; gap: 10px; align-items: stretch;">';
@@ -223,6 +229,11 @@ window.PanelEditor = class PanelEditor {
         this.container.innerHTML = toolbarHTML;
         document.body.appendChild(this.container);
         
+        if (this.mode === 'full' && this.panelActionMode === 'only-view') {
+            const addActionWrap = document.getElementById('editorAddActionBtn') && document.getElementById('editorAddActionBtn').parentElement;
+            if (addActionWrap) addActionWrap.style.display = 'none';
+        }
+        
         // Set toolbar to right side immediately to avoid left-side flash
         const toolbar = document.getElementById('editor-toolbar');
         if (toolbar) {
@@ -268,6 +279,15 @@ window.PanelEditor = class PanelEditor {
             this.saveInitialActionPositions(); // Save initial positions after drawing boxes
             this.fixOutOfBoundsBoxes();
             this.canvas.selection = true;
+            if (this.panelActionMode === 'only-view') {
+                this.canvas.selection = false;
+                this.fabricObjects.forEach((boxData) => {
+                    if (boxData.rect) {
+                        boxData.rect.set({ selectable: false, evented: false });
+                    }
+                });
+                this.canvas.renderAll();
+            }
         }
         
         if (this.mode === 'twoPointCrop') {
@@ -1132,6 +1152,13 @@ window.PanelEditor = class PanelEditor {
         } else if (this.mode === 'cropOnly') {
             document.getElementById('editorCropBtn').onclick = () => this.toggleCropMode();
             document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
+        } else if (this.mode === 'full' && this.panelActionMode === 'only-view') {
+            document.getElementById('editorPrevPageBtn').onclick = () => this.switchEditPage('prev');
+            document.getElementById('editorNextPageBtn').onclick = () => this.switchEditPage('next');
+            const compareBtn = document.getElementById('editorCompareBtn');
+            if (compareBtn) compareBtn.onclick = () => this.toggleCompareMode();
+            document.getElementById('editorCancelBtn').onclick = async () => await this.cancel();
+            this.renderActionList();
         } else {
             // Group 1: Panel controls
             document.getElementById('editorPrevPageBtn').onclick = () => this.switchEditPage('prev');
@@ -1169,7 +1196,7 @@ window.PanelEditor = class PanelEditor {
             this.renderActionList();
         }
         
-        if (this.mode !== 'cropOnly') {
+        if (this.mode !== 'cropOnly' && this.panelActionMode !== 'only-view') {
             this._keydownHandler = (e) => {
                 const activeObject = this.canvas.getActiveObject();
                 const isEditingIText = activeObject && activeObject.type === 'i-text' && activeObject.isEditing;
@@ -1657,6 +1684,14 @@ window.PanelEditor = class PanelEditor {
     }
 
     async cancel() {
+        if (this.panelActionMode === 'only-view') {
+            if (this.overlayAutoInterval) {
+                clearInterval(this.overlayAutoInterval);
+                this.overlayAutoInterval = null;
+            }
+            await this.destroy();
+            return;
+        }
         // Stop auto compare interval if running
         if (this.overlayAutoInterval) {
             clearInterval(this.overlayAutoInterval);
@@ -3313,6 +3348,22 @@ window.PanelEditor = class PanelEditor {
         
         if (window.resetDrawingFlag) {
             await window.resetDrawingFlag();
+        }
+        
+        // Show RaiseBug or ResolvedBug dialog again when closing panel-edit-action (only-view) if it was hidden for this view (keeps dialog state/data)
+        if (this.panelActionMode === 'only-view' && window.__raiseBugDialogHiddenForPanelView) {
+            window.__raiseBugDialogHiddenForPanelView = false;
+            const raiseBugModal = document.getElementById('raiseBugModal');
+            if (raiseBugModal) {
+                setTimeout(() => { raiseBugModal.style.display = 'flex'; }, 0);
+            }
+        }
+        if (this.panelActionMode === 'only-view' && window.__resolvedBugDialogHiddenForPanelView) {
+            window.__resolvedBugDialogHiddenForPanelView = false;
+            const resolvedBugModal = document.getElementById('resolvedBugModal');
+            if (resolvedBugModal) {
+                setTimeout(() => { resolvedBugModal.style.display = 'flex'; }, 0);
+            }
         }
     }
 };

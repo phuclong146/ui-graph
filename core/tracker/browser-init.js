@@ -301,6 +301,7 @@ export async function initBrowsers(tracker, startUrl) {
     
     await tracker.queuePage.exposeFunction("openPanelEditor", handlers.openPanelEditor);
     await tracker.queuePage.exposeFunction("openPanelEditorForAction", handlers.openPanelEditorForAction);
+    await tracker.queuePage.exposeFunction("openPanelEditorForActionViewOnly", handlers.openPanelEditorForActionViewOnly);
     await tracker.queuePage.exposeFunction("savePanelEdits", handlers.savePanelEdits);
     await tracker.queuePage.exposeFunction("drawPanel", handlers.drawPanel);
     await tracker.queuePage.exposeFunction("saveCroppedPanel", handlers.saveCroppedPanel);
@@ -386,6 +387,7 @@ export async function initBrowsers(tracker, startUrl) {
     await tracker.queuePage.exposeFunction("showTrackingBrowser", handlers.showTrackingBrowser);
     await tracker.queuePage.exposeFunction("viewGraph", handlers.viewGraph);
     await tracker.queuePage.exposeFunction("showPanelInfoGraph", handlers.showPanelInfoGraph);
+    await tracker.queuePage.exposeFunction("openPanelViewer", handlers.openPanelViewer);
     await tracker.queuePage.exposeFunction("showStepInfoGraph", handlers.showStepInfoGraph);
     await tracker.queuePage.exposeFunction("validateStep", handlers.validateStep);
     await tracker.queuePage.exposeFunction("detectMissingActionsByAI", handlers.detectMissingActionsByAI);

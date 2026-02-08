@@ -1160,6 +1160,7 @@ export const QUEUE_BROWSER_HTML = `
         flex-direction: column;
         padding: 10px;
         background: rgba(255, 255, 255, 0.05);
+        border: 2px solid #3b82f6;
         border-radius: 8px;
       }
     </style>
@@ -3853,6 +3854,168 @@ export const QUEUE_BROWSER_HTML = `
         });
       }
 
+      // Step Info Image Overlay: ensure exists for validate_panel_info zoom (and View Graph Panel Info)
+      function ensureStepInfoOverlayReady() {
+        if (window._openStepInfoImageViewer) return;
+        let overlay = document.getElementById('stepInfoImageOverlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'stepInfoImageOverlay';
+          overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
+          overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
+          document.body.appendChild(overlay);
+        }
+        const overlayImg = document.getElementById('stepInfoImageOverlayImg');
+        const overlayCanvas = document.getElementById('stepInfoImageOverlayCanvas');
+        const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
+        const overlayInner = document.getElementById('stepInfoImageOverlayInner');
+        const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+        const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
+        if (!overlayImg || !overlayWrap || !overlayInner) return;
+        let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+        let currentBorderData = null;
+        const minScale = 0.25, maxScale = 8;
+        const panelStrokeColorOverlay = '#22c55e';
+        const actionStrokeColorOverlay = '#3b82f6';
+        function hitTestOverlayFrame(nx, ny) {
+          if (!currentBorderData) return null;
+          if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+              const ap = currentBorderData.actionPosList[i];
+              if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) return currentBorderData.actionNames[i] || 'Action';
+            }
+          } else if (currentBorderData.actionPos) {
+            const a = currentBorderData.actionPos;
+            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+          }
+          if (currentBorderData.panelPos) {
+            const p = currentBorderData.panelPos;
+            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+          }
+          return null;
+        }
+        function applyTransform() { overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')'; }
+        function drawOverlayBorders() {
+          if (!overlayCanvas || !currentBorderData || !overlayImg.naturalWidth) return;
+          const img = overlayImg;
+          overlayCanvas.width = img.naturalWidth;
+          overlayCanvas.height = img.naturalHeight;
+          overlayCanvas.style.width = img.naturalWidth + 'px';
+          overlayCanvas.style.height = img.naturalHeight + 'px';
+          const ctx = overlayCanvas.getContext('2d');
+          ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          if (currentBorderData.panelPos) {
+            const p = currentBorderData.panelPos;
+            ctx.strokeStyle = panelStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            ctx.strokeRect(p.x, p.y, p.w, p.h);
+          }
+          if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+            ctx.strokeStyle = actionStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            currentBorderData.actionPosList.forEach(function(a) { if (a) ctx.strokeRect(a.x, a.y, a.w, a.h); });
+          } else if (currentBorderData.actionPos) {
+            const a = currentBorderData.actionPos;
+            ctx.strokeStyle = actionStrokeColorOverlay;
+            ctx.lineWidth = Math.max(2, 4 / scale);
+            ctx.strokeRect(a.x, a.y, a.w, a.h);
+          }
+        }
+        function applyFitScale() {
+          if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+          const rect = overlayInner.getBoundingClientRect();
+          const fitScale = Math.min(rect.width / overlayImg.naturalWidth, rect.height / overlayImg.naturalHeight);
+          scale = Math.min(1, fitScale);
+          translateX = 0;
+          translateY = 0;
+          applyTransform();
+          drawOverlayBorders();
+        }
+        window._openStepInfoImageViewer = function(src, borderData) {
+          currentBorderData = borderData || null;
+          overlayImg.src = src || '';
+          if (overlayCanvas) overlayCanvas.style.display = currentBorderData ? 'block' : 'none';
+          scale = 1;
+          translateX = 0;
+          translateY = 0;
+          applyTransform();
+          overlay.style.display = 'flex';
+          overlay.style.cursor = 'grab';
+          function onReady() { applyFitScale(); }
+          if (overlayImg.complete) onReady();
+          else overlayImg.onload = onReady;
+        };
+        function closeViewer() {
+          overlay.style.display = 'none';
+          overlay.style.cursor = 'grab';
+          if (overlayTooltip) overlayTooltip.style.display = 'none';
+          if (window.__raiseBugDialogHiddenForPanelViewer) {
+            window.__raiseBugDialogHiddenForPanelViewer = false;
+            const m = document.getElementById('raiseBugModal');
+            if (m) m.style.display = 'flex';
+          }
+          if (window.__resolvedBugDialogHiddenForPanelViewer) {
+            window.__resolvedBugDialogHiddenForPanelViewer = false;
+            const m = document.getElementById('resolvedBugModal');
+            if (m) m.style.display = 'flex';
+          }
+        }
+        overlayInner.addEventListener('wheel', function(e) {
+          e.preventDefault();
+          const rect = overlayInner.getBoundingClientRect();
+          const cx = e.clientX - rect.left - rect.width / 2;
+          const cy = e.clientY - rect.top - rect.height / 2;
+          const oldScale = scale;
+          scale = e.deltaY > 0 ? Math.max(minScale, scale * 0.9) : Math.min(maxScale, scale * 1.1);
+          translateX = cx + (translateX - cx) * scale / oldScale;
+          translateY = cy + (translateY - cy) * scale / oldScale;
+          applyTransform();
+          drawOverlayBorders();
+        }, { passive: false });
+        overlayInner.addEventListener('mousedown', function(e) {
+          if (e.button !== 0) return;
+          isDragging = true;
+          startX = e.clientX;
+          startY = e.clientY;
+          startTx = translateX;
+          startTy = translateY;
+          overlay.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', function(e) {
+          if (!isDragging) return;
+          translateX = startTx + (e.clientX - startX);
+          translateY = startTy + (e.clientY - startY);
+          applyTransform();
+        });
+        document.addEventListener('mouseup', function() {
+          isDragging = false;
+          overlay.style.cursor = 'grab';
+        });
+        if (overlayTooltip) {
+          overlayInner.addEventListener('mousemove', function(e) {
+            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+            const rect = overlayImg.getBoundingClientRect();
+            const localX = e.clientX - rect.left;
+            const localY = e.clientY - rect.top;
+            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) { overlayTooltip.style.display = 'none'; return; }
+            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+            const name = hitTestOverlayFrame(nx, ny);
+            if (name) {
+              overlayTooltip.textContent = name;
+              overlayTooltip.style.display = 'block';
+              overlayTooltip.style.left = (e.clientX + 14) + 'px';
+              overlayTooltip.style.top = (e.clientY + 14) + 'px';
+            } else overlayTooltip.style.display = 'none';
+          });
+          overlayInner.addEventListener('mouseleave', function() { overlayTooltip.style.display = 'none'; });
+        }
+        closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeViewer(); });
+        document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && overlay.style.display === 'flex') closeViewer(); });
+      }
+      window.ensureStepInfoOverlayReady = ensureStepInfoOverlayReady;
+
       // Graph Panel Log Tree functions
       // Display mode for Graph Panel Log: 'log', 'tree', or 'validation'
       let graphPanelLogDisplayMode = getLocalStorage('graph-panel-log-display-mode') || 'log';
@@ -4098,7 +4261,7 @@ export const QUEUE_BROWSER_HTML = `
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -4125,7 +4288,7 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
             bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -4150,7 +4313,7 @@ export const QUEUE_BROWSER_HTML = `
                     
                     const tooltip = document.createElement('div');
                     tooltip.id = 'graph-modality-stacks-tooltip';
-                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; max-height: 280px; overflow-y: auto; z-index: 10000; pointer-events: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
                     if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
                     if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
@@ -4162,8 +4325,11 @@ export const QUEUE_BROWSER_HTML = `
                     }
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'graph-modality-stacks-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
-                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('graph-modality-stacks-tooltip'); if (t) t.remove(); });
+                importantIcon.addEventListener('mouseleave', () => { var id = 'graph-modality-stacks-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300); });
                 label.appendChild(importantIcon);
             }
         }
@@ -4588,7 +4754,7 @@ export const QUEUE_BROWSER_HTML = `
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -4615,7 +4781,7 @@ export const QUEUE_BROWSER_HTML = `
             bugIcon.style.color = allFixed ? '#28a745' : '#dc3545';
             bugIcon.textContent = allFixed ? '✓' : '🐞';
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, bugNote, bugInfo); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -4640,7 +4806,7 @@ export const QUEUE_BROWSER_HTML = `
                     
                     const tooltip = document.createElement('div');
                     tooltip.id = 'video-validation-modality-tooltip';
-                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; z-index: 10000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
+                    tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 10) + 'px; top: ' + (e.clientY + 10) + 'px; background: rgba(0, 0, 0, 0.9); color: white; padding: 12px; border-radius: 6px; font-size: 12px; max-width: 400px; max-height: 280px; overflow-y: auto; z-index: 10000; pointer-events: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
                     if (node.modality_stacks_reason) tooltipContent += '<div style="margin-top: 8px; padding: 6px; background: rgba(33, 150, 243, 0.2); border-left: 2px solid #2196f3; border-radius: 4px;"><div style="font-weight: 600; color: #4fc3f7; font-size: 11px;">Lý do lựa chọn:</div><div style="color: #fff; font-size: 11px;">' + node.modality_stacks_reason + '</div></div>';
                     if (node.modality_stacks_info && Array.isArray(node.modality_stacks_info)) {
@@ -4652,8 +4818,11 @@ export const QUEUE_BROWSER_HTML = `
                     }
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'video-validation-modality-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
-                importantIcon.addEventListener('mouseleave', () => { const t = document.getElementById('video-validation-modality-tooltip'); if (t) t.remove(); });
+                importantIcon.addEventListener('mouseleave', () => { var id = 'video-validation-modality-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300); });
                 label.appendChild(importantIcon);
             }
         }
@@ -6708,7 +6877,7 @@ Bạn có chắc chắn muốn rollback?\`;
           const count = node.view_count ?? 0;
           viewCountSpan.appendChild(document.createTextNode('👁️‍🗨️ ' + String(count)));
           viewCountSpan.addEventListener('mouseenter', (ev) => { showViewersTooltip(ev, node.panel_id); });
-          viewCountSpan.addEventListener('mouseleave', () => { hideViewersTooltip(); });
+          viewCountSpan.addEventListener('mouseleave', () => { if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = setTimeout(hideViewersTooltip, 300); });
           label.appendChild(viewCountSpan);
         }
         
@@ -6743,7 +6912,7 @@ Bạn có chắc chắn muốn rollback?\`;
                 </svg>\`;
             }
             bugIcon.addEventListener('mouseenter', (e) => { showBugTooltip(e, node.bug_note, node.bug_info); });
-            bugIcon.addEventListener('mouseleave', () => { hideBugTooltip(); });
+            bugIcon.addEventListener('mouseleave', () => { if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = setTimeout(hideBugTooltip, 300); });
             label.appendChild(bugIcon);
         }
         
@@ -6781,8 +6950,10 @@ Bạn có chắc chắn muốn rollback?\`;
                         'border-radius: 6px;' +
                         'font-size: 12px;' +
                         'max-width: 400px;' +
+                        'max-height: 280px;' +
+                        'overflow-y: auto;' +
                         'z-index: 10000;' +
-                        'pointer-events: none;' +
+                        'pointer-events: auto;' +
                         'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     
                     let tooltipContent = '<div style="font-weight: 600; margin-bottom: 8px; color: #ffc107;">⭐ Đây là tính năng quan trọng cần làm hết luồng</div>';
@@ -6809,13 +6980,13 @@ Bạn có chắc chắn muốn rollback?\`;
                     
                     tooltip.innerHTML = tooltipContent;
                     document.body.appendChild(tooltip);
+                    var tid = 'modality-stacks-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
                 
                 importantIcon.addEventListener('mouseleave', () => {
-                    const tooltip = document.getElementById('modality-stacks-tooltip');
-                    if (tooltip) {
-                        tooltip.remove();
-                    }
+                    var id = 'modality-stacks-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
                 });
                 
                 label.appendChild(importantIcon);
@@ -6842,7 +7013,7 @@ Bạn có chắc chắn muốn rollback?\`;
                 tooltip.id = 'validate-full-flow-tooltip';
                 tooltip.style.cssText = 'position: fixed; left: ' + (e.clientX + 12) + 'px; top: ' + (e.clientY + 12) + 'px;' +
                   'background: rgba(0,0,0,0.92); color: #fff; padding: 12px 14px; border-radius: 8px; font-size: 12px;' +
-                  'max-width: 420px; z-index: 10001; pointer-events: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
+                  'max-width: 420px; max-height: 280px; overflow-y: auto; z-index: 10001; pointer-events: auto; box-shadow: 0 4px 16px rgba(0,0,0,0.4); line-height: 1.45;';
                 let html = '<div style="font-weight:600; margin-bottom:8px; color: #4fc3f7;">Kết quả Validate Full Flow</div>';
                 routes.forEach(function (r) {
                   const icon = r.is_end_to_end_flow ? '✅' : '⚠️';
@@ -6880,10 +7051,12 @@ Bạn có chắc chắn muốn rollback?\`;
                 var rect = tooltip.getBoundingClientRect();
                 if (rect.right > window.innerWidth) tooltip.style.left = (e.clientX - rect.width - 12) + 'px';
                 if (rect.bottom > window.innerHeight) tooltip.style.top = (e.clientY - rect.height - 12) + 'px';
+                var tid = 'validate-full-flow-tooltip';
+                tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
               });
               validateIcon.addEventListener('mouseleave', function () {
-                const t = document.getElementById('validate-full-flow-tooltip');
-                if (t) t.remove();
+                var id = 'validate-full-flow-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
               });
               label.appendChild(validateIcon);
             } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
@@ -6899,18 +7072,20 @@ Bạn có chắc chắn muốn rollback?\`;
                         'padding: 8px 12px;' +
                         'border-radius: 6px;' +
                         'font-size: 12px;' +
+                        'max-height: 280px;' +
+                        'overflow-y: auto;' +
                         'z-index: 10000;' +
-                        'pointer-events: none;' +
+                        'pointer-events: auto;' +
                         'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                     tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
                     document.body.appendChild(tooltip);
+                    var tid = 'action-tooltip';
+                    tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
+                    tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
                 
                 label.addEventListener('mouseleave', () => {
-                    const tooltip = document.getElementById('action-tooltip');
-                    if (tooltip) {
-                        tooltip.remove();
-                    }
+                    var id = 'action-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
                 });
             }
         }
@@ -6960,7 +7135,7 @@ Bạn có chắc chắn muốn rollback?\`;
         );
         if (showAssigneeTooltip) {
           contentDiv.addEventListener('mouseenter', (ev) => { showSessionAssigneeTooltip(ev, node.my_session); });
-          contentDiv.addEventListener('mouseleave', hideSessionAssigneeTooltip);
+          contentDiv.addEventListener('mouseleave', function() { if (window._sessionAssigneeTooltipHideT) clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = setTimeout(hideSessionAssigneeTooltip, 300); });
         }
         
         contentDiv.addEventListener('click', () => {
@@ -7931,7 +8106,7 @@ Bạn có chắc chắn muốn rollback?\`;
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
                               \${getActionValue('action.image') ? 
-                                \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<img id="raiseBugActionImage" src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Click to open panel-edit-action (view only)" />\` : 
                                 \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
                               }
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
@@ -7968,7 +8143,7 @@ Bạn có chắc chắn muốn rollback?\`;
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
                               \${getActionValue('panel_after.image') ? 
-                                \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : 
+                                \`<img id="raiseBugPanelImage" src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển, khung panel & action)" />\` : 
                                 \`<div style="color: #999; font-size: 12px; padding: 20px; text-align: center;">No Image<br>(or N/A)</div>\`
                               }
                               <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-top: 8px; font-size: 12px;">
@@ -8027,6 +8202,39 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="raiseBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" placeholder="Mô tả chi tiết lỗi...">\${currentBugInfo?.note || ''}</textarea>
               </div>
           \`;
+          
+          // Click on Action Image: hide RaiseBug dialog, open panel-edit-action (only-view); show dialog again when panel editor closes (keeps state/data)
+          const raiseBugActionImg = content.querySelector('#raiseBugActionImage');
+          if (raiseBugActionImg && typeof window.openPanelEditorForActionViewOnly === 'function' && actionId) {
+            raiseBugActionImg.addEventListener('click', async () => {
+              if (raiseBugActionImg.dataset.opening === '1') return;
+              raiseBugActionImg.dataset.opening = '1';
+              try {
+                window.__raiseBugDialogHiddenForPanelView = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelEditorForActionViewOnly(actionId);
+              } finally {
+                raiseBugActionImg.dataset.opening = '';
+              }
+            });
+          }
+          
+          // Click on Panel (After) Image: hide RaiseBug dialog, open panel viewer (zoom, move, panel/action frames); show dialog again when viewer closes (keeps state/data)
+          const panelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+          const raiseBugPanelImg = content.querySelector('#raiseBugPanelImage');
+          if (raiseBugPanelImg && typeof window.openPanelViewer === 'function' && panelAfterId) {
+            raiseBugPanelImg.addEventListener('click', async () => {
+              if (raiseBugPanelImg.dataset.opening === '1') return;
+              raiseBugPanelImg.dataset.opening = '1';
+              try {
+                window.__raiseBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(panelAfterId);
+              } finally {
+                raiseBugPanelImg.dataset.opening = '';
+              }
+            });
+          }
           
           // === Missing Actions Interactive List ===
           let missingActionsArray = getMissingActionsArray();
@@ -8731,7 +8939,9 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 320px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               white-space: pre-wrap;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
@@ -8788,9 +8998,13 @@ Bạn có chắc chắn muốn rollback?\`;
           
           bugTooltip.innerHTML = content;
           document.body.appendChild(bugTooltip);
+          if (window._bugTooltipHideT) clearTimeout(window._bugTooltipHideT);
+          bugTooltip.addEventListener('mouseenter', function() { if (window._bugTooltipHideT) { clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = null; } });
+          bugTooltip.addEventListener('mouseleave', function() { hideBugTooltip(); });
       }
       
       function hideBugTooltip() {
+          if (window._bugTooltipHideT) { clearTimeout(window._bugTooltipHideT); window._bugTooltipHideT = null; }
           if (bugTooltip) {
               bugTooltip.remove();
               bugTooltip = null;
@@ -8898,7 +9112,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
-                              \${getActionValue('action.image') ? \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getActionValue('action.image') ? \`<img id="resolvedBugActionImage" src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem panel-edit-action (chỉ xem)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('action.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -8920,7 +9134,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                              \${getActionValue('panel_after.image') ? \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getActionValue('panel_after.image') ? \`<img id="resolvedBugPanelImage" src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('panel_after.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -8961,6 +9175,38 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
               </div>
           \`;
+
+          // ResolvedBug: click action image → hide dialog, open panel-edit-action (only-view); show dialog when panel closes
+          const resolvedBugActionImg = content.querySelector('#resolvedBugActionImage');
+          if (resolvedBugActionImg && typeof window.openPanelEditorForActionViewOnly === 'function' && actionId) {
+            resolvedBugActionImg.addEventListener('click', async () => {
+              if (resolvedBugActionImg.dataset.opening === '1') return;
+              resolvedBugActionImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelView = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelEditorForActionViewOnly(actionId);
+              } finally {
+                resolvedBugActionImg.dataset.opening = '';
+              }
+            });
+          }
+          // ResolvedBug: click panel image → hide dialog, open panel viewer; show dialog when viewer closes
+          const resolvedBugPanelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+          const resolvedBugPanelImg = content.querySelector('#resolvedBugPanelImage');
+          if (resolvedBugPanelImg && typeof window.openPanelViewer === 'function' && resolvedBugPanelAfterId) {
+            resolvedBugPanelImg.addEventListener('click', async () => {
+              if (resolvedBugPanelImg.dataset.opening === '1') return;
+              resolvedBugPanelImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(resolvedBugPanelAfterId);
+              } finally {
+                resolvedBugPanelImg.dataset.opening = '';
+              }
+            });
+          }
 
           const closeHandler = () => {
               modal.style.display = 'none';
@@ -9115,7 +9361,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                              \${getPanelValue('panel_after.image') ? \`<img src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getPanelValue('panel_after.image') ? \`<img id="resolvedBugPanelImage" src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('panel_after.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -9156,6 +9402,22 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
               </div>
           \`;
+
+          // ResolvedBug (Panel mode): click panel image → hide dialog, open panel viewer; show dialog when viewer closes
+          const resolvedBugForPanelImg = content.querySelector('#resolvedBugPanelImage');
+          if (resolvedBugForPanelImg && typeof window.openPanelViewer === 'function' && panelId) {
+            resolvedBugForPanelImg.addEventListener('click', async () => {
+              if (resolvedBugForPanelImg.dataset.opening === '1') return;
+              resolvedBugForPanelImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(panelId);
+              } finally {
+                resolvedBugForPanelImg.dataset.opening = '';
+              }
+            });
+          }
 
           const closeHandler = () => {
               modal.style.display = 'none';
@@ -9214,10 +9476,15 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 280px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
           viewersTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
+          if (window._viewersTooltipHideT) clearTimeout(window._viewersTooltipHideT);
+          viewersTooltip.addEventListener('mouseenter', function() { if (window._viewersTooltipHideT) { clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = null; } });
+          viewersTooltip.addEventListener('mouseleave', function() { hideViewersTooltip(); });
           document.body.appendChild(viewersTooltip);
           try {
               const viewers = await getViewers(actionItemId);
@@ -9242,6 +9509,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
       }
       function hideViewersTooltip() {
+          if (window._viewersTooltipHideT) { clearTimeout(window._viewersTooltipHideT); window._viewersTooltipHideT = null; }
           if (viewersTooltip) {
               viewersTooltip.remove();
               viewersTooltip = null;
@@ -9267,11 +9535,16 @@ Bạn có chắc chắn muốn rollback?\`;
               font-size: 12px;
               z-index: 10000001;
               max-width: 280px;
-              pointer-events: none;
+              max-height: 280px;
+              overflow-y: auto;
+              pointer-events: auto;
               box-shadow: 0 4px 12px rgba(0,0,0,0.3);
           \`;
           sessionAssigneeTooltip.innerHTML = '<span style="color:#ccc;">Đang tải...</span>';
           document.body.appendChild(sessionAssigneeTooltip);
+          if (window._sessionAssigneeTooltipHideT) clearTimeout(window._sessionAssigneeTooltipHideT);
+          sessionAssigneeTooltip.addEventListener('mouseenter', function() { if (window._sessionAssigneeTooltipHideT) { clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = null; } });
+          sessionAssigneeTooltip.addEventListener('mouseleave', function() { hideSessionAssigneeTooltip(); });
           try {
               const info = await getInfo(mySession);
               if (!info) {
@@ -9301,6 +9574,7 @@ Bạn có chắc chắn muốn rollback?\`;
           }
       }
       function hideSessionAssigneeTooltip() {
+          if (window._sessionAssigneeTooltipHideT) { clearTimeout(window._sessionAssigneeTooltipHideT); window._sessionAssigneeTooltipHideT = null; }
           if (sessionAssigneeTooltip) {
               sessionAssigneeTooltip.remove();
               sessionAssigneeTooltip = null;
@@ -10327,6 +10601,8 @@ Bạn có chắc chắn muốn rollback?\`;
         if (!evt.panel_id) return;
 
         const coord = evt.coordinate || evt.metadata?.global_pos || null;
+        const actionsWithPos = (evt.actions && Array.isArray(evt.actions)) ? evt.actions : [];
+        const panelDisplayName = evt.item_name || 'Panel';
         const panelInfoDiv = document.createElement('div');
         panelInfoDiv.className = 'event';
         panelInfoDiv.setAttribute('data-event-type', 'validate_panel_info');
@@ -10334,7 +10610,8 @@ Bạn có chắc chắn muốn rollback?\`;
         panelInfoDiv.style.cssText = 'position: relative;';
 
         const imageWrapper = document.createElement('div');
-        imageWrapper.style.cssText = 'position: relative; display: inline-block; max-width: 100%; margin-bottom: 16px;';
+        imageWrapper.style.cssText = 'position: relative; display: inline-block; max-width: 100%; margin-bottom: 16px; cursor: pointer;';
+        imageWrapper.title = 'Bấm để xem phóng to (zoom, di chuyển)';
 
         let imageSrc = evt.fullscreen_url || null;
         if (!imageSrc && evt.screenshot) {
@@ -10343,25 +10620,103 @@ Bạn có chắc chắn muốn rollback?\`;
         if (imageSrc) {
           const img = document.createElement('img');
           img.src = imageSrc;
-          img.style.cssText = 'max-width: 100%; display: block; border: 1px solid #ddd; border-radius: 6px;';
+          img.style.cssText = 'max-width: 100%; display: block; border: 1px solid #ddd; border-radius: 6px; pointer-events: none;';
           img.alt = 'Panel fullscreen';
           img.onerror = function() { this.style.display = 'none'; };
-          img.onload = function() {
-            if (coord && coord.x != null && coord.y != null && coord.w != null && coord.h != null && cropOverlay && img.parentNode) {
-              const scale = img.offsetWidth / img.naturalWidth;
-              cropOverlay.style.left = (coord.x * scale) + 'px';
-              cropOverlay.style.top = (coord.y * scale) + 'px';
-              cropOverlay.style.width = (coord.w * scale) + 'px';
-              cropOverlay.style.height = (coord.h * scale) + 'px';
-              cropOverlay.style.display = 'block';
-            }
-          };
           imageWrapper.appendChild(img);
 
-          const cropOverlay = document.createElement('div');
-          cropOverlay.setAttribute('data-crop-overlay', '1');
-          cropOverlay.style.cssText = 'position: absolute; border: 2px solid #00aaff; box-sizing: border-box; pointer-events: none; display: none;';
-          imageWrapper.appendChild(cropOverlay);
+          const hasBorders = (coord && coord.x != null && coord.w != null) || actionsWithPos.some(function(a) { return a.global_pos; });
+          if (hasBorders) {
+            const canvas = document.createElement('canvas');
+            canvas.style.cssText = 'position: absolute; top: 0; left: 0; pointer-events: none;';
+            imageWrapper.appendChild(canvas);
+
+            const tooltipEl = document.createElement('div');
+            tooltipEl.setAttribute('data-validate-panel-tooltip', '1');
+            tooltipEl.style.cssText = 'display:none; position:fixed; z-index:20015; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+            imageWrapper.appendChild(tooltipEl);
+
+            const panelStrokeColor = '#22c55e';
+            const actionStrokeColor = '#3b82f6';
+            function drawBorders() {
+              if (!img.naturalWidth || !canvas || !img.parentNode) return;
+              const rect = img.getBoundingClientRect();
+              canvas.width = rect.width;
+              canvas.height = rect.height;
+              canvas.style.width = rect.width + 'px';
+              canvas.style.height = rect.height + 'px';
+              const ctx = canvas.getContext('2d');
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              const scaleX = rect.width / img.naturalWidth;
+              const scaleY = rect.height / img.naturalHeight;
+              if (coord && coord.x != null && coord.w != null) {
+                ctx.strokeStyle = panelStrokeColor;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(coord.x * scaleX, coord.y * scaleY, coord.w * scaleX, coord.h * scaleY);
+              }
+              actionsWithPos.forEach(function(a) {
+                const ap = a.global_pos;
+                if (ap) {
+                  ctx.strokeStyle = actionStrokeColor;
+                  ctx.lineWidth = 2;
+                  ctx.strokeRect(ap.x * scaleX, ap.y * scaleY, ap.w * scaleX, ap.h * scaleY);
+                }
+              });
+            }
+            function hitTestFrame(px, py) {
+              const scaleX = img.naturalWidth / (img.getBoundingClientRect().width || 1);
+              const scaleY = img.naturalHeight / (img.getBoundingClientRect().height || 1);
+              const nx = px * scaleX;
+              const ny = py * scaleY;
+              for (var i = actionsWithPos.length - 1; i >= 0; i--) {
+                var ap = actionsWithPos[i].global_pos;
+                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                  return actionsWithPos[i].action_name || 'Action';
+                }
+              }
+              if (coord && nx >= coord.x && nx <= coord.x + coord.w && ny >= coord.y && ny <= coord.y + coord.h) {
+                return panelDisplayName;
+              }
+              return null;
+            }
+            img.onload = function() { drawBorders(); };
+            if (img.complete) drawBorders();
+            var ro = new ResizeObserver(function() { if (img.complete) drawBorders(); });
+            ro.observe(img);
+            imageWrapper.addEventListener('mousemove', function(e) {
+              var r = img.getBoundingClientRect();
+              var localX = e.clientX - r.left;
+              var localY = e.clientY - r.top;
+              if (localX < 0 || localY < 0 || localX > r.width || localY > r.height) {
+                tooltipEl.style.display = 'none';
+                return;
+              }
+              var name = hitTestFrame(localX, localY);
+              if (name) {
+                tooltipEl.textContent = name;
+                tooltipEl.style.display = 'block';
+                tooltipEl.style.left = (e.clientX + 14) + 'px';
+                tooltipEl.style.top = (e.clientY + 14) + 'px';
+              } else {
+                tooltipEl.style.display = 'none';
+              }
+            });
+            imageWrapper.addEventListener('mouseleave', function() { tooltipEl.style.display = 'none'; });
+
+            imageWrapper.addEventListener('click', function() {
+              if (!img.src) return;
+              var borderData = { panelPos: coord || null, panelName: panelDisplayName };
+              var actionPosList = actionsWithPos.map(function(a) { return a.global_pos || null; }).filter(Boolean);
+              if (actionPosList.length > 0) {
+                borderData.actionPosList = actionPosList;
+                borderData.actionNames = actionsWithPos.map(function(a) { return a.action_name || 'Action'; });
+              }
+              if (typeof window.ensureStepInfoOverlayReady === 'function') window.ensureStepInfoOverlayReady();
+              if (typeof window._openStepInfoImageViewer === 'function') {
+                window._openStepInfoImageViewer(img.src, borderData);
+              }
+            });
+          }
         }
 
         panelInfoDiv.appendChild(imageWrapper);
@@ -10555,8 +10910,9 @@ Bạn có chắc chắn muốn rollback?\`;
         if (hasImage && imageSrc) {
           const actionImg = document.createElement('img');
           actionImg.src = imageSrc;
-          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block;';
+          actionImg.style.cssText = 'max-width: 100%; border: 1px solid #ddd; border-radius: 6px; display: block; cursor: pointer;';
           actionImg.alt = 'Action image';
+          actionImg.title = 'Click to open panel-edit-action (view only)';
           actionImg.onerror = function() {
             console.error('Failed to load action image:', imageSrc);
             this.style.display = 'none';
@@ -10564,6 +10920,16 @@ Bạn có chắc chắn muốn rollback?\`;
           actionImg.onload = function() {
             console.log('✅ Action image loaded successfully');
           };
+          actionImg.addEventListener('click', async () => {
+            if (actionImg.dataset.opening === '1') return;
+            if (typeof window.openPanelEditorForActionViewOnly !== 'function' || !evt.panel_id) return;
+            actionImg.dataset.opening = '1';
+            try {
+              await window.openPanelEditorForActionViewOnly(evt.panel_id);
+            } finally {
+              actionImg.dataset.opening = '';
+            }
+          });
           actionImageContainer.appendChild(actionImg);
           step1Div.appendChild(actionImageContainer);
         } else {

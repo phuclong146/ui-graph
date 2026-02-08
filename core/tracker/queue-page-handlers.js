@@ -875,23 +875,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
-    const openPanelEditorHandler = async (actionItemIdToSelect = null) => {
+    const openPanelEditorHandler = async (actionItemIdToSelect = null, options = {}) => {
         try {
             if (!tracker.selectedPanelId || !tracker.dataItemManager || !tracker.parentPanelManager) {
                 console.error('No panel selected or managers not initialized');
                 return;
             }
+            const panelActionMode = options.panelActionMode || null;
 
             console.log(`Opening editor for panel: ${tracker.selectedPanelId}`);
 
             const panelItem = await tracker.dataItemManager.getItem(tracker.selectedPanelId);
             if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) {
                 console.error('Selected item is not a PANEL or PAGE');
-                return;
-            }
-
-            if (!panelItem.image_base64) {
-                console.error(`Panel has no image. Status: ${panelItem.status}`);
                 return;
             }
 
@@ -923,7 +919,29 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 actions: actions
             }];
 
-            const editorImage = await tracker.dataItemManager.loadBase64FromFile(panelItem.image_base64);
+            // Load panel image: file (fullscreen_base64/image_base64) or URL (fullscreen_url/image_url) for VALIDATE/ADMIN from DB
+            let editorImage = null;
+            const panelImageRef = panelItem.image_base64;
+            if (panelImageRef) {
+                editorImage = await tracker.dataItemManager.loadBase64FromFile(panelImageRef);
+            }
+            if (!editorImage && panelItem.image_url) {
+                const imageUrl = panelItem.image_url;
+                try {
+                    const response = await fetch(imageUrl);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        editorImage = buffer.toString('base64');
+                    }
+                } catch (err) {
+                    console.warn('Failed to fetch panel image from URL:', err?.message);
+                }
+            }
+            if (!editorImage) {
+                console.error(`Panel has no image (image_base64, fullscreen_base64, image_url, or fullscreen_url). Status: ${panelItem.status}`);
+                return;
+            }
 
             // Get panelBefore image from step
             const panelBeforeBase64 = await getPanelBeforeBase64FromStep(tracker.selectedPanelId);
@@ -938,11 +956,11 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await tracker.queuePage.evaluate(async (data) => {
                 eval(data.panelEditorClassCode);
 
-                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos);
+                const editor = new PanelEditor(data.imageBase64, data.geminiResult, 'full', data.panelId, data.panelBeforeBase64, data.panelAfterGlobalPos, data.panelActionMode);
                 await editor.init();
                 
-                // Auto-select action if specified
-                if (data.selectedActionIndex !== null && data.selectedActionIndex !== undefined) {
+                // Auto-select action if specified (skip in only-view to avoid edit UX)
+                if (data.panelActionMode !== 'only-view' && data.selectedActionIndex !== null && data.selectedActionIndex !== undefined) {
                     const actionId = '0-' + data.selectedActionIndex;
                     console.log('🎯 Auto-selecting action:', actionId, 'at index:', data.selectedActionIndex);
                     
@@ -1077,7 +1095,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 panelId: tracker.selectedPanelId,
                 panelBeforeBase64: panelBeforeBase64,
                 panelAfterGlobalPos: panelAfterGlobalPos,
-                selectedActionIndex: selectedActionIndex
+                selectedActionIndex: selectedActionIndex,
+                panelActionMode: panelActionMode
             });
 
         } catch (err) {
@@ -1106,6 +1125,25 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             await openPanelEditorHandler(actionItemId);
         } catch (err) {
             console.error('Failed to open panel editor for action:', err);
+        }
+    };
+
+    /** ADMIN/VALIDATE: open panel-edit-action in only-view mode (no edit/delete/reorder). */
+    const openPanelEditorForActionViewOnlyHandler = async (actionItemId) => {
+        try {
+            if (!actionItemId || !tracker.dataItemManager || !tracker.parentPanelManager) {
+                console.error('No action ID provided or managers not initialized');
+                return;
+            }
+            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
+            if (!parentPanelId) {
+                console.error('Could not find parent panel for action:', actionItemId);
+                return;
+            }
+            tracker.selectedPanelId = parentPanelId;
+            await openPanelEditorHandler(actionItemId, { panelActionMode: 'only-view' });
+        } catch (err) {
+            console.error('Failed to open panel editor for action (view only):', err);
         }
     };
 
@@ -4804,13 +4842,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     const actionItem = await tracker.dataItemManager.getItem(actionId);
                     if (actionItem) {
                         const actionPos = getActionPosForPanelDisplay(actionItem, panelTopLeft);
+                        const gp = actionItem.metadata?.global_pos;
                         actions.push({
                             action_id: actionItem.item_id,
                             action_name: actionItem.name,
                             action_type: actionItem.type,
                             action_verb: actionItem.verb,
                             action_content: actionItem.content,
-                            action_pos: actionPos
+                            action_pos: actionPos,
+                            global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
                         });
                     }
                 }
@@ -7979,6 +8019,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 };
 
                 const network = new vis.Network(graphContainer, data, options);
+                let graphEdgeTooltipHideTimeout = null;
 
                 network.on("hoverEdge", function (params) {
                     const edgeId = params.edge;
@@ -8011,8 +8052,10 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             'border-radius: 6px;' +
                             'font-size: 12px;' +
                             'max-width: 400px;' +
+                            'max-height: 280px;' +
+                            'overflow-y: auto;' +
                             'z-index: 10000;' +
-                            'pointer-events: none;' +
+                            'pointer-events: auto;' +
                             'box-shadow: 0 4px 12px rgba(0,0,0,0.3);' +
                             'border: 2px solid #ffc107;';
                         
@@ -8021,6 +8064,8 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         
                         tooltip.innerHTML = tooltipContent;
                         document.body.appendChild(tooltip);
+                        tooltip.addEventListener('mouseenter', function () { if (graphEdgeTooltipHideTimeout) { clearTimeout(graphEdgeTooltipHideTimeout); graphEdgeTooltipHideTimeout = null; } });
+                        tooltip.addEventListener('mouseleave', function () { tooltip.remove(); });
                     } else if (!edge.data.actionBugFlag && 
                                Array.isArray(edge.data.actionModalityStacks) && 
                                edge.data.actionModalityStacks.length === 0) {
@@ -8041,11 +8086,15 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                             'padding: 8px 12px;' +
                             'border-radius: 6px;' +
                             'font-size: 12px;' +
+                            'max-height: 280px;' +
+                            'overflow-y: auto;' +
                             'z-index: 10000;' +
-                            'pointer-events: none;' +
+                            'pointer-events: auto;' +
                             'box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
                         tooltip.textContent = 'Tính năng này cần làm ít nhất tới tầng thứ 2 (nếu có)';
                         document.body.appendChild(tooltip);
+                        tooltip.addEventListener('mouseenter', function () { if (graphEdgeTooltipHideTimeout) { clearTimeout(graphEdgeTooltipHideTimeout); graphEdgeTooltipHideTimeout = null; } });
+                        tooltip.addEventListener('mouseleave', function () { tooltip.remove(); });
                     }
                 });
                 
@@ -8053,16 +8102,14 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                      if (typeof window.hideBugTooltip === 'function') {
                          window.hideBugTooltip();
                      }
-                     // Remove modality_stacks tooltip
-                     const modalityTooltip = document.getElementById('graph-modality-stacks-tooltip');
-                     if (modalityTooltip) {
-                         modalityTooltip.remove();
-                     }
-                     // Remove action tooltip
-                     const actionTooltip = document.getElementById('graph-action-tooltip');
-                     if (actionTooltip) {
-                         actionTooltip.remove();
-                     }
+                     if (graphEdgeTooltipHideTimeout) clearTimeout(graphEdgeTooltipHideTimeout);
+                     graphEdgeTooltipHideTimeout = setTimeout(function () {
+                         const modalityTooltip = document.getElementById('graph-modality-stacks-tooltip');
+                         if (modalityTooltip) modalityTooltip.remove();
+                         const actionTooltip = document.getElementById('graph-action-tooltip');
+                         if (actionTooltip) actionTooltip.remove();
+                         graphEdgeTooltipHideTimeout = null;
+                     }, 300);
                 });
 
                 // Store network reference globally for fit to screen
@@ -8864,14 +8911,75 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         }
     };
 
+    /** Open panel viewer (stepInfoImageOverlay) for a panel by ID: zoom, move, view panel frame and action frames. Same as validate_panel_info image click. Used from RaiseBug dialog. */
+    const openPanelViewerHandler = async (panelId) => {
+        if (!panelId || !tracker.dataItemManager) return;
+        const panelItem = await tracker.dataItemManager.getItem(panelId);
+        if (!panelItem || (panelItem.item_category !== 'PANEL' && panelItem.item_category !== 'PAGE')) return;
+        const imageBase64 = await loadPanelImage(panelItem);
+        if (!imageBase64) return;
+        const globalPos = panelItem.metadata?.global_pos || null;
+        let actionList = [];
+        try {
+            const actionIds = await getActionIdsForItem(panelId, panelItem.item_category || 'PANEL');
+            for (const actionId of actionIds) {
+                const actionItem = await tracker.dataItemManager.getItem(actionId);
+                if (!actionItem) continue;
+                const gp = actionItem.metadata?.global_pos;
+                actionList.push({
+                    name: actionItem.name || 'Action',
+                    global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
+                });
+            }
+        } catch (e) {
+            console.warn('openPanelViewerHandler: failed to get action list', e);
+        }
+        const panelName = panelItem.name || 'Panel';
+        const actionPosList = actionList.map(a => a.global_pos || null).filter(Boolean);
+        const actionNames = actionList.map(a => a.name || 'Action');
+        await tracker.queuePage.evaluate((imageBase64, globalPos, actionPosList, actionNames, panelName) => {
+            if (typeof window.ensureStepInfoOverlayReady === 'function') window.ensureStepInfoOverlayReady();
+            const borderData = { panelPos: globalPos, panelName };
+            if (actionPosList && actionPosList.length > 0) {
+                borderData.actionPosList = actionPosList;
+                borderData.actionNames = actionNames;
+            }
+            if (typeof window._openStepInfoImageViewer === 'function') {
+                window._openStepInfoImageViewer('data:image/png;base64,' + imageBase64, borderData);
+            }
+        }, imageBase64, globalPos, actionPosList, actionNames, panelName);
+    };
+
     const showPanelInfoHandler = async (panelData) => {
         // Load image in Node.js context
         const imageBase64 = await loadPanelImage(panelData);
 
         const globalPos = panelData.metadata?.global_pos;
 
+        // Get actions of this panel for Panel Info: total count, names, and positions for drawing
+        let actionList = [];
+        const panelId = panelData.itemId;
+        const itemCategory = panelData.itemCategory || 'PANEL';
+        if (panelId && tracker.dataItemManager && tracker.parentPanelManager) {
+            try {
+                const actionIds = await getActionIdsForItem(panelId, itemCategory);
+                const panelTopLeft = globalPos || null;
+                for (const actionId of actionIds) {
+                    const actionItem = await tracker.dataItemManager.getItem(actionId);
+                    if (!actionItem) continue;
+                    const gp = actionItem.metadata?.global_pos;
+                    actionList.push({
+                        name: actionItem.name || 'Action',
+                        global_pos: gp ? { x: gp.x, y: gp.y, w: gp.w, h: gp.h } : null
+                    });
+                }
+            } catch (e) {
+                console.warn('showPanelInfoHandler: failed to get action list', e);
+            }
+        }
+
         // Show info in browser context
-        await tracker.queuePage.evaluate((panelData, imageBase64, globalPos) => {
+        await tracker.queuePage.evaluate((panelData, imageBase64, globalPos, actionList) => {
             const infoPanel = document.getElementById('graphInfoPanel');
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
@@ -8891,15 +8999,26 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 headerTitle.textContent = 'Panel info';
             }
 
+            const actionCount = actionList ? actionList.length : 0;
+            const actionNamesHtml = actionCount === 0
+                ? '<p style="color:#999; font-size:13px; margin:0;"><em>Không có action</em></p>'
+                : '<ul style="margin:0; padding-left:18px; color:#ccc; font-size:13px;">' +
+                    (actionList.map(a => '<li>' + (a.name || 'N/A') + '</li>').join('')) + '</ul>';
+
             let imageHtml = '';
+            const hasBorders = (globalPos || (actionList && actionList.some(a => a.global_pos)));
+            const panelDisplayName = panelData.name || 'Panel';
             if (imageBase64) {
-                if (globalPos) {
-                    imageHtml = `<div id="panelImageContainer" style="position:relative; display:inline-block;">
-                        <img id="panelImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                if (hasBorders) {
+                    imageHtml = `<div id="panelImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                        <img id="panelImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                         <canvas id="panelImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+                        <div id="panelImageFrameTooltip" style="display:none; position:fixed; z-index:20015; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>
                     </div>`;
                 } else {
-                    imageHtml = `<img src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                    imageHtml = `<div id="panelImageContainer" style="display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                        <img id="panelImage" src="data:image/png;base64,${imageBase64}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
+                    </div>`;
                 }
             }
 
@@ -8907,17 +9026,22 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 <p><strong>Name:</strong> ${panelData.name || 'N/A'}</p>
                 <p><strong>Type:</strong> ${panelData.type || 'N/A'}</p>
                 <p><strong>Verb:</strong> ${panelData.verb || 'N/A'}</p>
+                <p style="margin-top:12px;"><strong>Tổng số action:</strong> ${actionCount}</p>
+                <p style="margin:4px 0 8px 0;"><strong>Danh sách action:</strong></p>
+                ${actionNamesHtml}
                 <div style="margin-top:15px;">
                     ${imageHtml}
                 </div>
             `;
 
-            // Draw border after HTML is set
-            if (imageBase64 && globalPos) {
+            // Draw borders: panel = green, actions = blue (nhất quán xanh lá panel, xanh dương action)
+            const panelStrokeColor = '#22c55e';
+            const actionStrokeColor = '#3b82f6';
+            if (imageBase64 && hasBorders) {
                 const img = document.getElementById('panelImage');
                 const canvas = document.getElementById('panelImageCanvas');
                 if (img && canvas) {
-                    const drawBorder = () => {
+                    const drawBorders = () => {
                         const rect = img.getBoundingClientRect();
                         canvas.width = rect.width;
                         canvas.height = rect.height;
@@ -8927,21 +9051,33 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         const scaleX = rect.width / img.naturalWidth;
                         const scaleY = rect.height / img.naturalHeight;
-                        ctx.strokeStyle = '#ff0000';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
+                        if (globalPos) {
+                            ctx.strokeStyle = panelStrokeColor;
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(globalPos.x * scaleX, globalPos.y * scaleY, globalPos.w * scaleX, globalPos.h * scaleY);
+                        }
+                        if (actionList && actionList.length > 0) {
+                            actionList.forEach(function(a) {
+                                const ap = a.global_pos;
+                                if (ap) {
+                                    ctx.strokeStyle = actionStrokeColor;
+                                    ctx.lineWidth = 2;
+                                    ctx.strokeRect(ap.x * scaleX, ap.y * scaleY, ap.w * scaleX, ap.h * scaleY);
+                                }
+                            });
+                        }
                     };
                     
                     if (img.complete) {
-                        drawBorder();
+                        drawBorders();
                     } else {
-                        img.onload = drawBorder;
+                        img.onload = drawBorders;
                     }
                     
-                    // Use ResizeObserver to redraw border when image size changes
+                    // Use ResizeObserver to redraw borders when image size changes
                     const resizeObserver = new ResizeObserver(() => {
                         if (img.complete) {
-                            drawBorder();
+                            drawBorders();
                         }
                     });
                     resizeObserver.observe(img);
@@ -8950,14 +9086,260 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     if (infoPanel) {
                         const panelResizeObserver = new ResizeObserver(() => {
                             if (img.complete) {
-                                drawBorder();
+                                drawBorders();
                             }
                         });
                         panelResizeObserver.observe(infoPanel);
                     }
+
+                    // Hover tooltip: trỏ chuột vào khung thì hiện tên (panel/action)
+                    const container = document.getElementById('panelImageContainer');
+                    const tooltipEl = document.getElementById('panelImageFrameTooltip');
+                    if (container && tooltipEl && img) {
+                        function hitTestFrame(px, py) {
+                            const scaleX = img.naturalWidth / (img.getBoundingClientRect().width || 1);
+                            const scaleY = img.naturalHeight / (img.getBoundingClientRect().height || 1);
+                            const nx = px * scaleX;
+                            const ny = py * scaleY;
+                            if (actionList && actionList.length > 0) {
+                                for (let i = actionList.length - 1; i >= 0; i--) {
+                                    const ap = actionList[i].global_pos;
+                                    if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                        return { name: actionList[i].name || 'Action', type: 'action' };
+                                    }
+                                }
+                            }
+                            if (globalPos && nx >= globalPos.x && nx <= globalPos.x + globalPos.w && ny >= globalPos.y && ny <= globalPos.y + globalPos.h) {
+                                return { name: panelDisplayName, type: 'panel' };
+                            }
+                            return null;
+                        }
+                        container.addEventListener('mousemove', function(e) {
+                            const rect = img.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                tooltipEl.style.display = 'none';
+                                return;
+                            }
+                            const hit = hitTestFrame(localX, localY);
+                            if (hit) {
+                                tooltipEl.textContent = hit.name;
+                                tooltipEl.style.display = 'block';
+                                tooltipEl.style.left = (e.clientX + 14) + 'px';
+                                tooltipEl.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                tooltipEl.style.display = 'none';
+                            }
+                        });
+                        container.addEventListener('mouseleave', function() {
+                            tooltipEl.style.display = 'none';
+                        });
+                    }
                 }
             }
-        }, panelData, imageBase64, globalPos);
+
+            // Panel info: bấm ảnh mở viewer zoom/pan/fit (dùng chung overlay với Step Info)
+            (function initStepInfoImageViewerForPanelInfo() {
+                let overlay = document.getElementById('stepInfoImageOverlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'stepInfoImageOverlay';
+                    overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
+                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
+                    document.body.appendChild(overlay);
+                }
+                if (!overlay.dataset.stepInfoViewerReady) {
+                    overlay.dataset.stepInfoViewerReady = 'true';
+                    const overlayImg = document.getElementById('stepInfoImageOverlayImg');
+                    const overlayCanvas = document.getElementById('stepInfoImageOverlayCanvas');
+                    const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
+                    const overlayInner = document.getElementById('stepInfoImageOverlayInner');
+                    const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+                    const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
+                    if (!overlayImg || !overlayWrap || !overlayInner) return;
+                    let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+                    let currentBorderData = null;
+                    const minScale = 0.25, maxScale = 8;
+                    const panelStrokeColorOverlay = '#22c55e';
+                    const actionStrokeColorOverlay = '#3b82f6';
+
+                    function hitTestOverlayFrame(nx, ny) {
+                        if (!currentBorderData) return null;
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+                            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+                                const ap = currentBorderData.actionPosList[i];
+                                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                    return currentBorderData.actionNames[i] || 'Action';
+                                }
+                            }
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+                        }
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+                        }
+                        return null;
+                    }
+
+                    function applyTransform() {
+                        overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')';
+                    }
+
+                    function drawOverlayBorders() {
+                        if (!overlayCanvas || !currentBorderData || !overlayImg.naturalWidth) return;
+                        const img = overlayImg;
+                        overlayCanvas.width = img.naturalWidth;
+                        overlayCanvas.height = img.naturalHeight;
+                        overlayCanvas.style.width = img.naturalWidth + 'px';
+                        overlayCanvas.style.height = img.naturalHeight + 'px';
+                        const ctx = overlayCanvas.getContext('2d');
+                        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            ctx.strokeStyle = panelStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            ctx.strokeRect(p.x, p.y, p.w, p.h);
+                        }
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            currentBorderData.actionPosList.forEach(function(a) {
+                                if (a) ctx.strokeRect(a.x, a.y, a.w, a.h);
+                            });
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            ctx.strokeRect(a.x, a.y, a.w, a.h);
+                        }
+                    }
+
+                    function applyFitScale() {
+                        if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                        const rect = overlayInner.getBoundingClientRect();
+                        const fitScale = Math.min(rect.width / overlayImg.naturalWidth, rect.height / overlayImg.naturalHeight);
+                        scale = Math.min(1, fitScale);
+                        translateX = 0;
+                        translateY = 0;
+                        applyTransform();
+                        drawOverlayBorders();
+                    }
+
+                    window._openStepInfoImageViewer = function(src, borderData) {
+                        currentBorderData = borderData || null;
+                        overlayImg.src = src || '';
+                        if (overlayCanvas) overlayCanvas.style.display = currentBorderData ? 'block' : 'none';
+                        scale = 1;
+                        translateX = 0;
+                        translateY = 0;
+                        applyTransform();
+                        overlay.style.display = 'flex';
+                        overlay.style.cursor = 'grab';
+                        function onReady() { applyFitScale(); }
+                        if (overlayImg.complete) onReady();
+                        else overlayImg.onload = onReady;
+                    };
+
+                    function closeViewer() {
+                        overlay.style.display = 'none';
+                        overlay.style.cursor = 'grab';
+                        if (overlayTooltip) overlayTooltip.style.display = 'none';
+                    }
+
+                    overlayInner.addEventListener('wheel', function(e) {
+                        e.preventDefault();
+                        const rect = overlayInner.getBoundingClientRect();
+                        const cx = e.clientX - rect.left - rect.width / 2;
+                        const cy = e.clientY - rect.top - rect.height / 2;
+                        const oldScale = scale;
+                        scale = e.deltaY > 0 ? Math.max(minScale, scale * 0.9) : Math.min(maxScale, scale * 1.1);
+                        translateX = cx + (translateX - cx) * scale / oldScale;
+                        translateY = cy + (translateY - cy) * scale / oldScale;
+                        applyTransform();
+                        drawOverlayBorders();
+                    }, { passive: false });
+
+                    overlayInner.addEventListener('mousedown', function(e) {
+                        if (e.button !== 0) return;
+                        isDragging = true;
+                        startX = e.clientX;
+                        startY = e.clientY;
+                        startTx = translateX;
+                        startTy = translateY;
+                        overlay.style.cursor = 'grabbing';
+                    });
+                    document.addEventListener('mousemove', function(e) {
+                        if (!isDragging) return;
+                        translateX = startTx + (e.clientX - startX);
+                        translateY = startTy + (e.clientY - startY);
+                        applyTransform();
+                    });
+                    document.addEventListener('mouseup', function() {
+                        isDragging = false;
+                        overlay.style.cursor = 'grab';
+                    });
+
+                    if (overlayTooltip) {
+                        overlayInner.addEventListener('mousemove', function(e) {
+                            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                            const rect = overlayImg.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                overlayTooltip.style.display = 'none';
+                                return;
+                            }
+                            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+                            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+                            const name = hitTestOverlayFrame(nx, ny);
+                            if (name) {
+                                overlayTooltip.textContent = name;
+                                overlayTooltip.style.display = 'block';
+                                overlayTooltip.style.left = (e.clientX + 14) + 'px';
+                                overlayTooltip.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                overlayTooltip.style.display = 'none';
+                            }
+                        });
+                        overlayInner.addEventListener('mouseleave', function() {
+                            overlayTooltip.style.display = 'none';
+                        });
+                    }
+
+                    closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay) closeViewer();
+                    });
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape' && overlay.style.display === 'flex') closeViewer();
+                    });
+                }
+
+                const panelEl = document.getElementById('panelImageContainer');
+                if (panelEl && window._openStepInfoImageViewer) {
+                    const actionPosList = actionList && actionList.length > 0
+                        ? actionList.map(function(a) { return a.global_pos || null; }).filter(Boolean)
+                        : [];
+                    const actionNamesForOverlay = actionList && actionList.length > 0
+                        ? actionList.map(function(a) { return a.name || 'Action'; })
+                        : [];
+                    panelEl.addEventListener('click', function() {
+                        const img = panelEl.querySelector('img');
+                        if (img && img.src) {
+                            const borderData = { panelPos: globalPos || null, panelName: panelDisplayName };
+                            if (actionPosList.length > 0) {
+                                borderData.actionPosList = actionPosList;
+                                borderData.actionNames = actionNamesForOverlay;
+                            }
+                            window._openStepInfoImageViewer(img.src, borderData);
+                        }
+                    });
+                }
+            })();
+        }, panelData, imageBase64, globalPos, actionList);
     };
 
     // Helper function to find panel containing an action
@@ -9998,15 +10380,19 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             }
         }
 
-        // Get positions
+        // Get positions and panel info (name, type, verb) for display
         const panelBeforeNode = panelBeforeId ? nodesData.find(n => n.id === panelBeforeId) : null;
         const panelBeforePos = panelBeforeNode?.data?.metadata?.global_pos;
         const panelAfterNode = step?.panel_after?.item_id ? nodesData.find(n => n.id === step.panel_after.item_id) : null;
         const panelAfterPos = panelAfterNode?.data?.metadata?.global_pos;
         const actionPos = actionItem.metadata?.global_pos;
+        const panelBeforeData = panelBeforeNode?.data || (panelBeforeId && tracker.dataItemManager ? await tracker.dataItemManager.getItem(panelBeforeId) : null);
+        const panelAfterData = panelAfterNode?.data || (step?.panel_after?.item_id && tracker.dataItemManager ? await tracker.dataItemManager.getItem(step.panel_after.item_id) : null);
+        const panelBeforeInfo = panelBeforeData ? { name: panelBeforeData.name || 'N/A', type: panelBeforeData.type || 'N/A', verb: panelBeforeData.verb || 'N/A' } : { name: 'N/A', type: 'N/A', verb: 'N/A' };
+        const panelAfterInfo = panelAfterData ? { name: panelAfterData.name || 'N/A', type: panelAfterData.type || 'N/A', verb: panelAfterData.verb || 'N/A' } : { name: 'N/A', type: 'N/A', verb: 'N/A' };
 
         // Show info in browser context
-        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos) => {
+        await tracker.queuePage.evaluate((actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos, panelBeforeInfo, panelAfterInfo) => {
             const infoPanel = document.getElementById('graphInfoPanel');
             const infoContent = document.getElementById('graphInfoContent');
             if (!infoPanel || !infoContent) return;
@@ -10031,17 +10417,20 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             let actionInfoHtml = '';
 
             // Panel Before - always show frame, even if no data
+            const panelBeforeInfoHtml = '<p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Name:</strong> ' + (panelBeforeInfo.name || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Type:</strong> ' + (panelBeforeInfo.type || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Verb:</strong> ' + (panelBeforeInfo.verb || 'N/A') + '</p>';
             if (panelBeforeImage) {
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
-                    <div id="panelBeforeImageContainer" style="position:relative; display:inline-block;">
-                        <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                    <div style="margin-bottom:8px;">${panelBeforeInfoHtml}</div>
+                    <div id="panelBeforeImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                        <img id="panelBeforeImage" src="data:image/png;base64,${panelBeforeImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                         <canvas id="panelBeforeImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                     </div>
                 `;
             } else {
                 panelBeforeHtml = `
                     <h4 style="color:#fff;">Panel Before</h4>
+                    <div style="margin-bottom:8px;">${panelBeforeInfoHtml}</div>
                     <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
                         <p style="color:#888; margin:0; text-align:center;">No information available</p>
                     </div>
@@ -10058,22 +10447,28 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             `;
 
             // Panel After - always show frame, even if no data
+            const panelAfterInfoHtml = '<p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Name:</strong> ' + (panelAfterInfo.name || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Type:</strong> ' + (panelAfterInfo.type || 'N/A') + '</p><p style="color:#ccc; font-size:13px; margin:0 0 8px 0;"><strong>Verb:</strong> ' + (panelAfterInfo.verb || 'N/A') + '</p>';
             if (panelAfterImage) {
                 if (panelAfterPos) {
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
-                        <div id="panelAfterImageContainer" style="position:relative; display:inline-block;">
-                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block;" />
+                        <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
+                        <div id="panelAfterImageContainer" style="position:relative; display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
                             <canvas id="panelAfterImageCanvas" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
                         </div>`;
                 } else {
                     panelAfterHtml = `
                         <h4 style="color:#fff;">Panel After</h4>
-                        <img src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px;" />`;
+                        <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
+                        <div id="panelAfterImageContainer" style="display:inline-block; cursor:pointer;" title="Bấm để xem phóng to (cuộn zoom, kéo di chuyển)">
+                            <img id="panelAfterImage" src="data:image/png;base64,${panelAfterImage}" style="max-width:100%; border:1px solid #555; border-radius:4px; display:block; pointer-events:none;" />
+                        </div>`;
                 }
             } else {
                 panelAfterHtml = `
                     <h4 style="color:#fff;">Panel After</h4>
+                    <div style="margin-bottom:8px;">${panelAfterInfoHtml}</div>
                     <div style="min-height:200px; border:2px dashed #666; border-radius:4px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.02);">
                         <p style="color:#888; margin:0; text-align:center;">No information available</p>
                     </div>
@@ -10085,7 +10480,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                         ${panelBeforeHtml}
                     </div>
-                    <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                    <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border:2px solid #3b82f6; border-radius:8px;">
                         ${actionInfoHtml}
                     </div>
                     <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
@@ -10121,7 +10516,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                         }
                         
                         if (actionPos) {
-                            ctx.strokeStyle = '#ff0000';
+                            ctx.strokeStyle = '#3b82f6';
                             ctx.lineWidth = 2;
                             ctx.strokeRect(actionPos.x * scaleX, actionPos.y * scaleY, actionPos.w * scaleX, actionPos.h * scaleY);
                         }
@@ -10198,7 +10593,203 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                     }
                 }
             }
-        }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos);
+
+            // Step Info image viewer: zoom + pan when clicking panel before/after (khung xanh lá panel, xanh dương action, dùng chung overlay)
+            (function initStepInfoImageViewer() {
+                let overlay = document.getElementById('stepInfoImageOverlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.id = 'stepInfoImageOverlay';
+                    overlay.style.cssText = 'display:none; position:fixed; left:0; top:0; width:100%; height:100%; z-index:20010; background:rgba(0,0,0,0.92); justify-content:center; align-items:center; cursor:grab;';
+                    overlay.innerHTML = '<button type="button" id="stepInfoImageOverlayClose" style="position:absolute; top:12px; right:12px; z-index:20011; width:36px; height:36px; border:none; border-radius:50%; background:rgba(255,255,255,0.2); color:#fff; font-size:20px; cursor:pointer; line-height:1;">&times;</button><div id="stepInfoImageOverlayInner" style="width:90vw; height:90vh; overflow:hidden; display:flex; align-items:center; justify-content:center; cursor:grab;"><div id="stepInfoImageOverlayWrap" style="position:relative; transform-origin:center center; transition:none;"><img id="stepInfoImageOverlayImg" alt="" style="max-width:none; display:block; user-select:none; -webkit-user-drag:none;" /><canvas id="stepInfoImageOverlayCanvas" style="position:absolute; left:0; top:0; pointer-events:none;"></canvas></div></div><div id="stepInfoOverlayFrameTooltip" style="display:none; position:fixed; z-index:20012; padding:6px 10px; background:rgba(0,0,0,0.85); color:#fff; font-size:12px; border-radius:4px; pointer-events:none; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>';
+                    document.body.appendChild(overlay);
+                }
+                if (!overlay.dataset.stepInfoViewerReady) {
+                    overlay.dataset.stepInfoViewerReady = 'true';
+                    const overlayImg = document.getElementById('stepInfoImageOverlayImg');
+                    const overlayCanvas = document.getElementById('stepInfoImageOverlayCanvas');
+                    const overlayWrap = document.getElementById('stepInfoImageOverlayWrap');
+                    const overlayInner = document.getElementById('stepInfoImageOverlayInner');
+                    const closeBtn = document.getElementById('stepInfoImageOverlayClose');
+                    const overlayTooltip = document.getElementById('stepInfoOverlayFrameTooltip');
+                    if (!overlayImg || !overlayWrap || !overlayInner) return;
+                    let scale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+                    let currentBorderData = null;
+                    const minScale = 0.25, maxScale = 8;
+                    const panelStrokeColorOverlay = '#22c55e';
+                    const actionStrokeColorOverlay = '#3b82f6';
+
+                    function hitTestOverlayFrame(nx, ny) {
+                        if (!currentBorderData) return null;
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0 && currentBorderData.actionNames && currentBorderData.actionNames.length > 0) {
+                            for (let i = currentBorderData.actionPosList.length - 1; i >= 0; i--) {
+                                const ap = currentBorderData.actionPosList[i];
+                                if (ap && nx >= ap.x && nx <= ap.x + ap.w && ny >= ap.y && ny <= ap.y + ap.h) {
+                                    return currentBorderData.actionNames[i] || 'Action';
+                                }
+                            }
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            if (nx >= a.x && nx <= a.x + a.w && ny >= a.y && ny <= a.y + a.h) return 'Action';
+                        }
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            if (nx >= p.x && nx <= p.x + p.w && ny >= p.y && ny <= p.y + p.h) return currentBorderData.panelName || 'Panel';
+                        }
+                        return null;
+                    }
+
+                    function applyTransform() {
+                        overlayWrap.style.transform = 'translate(' + translateX + 'px,' + translateY + 'px) scale(' + scale + ')';
+                    }
+
+                    function drawOverlayBorders() {
+                        if (!overlayCanvas || !currentBorderData || !overlayImg.naturalWidth) return;
+                        const img = overlayImg;
+                        overlayCanvas.width = img.naturalWidth;
+                        overlayCanvas.height = img.naturalHeight;
+                        overlayCanvas.style.width = img.naturalWidth + 'px';
+                        overlayCanvas.style.height = img.naturalHeight + 'px';
+                        const ctx = overlayCanvas.getContext('2d');
+                        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+                        if (currentBorderData.panelPos) {
+                            const p = currentBorderData.panelPos;
+                            ctx.strokeStyle = panelStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            ctx.strokeRect(p.x, p.y, p.w, p.h);
+                        }
+                        if (currentBorderData.actionPosList && currentBorderData.actionPosList.length > 0) {
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            currentBorderData.actionPosList.forEach(function(a) {
+                                if (a) ctx.strokeRect(a.x, a.y, a.w, a.h);
+                            });
+                        } else if (currentBorderData.actionPos) {
+                            const a = currentBorderData.actionPos;
+                            ctx.strokeStyle = actionStrokeColorOverlay;
+                            ctx.lineWidth = Math.max(2, 4 / scale);
+                            ctx.strokeRect(a.x, a.y, a.w, a.h);
+                        }
+                    }
+
+                    function applyFitScale() {
+                        if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                        const rect = overlayInner.getBoundingClientRect();
+                        const fitScale = Math.min(rect.width / overlayImg.naturalWidth, rect.height / overlayImg.naturalHeight);
+                        scale = Math.min(1, fitScale);
+                        translateX = 0;
+                        translateY = 0;
+                        applyTransform();
+                        drawOverlayBorders();
+                    }
+
+                    window._openStepInfoImageViewer = function(src, borderData) {
+                        currentBorderData = borderData || null;
+                        overlayImg.src = src || '';
+                        if (overlayCanvas) overlayCanvas.style.display = currentBorderData ? 'block' : 'none';
+                        scale = 1;
+                        translateX = 0;
+                        translateY = 0;
+                        applyTransform();
+                        overlay.style.display = 'flex';
+                        overlay.style.cursor = 'grab';
+                        function onReady() { applyFitScale(); }
+                        if (overlayImg.complete) onReady();
+                        else overlayImg.onload = onReady;
+                    };
+
+                    function closeViewer() {
+                        overlay.style.display = 'none';
+                        overlay.style.cursor = 'grab';
+                        if (overlayTooltip) overlayTooltip.style.display = 'none';
+                    }
+
+                    overlayInner.addEventListener('wheel', function(e) {
+                        e.preventDefault();
+                        const rect = overlayInner.getBoundingClientRect();
+                        const cx = e.clientX - rect.left - rect.width / 2;
+                        const cy = e.clientY - rect.top - rect.height / 2;
+                        const oldScale = scale;
+                        scale = e.deltaY > 0 ? Math.max(minScale, scale * 0.9) : Math.min(maxScale, scale * 1.1);
+                        translateX = cx + (translateX - cx) * scale / oldScale;
+                        translateY = cy + (translateY - cy) * scale / oldScale;
+                        applyTransform();
+                        drawOverlayBorders();
+                    }, { passive: false });
+
+                    overlayInner.addEventListener('mousedown', function(e) {
+                        if (e.button !== 0) return;
+                        isDragging = true;
+                        startX = e.clientX;
+                        startY = e.clientY;
+                        startTx = translateX;
+                        startTy = translateY;
+                        overlay.style.cursor = 'grabbing';
+                    });
+                    document.addEventListener('mousemove', function(e) {
+                        if (!isDragging) return;
+                        translateX = startTx + (e.clientX - startX);
+                        translateY = startTy + (e.clientY - startY);
+                        applyTransform();
+                    });
+                    document.addEventListener('mouseup', function() {
+                        isDragging = false;
+                        overlay.style.cursor = 'grab';
+                    });
+
+                    if (overlayTooltip) {
+                        overlayInner.addEventListener('mousemove', function(e) {
+                            if (!overlayImg.naturalWidth || overlay.style.display !== 'flex') return;
+                            const rect = overlayImg.getBoundingClientRect();
+                            const localX = e.clientX - rect.left;
+                            const localY = e.clientY - rect.top;
+                            if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+                                overlayTooltip.style.display = 'none';
+                                return;
+                            }
+                            const nx = (localX / rect.width) * overlayImg.naturalWidth;
+                            const ny = (localY / rect.height) * overlayImg.naturalHeight;
+                            const name = hitTestOverlayFrame(nx, ny);
+                            if (name) {
+                                overlayTooltip.textContent = name;
+                                overlayTooltip.style.display = 'block';
+                                overlayTooltip.style.left = (e.clientX + 14) + 'px';
+                                overlayTooltip.style.top = (e.clientY + 14) + 'px';
+                            } else {
+                                overlayTooltip.style.display = 'none';
+                            }
+                        });
+                        overlayInner.addEventListener('mouseleave', function() {
+                            overlayTooltip.style.display = 'none';
+                        });
+                    }
+
+                    closeBtn.addEventListener('click', function(e) { e.stopPropagation(); closeViewer(); });
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay) closeViewer();
+                    });
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape' && overlay.style.display === 'flex') closeViewer();
+                    });
+                }
+
+                const openViewerFromContainer = function(containerId, borderData) {
+                    if (typeof window._openStepInfoImageViewer !== 'function') return;
+                    const container = document.getElementById(containerId);
+                    if (!container) return;
+                    const img = container.querySelector('img');
+                    if (img && img.src) window._openStepInfoImageViewer(img.src, borderData);
+                };
+                const beforeEl = document.getElementById('panelBeforeImageContainer');
+                const afterEl = document.getElementById('panelAfterImageContainer');
+                if (beforeEl) beforeEl.addEventListener('click', function() {
+                    openViewerFromContainer('panelBeforeImageContainer', { panelPos: panelBeforePos || null, actionPos: actionPos || null });
+                });
+                if (afterEl) afterEl.addEventListener('click', function() {
+                    openViewerFromContainer('panelAfterImageContainer', { panelPos: panelAfterPos || null });
+                });
+            })();
+        }, actionItem, step, panelBeforeImage, panelAfterImage, panelBeforePos, panelAfterPos, actionPos, panelBeforeInfo, panelAfterInfo);
     };
 
     const showStepInfo = async (actionItem, step, itemMap) => {
@@ -10330,7 +10921,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 <div id="stepPanelBefore" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
                     ${panelBeforeHtml}
                 </div>
-                <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                <div id="stepAction" style="flex:0 0 auto; min-width:200px; max-width:300px; display:flex; flex-direction:column; padding:10px; background:rgba(255,255,255,0.05); border:2px solid #3b82f6; border-radius:8px;">
                     ${actionInfoHtml}
                 </div>
                 <div id="stepPanelAfter" style="flex:0 0 auto; min-width:300px; max-width:500px; display:flex; flex-direction:column;">
@@ -10372,7 +10963,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                                 }
                                 
                                 if (actPos) {
-                                    ctx.strokeStyle = '#ff0000';
+                                    ctx.strokeStyle = '#3b82f6';
                                     ctx.lineWidth = 2;
                                     ctx.strokeRect(actPos.x * scaleX, actPos.y * scaleY, actPos.w * scaleX, actPos.h * scaleY);
                                 }
@@ -11053,6 +11644,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         resizeQueueBrowser: resizeQueueBrowserHandler,
         openPanelEditor: openPanelEditorHandler,
         openPanelEditorForAction: openPanelEditorForActionHandler,
+        openPanelEditorForActionViewOnly: openPanelEditorForActionViewOnlyHandler,
         savePanelEdits: savePanelEditsHandler,
         drawPanel: drawPanelHandler,
         saveCroppedPanel: saveCroppedPanelHandler,
@@ -11126,6 +11718,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
         handleSaveReminderResponse: handleSaveReminderResponse,
         viewGraph: viewGraphHandler,
         showPanelInfoGraph: showPanelInfoHandler,
+        openPanelViewer: openPanelViewerHandler,
         showStepInfoGraph: showStepInfoHandler,
         validateStep: validateStepHandler,
         detectMissingActionsByAI: detectMissingActionsByAIHandler,
