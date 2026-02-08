@@ -3954,6 +3954,11 @@ export const QUEUE_BROWSER_HTML = `
             const m = document.getElementById('raiseBugModal');
             if (m) m.style.display = 'flex';
           }
+          if (window.__resolvedBugDialogHiddenForPanelViewer) {
+            window.__resolvedBugDialogHiddenForPanelViewer = false;
+            const m = document.getElementById('resolvedBugModal');
+            if (m) m.style.display = 'flex';
+          }
         }
         overlayInner.addEventListener('wheel', function(e) {
           e.preventDefault();
@@ -9107,7 +9112,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Action Image</div>
-                              \${getActionValue('action.image') ? \`<img src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getActionValue('action.image') ? \`<img id="resolvedBugActionImage" src="\${getActionValue('action.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem panel-edit-action (chỉ xem)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('action.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -9129,7 +9134,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                              \${getActionValue('panel_after.image') ? \`<img src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getActionValue('panel_after.image') ? \`<img id="resolvedBugPanelImage" src="\${getActionValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('panel_after.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -9170,6 +9175,38 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
               </div>
           \`;
+
+          // ResolvedBug: click action image → hide dialog, open panel-edit-action (only-view); show dialog when panel closes
+          const resolvedBugActionImg = content.querySelector('#resolvedBugActionImage');
+          if (resolvedBugActionImg && typeof window.openPanelEditorForActionViewOnly === 'function' && actionId) {
+            resolvedBugActionImg.addEventListener('click', async () => {
+              if (resolvedBugActionImg.dataset.opening === '1') return;
+              resolvedBugActionImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelView = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelEditorForActionViewOnly(actionId);
+              } finally {
+                resolvedBugActionImg.dataset.opening = '';
+              }
+            });
+          }
+          // ResolvedBug: click panel image → hide dialog, open panel viewer; show dialog when viewer closes
+          const resolvedBugPanelAfterId = actionItem && (actionItem.panel_after_id || actionItem.panel_after_item_id) || null;
+          const resolvedBugPanelImg = content.querySelector('#resolvedBugPanelImage');
+          if (resolvedBugPanelImg && typeof window.openPanelViewer === 'function' && resolvedBugPanelAfterId) {
+            resolvedBugPanelImg.addEventListener('click', async () => {
+              if (resolvedBugPanelImg.dataset.opening === '1') return;
+              resolvedBugPanelImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(resolvedBugPanelAfterId);
+              } finally {
+                resolvedBugPanelImg.dataset.opening = '';
+              }
+            });
+          }
 
           const closeHandler = () => {
               modal.style.display = 'none';
@@ -9324,7 +9361,7 @@ Bạn có chắc chắn muốn rollback?\`;
                       <div style="display: flex; flex-direction: column; gap: 15px;">
                           <div style="width: 100%; border: 1px solid #eee; padding: 5px; border-radius: 4px; display: flex; flex-direction: column; align-items: center;">
                               <div style="margin-bottom: 5px; font-weight: bold; font-size: 12px; color: #555;">Panel Image</div>
-                              \${getPanelValue('panel_after.image') ? \`<img src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd;" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
+                              \${getPanelValue('panel_after.image') ? \`<img id="resolvedBugPanelImage" src="\${getPanelValue('panel_after.image')}" style="max-width: 100%; max-height: 150px; object-fit: contain; border: 1px solid #ddd; cursor: pointer;" title="Bấm để xem chi tiết panel (zoom, di chuyển)" />\` : \`<div style="color:#999; font-size:12px; padding:20px; text-align:center;">No Image<br>(or N/A)</div>\`}
                               \${rowHtml('panel_after.image')}
                           </div>
                           <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
@@ -9365,6 +9402,22 @@ Bạn có chắc chắn muốn rollback?\`;
                   <textarea id="resolvedBugNote" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;" readonly>\${(bugInfo && bugInfo.note) || ''}</textarea>
               </div>
           \`;
+
+          // ResolvedBug (Panel mode): click panel image → hide dialog, open panel viewer; show dialog when viewer closes
+          const resolvedBugForPanelImg = content.querySelector('#resolvedBugPanelImage');
+          if (resolvedBugForPanelImg && typeof window.openPanelViewer === 'function' && panelId) {
+            resolvedBugForPanelImg.addEventListener('click', async () => {
+              if (resolvedBugForPanelImg.dataset.opening === '1') return;
+              resolvedBugForPanelImg.dataset.opening = '1';
+              try {
+                window.__resolvedBugDialogHiddenForPanelViewer = true;
+                if (modal) modal.style.display = 'none';
+                await window.openPanelViewer(panelId);
+              } finally {
+                resolvedBugForPanelImg.dataset.opening = '';
+              }
+            });
+          }
 
           const closeHandler = () => {
               modal.style.display = 'none';

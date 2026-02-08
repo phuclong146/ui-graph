@@ -3350,12 +3350,19 @@ window.PanelEditor = class PanelEditor {
             await window.resetDrawingFlag();
         }
         
-        // Show RaiseBug dialog again when closing panel-edit-action (only-view) if it was hidden for this view (keeps dialog state/data)
+        // Show RaiseBug or ResolvedBug dialog again when closing panel-edit-action (only-view) if it was hidden for this view (keeps dialog state/data)
         if (this.panelActionMode === 'only-view' && window.__raiseBugDialogHiddenForPanelView) {
             window.__raiseBugDialogHiddenForPanelView = false;
             const raiseBugModal = document.getElementById('raiseBugModal');
             if (raiseBugModal) {
                 setTimeout(() => { raiseBugModal.style.display = 'flex'; }, 0);
+            }
+        }
+        if (this.panelActionMode === 'only-view' && window.__resolvedBugDialogHiddenForPanelView) {
+            window.__resolvedBugDialogHiddenForPanelView = false;
+            const resolvedBugModal = document.getElementById('resolvedBugModal');
+            if (resolvedBugModal) {
+                setTimeout(() => { resolvedBugModal.style.display = 'flex'; }, 0);
             }
         }
     }
