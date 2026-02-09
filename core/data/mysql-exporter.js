@@ -48,7 +48,7 @@ export class MySQLExporter {
     generateMyItem(itemType, name, itemId = null) {
         const normalizedName = this.normalizeName(name);
         const base = `DOI-${itemType}-${normalizedName}`;
-        return itemId != null && itemId !== '' ? `${base}-${itemId}` : base;
+        return itemId != null && itemId !== '' ? `${base}-${itemId.toUpperCase()}` : base;
     }
 
     /**
