@@ -41,18 +41,21 @@ export class MySQLExporter {
         return normalized.replace(/\s+/g, '').toUpperCase();
     }
 
-    generateMyItem(itemType, name, panelName = null) {
-        if (itemType === 'ACTION' && panelName) {
-            const normalizedPanelName = this.normalizeName(panelName);
-            const normalizedActionName = this.normalizeName(name);
-            return `DOI-ACTION-${normalizedPanelName}-${normalizedActionName}`;
-        }
+    /**
+     * Generate unique myItem. Include itemId so both myItem and item_code are unique per item.
+     * ACTION uses same format as other types (itemId ensures uniqueness; panelName not needed).
+     */
+    generateMyItem(itemType, name, itemId = null) {
         const normalizedName = this.normalizeName(name);
-        return `DOI-${itemType}-${normalizedName}`;
+        const base = `DOI-${itemType}-${normalizedName}`;
+        return itemId != null && itemId !== '' ? `${base}-${itemId}` : base;
     }
 
-    generateCode(itemType, name, panelName = null) {
-        const myItem = this.generateMyItem(itemType, name, panelName);
+    /**
+     * Generate unique item_code (myAiTool_myItem). myItem already includes itemId when provided.
+     */
+    generateCode(itemType, name, itemId = null) {
+        const myItem = this.generateMyItem(itemType, name, itemId);
         return `${this.myAiTool}_${myItem}`;
     }
 
@@ -333,51 +336,19 @@ export class MySQLExporter {
             } catch (err) {
             }
             
-            // Build actionId -> panelId map from myparent_panel.jsonl
-            const actionIdToPanelIdMap = new Map();
-            const panelIdToPanelNameMap = new Map();
+            // Build panelId -> parentEntry map from myparent_panel.jsonl (for PANEL metadata)
             const panelIdToParentEntryMap = new Map();
-            
             try {
                 const parentContent = await fsp.readFile(myparentPanelPath, 'utf8');
                 const parents = parentContent.trim().split('\n')
                     .filter(line => line.trim())
                     .map(line => JSON.parse(line));
-                
-                // Build panelId -> panelName map from items
-                for (const item of items) {
-                    if (item.item_category === 'PANEL' && item.item_id && item.name) {
-                        panelIdToPanelNameMap.set(item.item_id, item.name);
-                    }
-                }
-                
-                // Build actionId -> panelId map and panelId -> parentEntry map
                 for (const parent of parents) {
                     const panelId = parent.parent_panel;
-                    
-                    // Store parent entry for easy access
                     panelIdToParentEntryMap.set(panelId, parent);
-                    
-                    // Handle direct child_actions
-                    if (parent.child_actions && Array.isArray(parent.child_actions)) {
-                        for (const actionId of parent.child_actions) {
-                            actionIdToPanelIdMap.set(actionId, panelId);
-                        }
-                    }
-                    
-                    // Handle child_actions in child_pages
-                    if (parent.child_pages && Array.isArray(parent.child_pages)) {
-                        for (const page of parent.child_pages) {
-                            if (page.child_actions && Array.isArray(page.child_actions)) {
-                                for (const actionId of page.child_actions) {
-                                    actionIdToPanelIdMap.set(actionId, panelId);
-                                }
-                            }
-                        }
-                    }
                 }
             } catch (err) {
-                console.warn('⚠️ Could not read myparent_panel.jsonl for action-panel mapping:', err.message);
+                console.warn('⚠️ Could not read myparent_panel.jsonl for parent entry mapping:', err.message);
             }
             
             const itemIdToMyItemMap = new Map();
@@ -385,17 +356,8 @@ export class MySQLExporter {
             for (const item of items) {
                 if (!item.item_id || !item.name) continue;
                 
-                // For ACTION items, find the parent panel and use its name
-                let panelName = null;
-                if (item.item_category === 'ACTION') {
-                    const panelId = actionIdToPanelIdMap.get(item.item_id);
-                    if (panelId) {
-                        panelName = panelIdToPanelNameMap.get(panelId);
-                    }
-                }
-                
-                const myItem = this.generateMyItem(item.item_category, item.name, panelName);
-                const code = this.generateCode(item.item_category, item.name, panelName);
+                const myItem = this.generateMyItem(item.item_category, item.name, item.item_id);
+                const code = this.generateCode(item.item_category, item.name, item.item_id);
                 
                 itemIdToMyItemMap.set(item.item_id, myItem);
                 
@@ -859,14 +821,7 @@ export class MySQLExporter {
                         if (!item.purpose && !item.reason && item.item_id && item.item_category === 'ACTION') {
                             itemsNeedingBackfill++;
                             
-                            // Generate code using same logic as export (lines 382-392)
-                            let panelName = null;
-                            const panelId = actionIdToPanelIdMap.get(item.item_id);
-                            if (panelId) {
-                                panelName = panelIdToPanelNameMap.get(panelId);
-                            }
-                            
-                            const code = this.generateCode(item.item_category, item.name, panelName);
+                            const code = this.generateCode(item.item_category, item.name, item.item_id);
                             const dbData = itemPurposeMap.get(code);
                             
                             if (dbData) {
@@ -876,9 +831,8 @@ export class MySQLExporter {
                                 itemsUpdated = true;
                             } else {
                                 noMatchCount++;
-                                // Debug: log first few unmatched codes
                                 if (noMatchCount <= 3) {
-                                    console.log(`   ⚠️ No match for: ${code} (item: ${item.name}, panelName: ${panelName || 'none'})`);
+                                    console.log(`   ⚠️ No match for: ${code} (item: ${item.name})`);
                                 }
                             }
                         }
@@ -1016,16 +970,7 @@ export class MySQLExporter {
                                     continue;
                                 }
                                 
-                                // Generate code giống như doing_item (dòng 381-392)
-                                let panelName = null;
-                                if (item.item_category === 'ACTION') {
-                                    const panelId = actionIdToPanelIdMap.get(item.item_id);
-                                    if (panelId) {
-                                        panelName = panelIdToPanelNameMap.get(panelId);
-                                    }
-                                }
-                                
-                                const code = this.generateCode(item.item_category, item.name, panelName);
+                                const code = this.generateCode(item.item_category, item.name, itemId);
                                 
                                 // Convert created_at timestamp to datetime
                                 const createdAt = new Date(validationData.created_at);

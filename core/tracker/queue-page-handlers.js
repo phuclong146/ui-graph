@@ -5173,16 +5173,9 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
                 }
             }
 
-            // 2. item_id -> item_code via generateCode (need action item + panel name)
+            // 2. item_id -> item_code via generateCode (itemId ensures uniqueness; panelName not needed)
             const item = await tracker.dataItemManager?.getItem(actionItemId);
             if (!item || item.item_category !== 'ACTION') return;
-
-            let panelName = null;
-            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
-            if (parentPanelId) {
-                const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
-                if (parentPanelItem) panelName = parentPanelItem.name || null;
-            }
 
             const myAiToolCode = tracker.myAiToolCode;
             if (!myAiToolCode) {
@@ -5193,7 +5186,7 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
 
             const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, myAiToolCode);
             await exporter.init();
-            const itemCode = exporter.generateCode(item.item_category, item.name, panelName);
+            const itemCode = exporter.generateCode(item.item_category, item.name, actionItemId);
             const conn = exporter.connection;
 
             // 3. Update uigraph_validation.view_count by item_code
@@ -5263,20 +5256,13 @@ export function createQueuePageHandlers(tracker, width, height, trackingWidth, q
             const item = await tracker.dataItemManager?.getItem(actionItemId);
             if (!item || item.item_category !== 'ACTION') return [];
 
-            let panelName = null;
-            const parentPanelId = await getParentPanelOfActionHandler(actionItemId);
-            if (parentPanelId) {
-                const parentPanelItem = await tracker.dataItemManager.getItem(parentPanelId);
-                if (parentPanelItem) panelName = parentPanelItem.name || null;
-            }
-
             const myAiToolCode = tracker.myAiToolCode;
             if (!myAiToolCode) return [];
 
             const { MySQLExporter } = await import('../data/mysql-exporter.js');
             const exporter = new MySQLExporter(tracker.sessionFolder, tracker.urlTracking, myAiToolCode);
             await exporter.init();
-            const itemCode = exporter.generateCode(item.item_category, item.name, panelName);
+            const itemCode = exporter.generateCode(item.item_category, item.name, actionItemId);
             const conn = exporter.connection;
 
             // Query viewitem, join collaborator for name. Sort by updated_at DESC (most recent first).
