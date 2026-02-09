@@ -7059,9 +7059,12 @@ Bạn có chắc chắn muốn rollback?\`;
                 var id = 'validate-full-flow-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
               });
               label.appendChild(validateIcon);
-            } else if (Array.isArray(node.modality_stacks) && node.modality_stacks.length === 0) {
-                // Add tooltip for actions with empty modality_stacks array
+            } else if (!hasModalityStacks) {
+                // Add tooltip for actions without modality_stacks (don't important) - show for empty array or undefined
                 label.addEventListener('mouseenter', (e) => {
+                    // Remove any existing tooltips first to prevent duplicates (only remove others, not in same label)
+                    const existing = document.getElementById('action-tooltip');
+                    if (existing) existing.remove();
                     const tooltip = document.createElement('div');
                     tooltip.id = 'action-tooltip';
                     tooltip.style.cssText = 'position: fixed;' +
@@ -7083,7 +7086,7 @@ Bạn có chắc chắn muốn rollback?\`;
                     tooltip.addEventListener('mouseenter', function() { if (window.__tooltipHideT && window.__tooltipHideT[tid]) { clearTimeout(window.__tooltipHideT[tid]); delete window.__tooltipHideT[tid]; } });
                     tooltip.addEventListener('mouseleave', function() { var t = document.getElementById(tid); if (t) t.remove(); });
                 });
-                
+
                 label.addEventListener('mouseleave', () => {
                     var id = 'action-tooltip'; window.__tooltipHideT = window.__tooltipHideT || {}; if (window.__tooltipHideT[id]) clearTimeout(window.__tooltipHideT[id]); window.__tooltipHideT[id] = setTimeout(function() { var t = document.getElementById(id); if (t) t.remove(); delete window.__tooltipHideT[id]; }, 300);
                 });
